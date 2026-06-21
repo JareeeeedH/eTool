@@ -3,4 +3,13 @@
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+/** 交易明細：表頭 + 12 列 + 總結列（web） */
+.transaction-table-scroll {
+  max-height: calc(2rem + 12 * 2.25rem + 2.5rem);
+  overflow-y: auto;
+  overflow-x: auto;
 }

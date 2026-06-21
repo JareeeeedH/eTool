@@ -62,6 +62,7 @@ interface DailySettlement {
   totalAssetsComplete: boolean
   totalAssetsMissingNotes: string
   transactionCount: number
+  dayTotalProfit: number
 }
 
 export interface PersistedAppState {
@@ -157,6 +158,7 @@ function parseSettlement(value: unknown): DailySettlement | null {
         ? value.totalAssetsMissingNotes
         : '',
     transactionCount: parseNumber(value.transactionCount),
+    dayTotalProfit: parseNumber(value.dayTotalProfit),
   }
 }
 

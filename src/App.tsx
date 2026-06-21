@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { loadPersistedAppState, savePersistedAppState } from './persistence'
 
 type TransactionType = 'buy' | 'sell'
-type EditingCategory = TransactionType | 'vn_twd'
+type EditingCategory = TransactionType
 type FiatCurrency = 'twd' | 'vn'
 
 interface UsdtTransaction {
@@ -29,12 +29,15 @@ interface VnTwdTransaction {
 
 type Transaction = UsdtTransaction | VnTwdTransaction
 
-function isUsdtTransaction(tx: Transaction): tx is UsdtTransaction {
-  return tx.category === 'usdt'
-}
-
 function isVnTwdTransaction(tx: Transaction): tx is VnTwdTransaction {
   return tx.category === 'vn_twd'
+}
+
+function filterActiveTransactions(transactions: Transaction[]): UsdtTransaction[] {
+  return transactions.filter(
+    (tx): tx is UsdtTransaction =>
+      !isVnTwdTransaction(tx) && tx.fiatCurrency === 'twd',
+  )
 }
 
 interface DailySettlement {
@@ -60,6 +63,8 @@ interface DailySettlement {
   totalAssetsComplete: boolean
   totalAssetsMissingNotes: string
   transactionCount: number
+  /** 當日賣出總利潤（TWD） */
+  dayTotalProfit: number
 }
 
 type PageTab = 'daily' | 'settlements'
@@ -105,6 +110,26 @@ function formatNumber(value: number): string {
   })
 }
 
+/** 台幣顯示：無條件捨去小數至整數 */
+function floorTwd(value: number): number {
+  return Math.trunc(value)
+}
+
+function formatTwd(value: number): string {
+  return floorTwd(value).toLocaleString('zh-TW', {
+    maximumFractionDigits: 0,
+  })
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+/** 匯率 / 均價顯示：四捨五入至小數第二位（計算仍用完整精度） */
+function formatRateDisplay(value: number): string {
+  return roundMoney(value).toFixed(2)
+}
+
 function calculateRate(fiatAmount: number, usdtAmount: number): number {
   if (usdtAmount <= 0) return 0
   return fiatAmount / usdtAmount
@@ -122,11 +147,6 @@ function formatFiatInput(value: number): string {
 
 function formatRateCalc(value: number): string {
   return String(value)
-}
-
-/** 匯率 / 均價顯示：小數第三位（計算仍用完整精度） */
-function formatRateDisplay(value: number): string {
-  return value.toFixed(3)
 }
 
 interface ConfirmDialogState {
@@ -212,111 +232,31 @@ function formatUsdtInput(value: number): string {
   return (Math.round(value * 100) / 100).toString()
 }
 
-interface VnTwdFormValues {
-  vn: string
-  twd: string
-  rate: string
-}
-
-/** 三方互相計算：VN = TWD × 匯率；匯率 = VN / TWD */
-function syncVnTwdFormFields(
-  field: 'vn' | 'twd' | 'rate',
-  value: string,
-  current: VnTwdFormValues,
-): VnTwdFormValues {
-  const next: VnTwdFormValues = {
-    vn: field === 'vn' ? value : current.vn,
-    twd: field === 'twd' ? value : current.twd,
-    rate: field === 'rate' ? value : current.rate,
-  }
-
-  const vn = parsePositive(next.vn)
-  const twd = parsePositive(next.twd)
-  const rate = parsePositive(next.rate)
-
-  switch (field) {
-    case 'vn':
-      if (vn && rate) {
-        next.twd = formatFiatInput(vn / rate)
-      } else if (vn && twd) {
-        next.rate = formatRateCalc(vn / twd)
-      }
-      break
-    case 'rate':
-      if (twd && rate) {
-        next.vn = formatFiatInput(twd * rate)
-      } else if (rate && vn) {
-        next.twd = formatFiatInput(vn / rate)
-      }
-      break
-    case 'twd':
-      if (twd && rate) {
-        next.vn = formatFiatInput(twd * rate)
-      } else if (twd && vn) {
-        next.rate = formatRateCalc(vn / twd)
-      }
-      break
-  }
-
-  return next
-}
-
-function calculateVnTwdRate(vnAmount: number, twdAmount: number): number {
-  if (twdAmount <= 0) return 0
-  return vnAmount / twdAmount
-}
-
-function calculateVnTwdDayAverageRate(transactions: VnTwdTransaction[]): number | null {
-  const totalTwd = transactions.reduce((sum, tx) => sum + tx.twdAmount, 0)
-  if (totalTwd <= 0) return null
-
-  const totalVn = transactions.reduce((sum, tx) => sum + tx.vnAmount, 0)
-  return totalVn / totalTwd
-}
-
-/**
- * 帳面總資產（TWD）= TWD 現金 + USDT×整池TWD成本 + VN÷當日V/T均價
- * VN 換算 strictly 使用當日 V 換 T 加權均價
- */
+/** 帳面總資產（TWD）= TWD 現金 + USDT×整池 TWD 成本 */
 function computeTotalAssetsTwd(
   balances: Balances,
   inventoryCost: UsdtInventoryCost,
-  vnTwdTransactions: VnTwdTransaction[],
 ): TotalAssetsTwd {
   const twdCash = balances.twd
   const missingNotes: string[] = []
-  const dayVnTwdRate = calculateVnTwdDayAverageRate(vnTwdTransactions)
 
   let usdtInTwd: number | null = null
   if (balances.usdt <= 0) {
     usdtInTwd = 0
   } else if (inventoryCost.twd !== null) {
-    usdtInTwd = balances.usdt * inventoryCost.twd
-  } else if (inventoryCost.vn !== null && dayVnTwdRate !== null) {
-    usdtInTwd = (balances.usdt * inventoryCost.vn) / dayVnTwdRate
+    usdtInTwd = floorTwd(balances.usdt * inventoryCost.twd)
   } else {
     missingNotes.push('USDT 無 TWD 成本')
   }
 
-  let vnInTwd: number | null = null
-  if (balances.vn <= 0) {
-    vnInTwd = 0
-  } else if (dayVnTwdRate !== null) {
-    vnInTwd = balances.vn / dayVnTwdRate
-  } else {
-    missingNotes.push('VN 當日無 V/T 匯率')
-  }
-
-  const total = twdCash + (usdtInTwd ?? 0) + (vnInTwd ?? 0)
-  const isComplete =
-    (balances.usdt <= 0 || usdtInTwd !== null) &&
-    (balances.vn <= 0 || vnInTwd !== null)
+  const total = twdCash + (usdtInTwd ?? 0)
+  const isComplete = balances.usdt <= 0 || usdtInTwd !== null
 
   return {
     twdCash,
     usdtInTwd,
-    vnInTwd,
-    dayVnTwdRate,
+    vnInTwd: null,
+    dayVnTwdRate: null,
     total,
     isComplete,
     missingNotes,
@@ -441,7 +381,7 @@ function calculateBuyDayAverageRate(
 function computeInventoryCost(
   openingBalances: Balances,
   openingCost: UsdtInventoryCost,
-  transactions: Transaction[],
+  transactions: UsdtTransaction[],
 ): UsdtInventoryCost {
   let usdtQty = openingBalances.usdt
   let twdCostTotal = (openingCost.twd ?? 0) * usdtQty
@@ -452,18 +392,14 @@ function computeInventoryCost(
     vnCostTotal = 0
   }
 
-  const sorted = transactions.filter(isUsdtTransaction).sort(
+  const sorted = [...transactions].sort(
     (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
   )
 
   for (const tx of sorted) {
     if (tx.type === 'buy') {
       usdtQty += tx.usdtAmount
-      if (tx.fiatCurrency === 'twd') {
-        twdCostTotal += tx.fiatAmount
-      } else {
-        vnCostTotal += tx.fiatAmount
-      }
+      twdCostTotal += tx.fiatAmount
     } else {
       if (usdtQty <= 0) continue
 
@@ -486,6 +422,81 @@ function computeInventoryCost(
   }
 }
 
+/** 單筆賣出的成本與利潤（依整池加權均價） */
+interface SellProfitInfo {
+  unitCost: number | null
+  costBasis: number
+  profit: number
+}
+
+function computeSellProfitById(
+  openingBalances: Balances,
+  openingCost: UsdtInventoryCost,
+  transactions: UsdtTransaction[],
+): Map<string, SellProfitInfo> {
+  let usdtQty = openingBalances.usdt
+  let twdCostTotal = (openingCost.twd ?? 0) * usdtQty
+
+  if (usdtQty <= 0) twdCostTotal = 0
+
+  const sorted = [...transactions].sort(
+    (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+  )
+  const result = new Map<string, SellProfitInfo>()
+
+  for (const tx of sorted) {
+    if (tx.type === 'buy') {
+      usdtQty += tx.usdtAmount
+      twdCostTotal += tx.fiatAmount
+      continue
+    }
+
+    const unitCost =
+      usdtQty > 0 && twdCostTotal > 0 ? twdCostTotal / usdtQty : null
+    const costBasis = unitCost !== null ? tx.usdtAmount * unitCost : 0
+    result.set(tx.id, {
+      unitCost,
+      costBasis,
+      profit: tx.fiatAmount - costBasis,
+    })
+
+    if (usdtQty <= 0) continue
+
+    const sellRatio = Math.min(tx.usdtAmount / usdtQty, 1)
+    twdCostTotal *= 1 - sellRatio
+    usdtQty -= tx.usdtAmount
+
+    if (usdtQty <= 0) {
+      usdtQty = 0
+      twdCostTotal = 0
+    }
+  }
+
+  return result
+}
+
+function computeDayTotalProfit(
+  openingBalances: Balances,
+  openingCost: UsdtInventoryCost,
+  transactions: UsdtTransaction[],
+): number {
+  const profitById = computeSellProfitById(openingBalances, openingCost, transactions)
+  return transactions
+    .filter((tx) => tx.type === 'sell')
+    .reduce((sum, tx) => sum + (profitById.get(tx.id)?.profit ?? 0), 0)
+}
+
+function formatProfit(value: number): string {
+  const prefix = value > 0 ? '+' : value < 0 ? '' : ''
+  return `${prefix}${formatTwd(value)}`
+}
+
+function profitColorClass(value: number): string {
+  if (value > 0) return 'text-emerald-600'
+  if (value < 0) return 'text-rose-600'
+  return 'text-slate-500'
+}
+
 function formatSettlementDate(date: Date): string {
   return date.toLocaleDateString('zh-TW', {
     month: '2-digit',
@@ -493,7 +504,15 @@ function formatSettlementDate(date: Date): string {
   })
 }
 
-function getBusinessDayLabel(transactions: Transaction[]): string {
+function formatSettlementDateTime(date: Date): string {
+  return `${formatSettlementDate(date)} ${date.toLocaleTimeString('zh-TW', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })} 結算`
+}
+
+function getBusinessDayLabel(transactions: UsdtTransaction[]): string {
   if (transactions.length > 0) {
     const earliest = [...transactions].reduce((min, tx) =>
       tx.timestamp.getTime() < min.timestamp.getTime() ? tx : min,
@@ -503,49 +522,43 @@ function getBusinessDayLabel(transactions: Transaction[]): string {
   return formatSettlementDate(new Date())
 }
 
-function buildDeleteConfirmLines(tx: Transaction): string[] {
-  if (isVnTwdTransaction(tx)) {
-    return [
-      '類型：VN 換 TWD',
-      `VN：${formatNumber(tx.vnAmount)}`,
-      `TWD：${formatNumber(tx.twdAmount)}`,
-      `匯率 (VN/TWD)：${formatRateDisplay(tx.rate)}`,
-    ]
-  }
-
+function buildDeleteConfirmLines(tx: UsdtTransaction): string[] {
   const typeLabel = tx.type === 'buy' ? '買入' : '賣出'
-  const currencyLabel = tx.fiatCurrency === 'twd' ? 'TWD' : 'VN'
-  const rateUnit = tx.fiatCurrency === 'twd' ? 'TWD/USDT' : 'VN/USDT'
   return [
-    `類型：${typeLabel}（${currencyLabel}）`,
+    `類型：${typeLabel}（TWD）`,
     `USDT：${formatNumber(tx.usdtAmount)}`,
-    `金額：${formatNumber(tx.fiatAmount)}`,
-    `匯率 (${rateUnit})：${formatRateDisplay(tx.rate)}`,
+    `金額：${formatTwd(tx.fiatAmount)}`,
+    `匯率 (TWD/USDT)：${formatRateDisplay(tx.rate)}`,
   ]
 }
 
 function buildSettleConfirmLines(
-  transactions: Transaction[],
+  transactions: UsdtTransaction[],
   balances: Balances,
   inventoryCost: UsdtInventoryCost,
+  openingBalances: Balances,
+  openingUsdtCost: UsdtInventoryCost,
 ): string[] {
-  const buyCount = transactions.filter((tx) => isUsdtTransaction(tx) && tx.type === 'buy').length
-  const sellCount = transactions.filter((tx) => isUsdtTransaction(tx) && tx.type === 'sell').length
-  const vnTwdCount = transactions.filter(isVnTwdTransaction).length
-  const vnTwdTxs = transactions.filter(isVnTwdTransaction)
-  const assets = computeTotalAssetsTwd(balances, inventoryCost, vnTwdTxs)
+  const buyCount = transactions.filter((tx) => tx.type === 'buy').length
+  const sellCount = transactions.filter((tx) => tx.type === 'sell').length
+  const assets = computeTotalAssetsTwd(balances, inventoryCost)
+  const dayTotalProfit = computeDayTotalProfit(
+    openingBalances,
+    openingUsdtCost,
+    transactions,
+  )
   return [
-    `交易筆數：${transactions.length}（買 ${buyCount} / 賣 ${sellCount}${
-      vnTwdCount > 0 ? ` / VN換TWD ${vnTwdCount}` : ''
-    }）`,
-    `台幣庫存：${formatNumber(balances.twd)}`,
+    `交易筆數：${transactions.length}（買 ${buyCount} / 賣 ${sellCount}）`,
+    `台幣庫存：${formatTwd(balances.twd)}`,
     `USDT 庫存：${formatNumber(balances.usdt)}${
       balances.usdt > 0 && inventoryCost.twd !== null
         ? `（@${formatRateDisplay(inventoryCost.twd)}）`
         : ''
     }`,
-    `VN 庫存：${formatNumber(balances.vn)}`,
-    `帳面總資產：${formatNumber(assets.total)} TWD${
+    sellCount > 0
+      ? `當日總利潤：${formatProfit(dayTotalProfit)} TWD`
+      : '當日總利潤：—（無賣出）',
+    `帳面總資產：${formatTwd(assets.total)} TWD${
       assets.isComplete ? '' : '（部分換算）'
     }`,
     '',
@@ -554,7 +567,7 @@ function buildSettleConfirmLines(
 }
 
 interface AppSnapshot {
-  transactions: Transaction[]
+  transactions: UsdtTransaction[]
   openingBalances: Balances
   openingUsdtCost: UsdtInventoryCost
   settlements: DailySettlement[]
@@ -605,14 +618,14 @@ type AccentColor = 'emerald' | 'rose' | 'violet'
 
 function formCardClass(accent: AccentColor, isEditing: boolean): string {
   if (isEditing) {
-    return 'shrink-0 rounded-xl border border-slate-200 border-l-4 border-l-amber-400 bg-white p-3 shadow-sm ring-1 ring-amber-100'
+    return 'shrink-0 rounded-lg border border-slate-200 border-l-4 border-l-amber-400 bg-white p-2 shadow-sm ring-1 ring-amber-100'
   }
   const accentBorder = {
     emerald: 'border-l-emerald-500',
     rose: 'border-l-rose-500',
     violet: 'border-l-violet-500',
   }[accent]
-  return `shrink-0 rounded-xl border border-slate-200 border-l-4 ${accentBorder} bg-white p-3 shadow-sm`
+  return `shrink-0 rounded-lg border border-slate-200 border-l-4 ${accentBorder} bg-white p-2 shadow-sm`
 }
 
 function recordCardClass(accent: AccentColor): string {
@@ -621,35 +634,13 @@ function recordCardClass(accent: AccentColor): string {
     rose: 'border-l-rose-500',
     violet: 'border-l-violet-500',
   }[accent]
-  return `flex min-h-[160px] flex-1 flex-col rounded-lg border border-slate-200 border-l-4 ${accentBorder} bg-white p-3 shadow-sm lg:min-h-[200px]`
-}
-
-function AvailableHint({
-  label,
-  amount,
-  spendAmount,
-}: {
-  label: string
-  amount: number
-  spendAmount?: number | null
-}) {
-  const insufficient =
-    spendAmount != null && spendAmount > 0 && spendAmount > amount
-  return (
-    <p
-      className={`mt-0.5 text-[10px] tabular-nums ${
-        insufficient ? 'font-medium text-rose-600' : 'text-slate-400'
-      }`}
-    >
-      可用 {label} {formatNumber(amount)}
-    </p>
-  )
+  return `flex flex-col rounded-lg border border-slate-200 border-l-4 ${accentBorder} bg-white p-1.5 shadow-sm`
 }
 
 function SubmitPreview({ text, warn }: { text: string; warn?: boolean }) {
   return (
     <p
-      className={`rounded-md px-2 py-1 text-[11px] tabular-nums ${
+      className={`rounded px-1.5 py-0.5 text-[10px] tabular-nums ${
         warn ? 'bg-rose-50 text-rose-700' : 'bg-slate-50 text-slate-600'
       }`}
     >
@@ -658,52 +649,20 @@ function SubmitPreview({ text, warn }: { text: string; warn?: boolean }) {
   )
 }
 
-function TotalAssetsSummary({
-  assets,
-  compact = false,
-}: {
-  assets: TotalAssetsTwd
-  compact?: boolean
-}) {
+function TotalAssetsColumn({ assets }: { assets: TotalAssetsTwd }) {
   return (
-    <div
-      className={`rounded border border-indigo-100 bg-indigo-50/60 ${
-        compact ? 'px-2 py-1' : 'px-2.5 py-1.5'
-      }`}
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0">
-        <p className={`text-slate-600 ${compact ? 'text-[10px]' : 'text-xs'}`}>
-          帳面總資產（TWD）
-          {!assets.isComplete && (
-            <span className="ml-1 text-amber-600">部分</span>
-          )}
-        </p>
-        <p
-          className={`font-bold tabular-nums text-indigo-700 ${
-            compact ? 'text-xs' : 'text-sm'
-          }`}
-        >
-          {formatNumber(assets.total)}
-        </p>
-      </div>
-      <p
-        className={`leading-snug tabular-nums text-slate-500 ${
-          compact ? 'mt-0.5 text-[9px]' : 'mt-0.5 text-[10px]'
-        }`}
-      >
-        TWD {formatNumber(assets.twdCash)}
-        {assets.usdtInTwd !== null
-          ? ` · USDT→ ${formatNumber(assets.usdtInTwd)}`
-          : ' · USDT→ —'}
-        {assets.vnInTwd !== null
-          ? ` · VN→ ${formatNumber(assets.vnInTwd)}`
-          : ' · VN→ —'}
-        {assets.dayVnTwdRate !== null && (
-          <span className="text-slate-400">
-            {' '}
-            （V/T @{formatRateDisplay(assets.dayVnTwdRate)}）
+    <div className="rounded-lg border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-indigo-50/40 px-1.5 py-0.5 shadow-sm ring-1 ring-indigo-100/80">
+      <p className="text-[9px] font-semibold leading-tight text-indigo-800/90">
+        帳面總資產
+        <span className="ml-0.5 font-normal text-indigo-600/80">TWD</span>
+        {!assets.isComplete && (
+          <span className="ml-1 rounded bg-amber-100 px-1 py-px text-[8px] font-medium text-amber-700">
+            部分
           </span>
         )}
+      </p>
+      <p className="text-sm font-extrabold tabular-nums leading-tight tracking-tight text-indigo-700">
+        {formatTwd(assets.total)}
       </p>
       {assets.missingNotes.length > 0 && (
         <p className="mt-0.5 text-[9px] text-amber-700">
@@ -714,30 +673,22 @@ function TotalAssetsSummary({
   )
 }
 
-function applyTransaction(balances: Balances, tx: Transaction): Balances {
+function applyTransaction(balances: Balances, tx: UsdtTransaction): Balances {
   const next = { ...balances }
 
-  if (isVnTwdTransaction(tx)) {
-    next.vn -= tx.vnAmount
-    next.twd += tx.twdAmount
-    return next
-  }
-
   if (tx.type === 'buy') {
-    if (tx.fiatCurrency === 'twd') next.twd -= tx.fiatAmount
-    else next.vn -= tx.fiatAmount
+    next.twd -= tx.fiatAmount
     next.usdt += tx.usdtAmount
   } else {
     next.usdt -= tx.usdtAmount
-    if (tx.fiatCurrency === 'twd') next.twd += tx.fiatAmount
-    else next.vn += tx.fiatAmount
+    next.twd += tx.fiatAmount
   }
 
   return next
 }
 
 function recalculateBalances(
-  transactions: Transaction[],
+  transactions: UsdtTransaction[],
   openingBalances: Balances = INITIAL_BALANCES,
 ): Balances {
   const sorted = [...transactions].sort(
@@ -750,7 +701,7 @@ function recalculateBalances(
 }
 
 function validateTransactions(
-  transactions: Transaction[],
+  transactions: UsdtTransaction[],
   openingBalances: Balances = INITIAL_BALANCES,
 ): string | null {
   const sorted = [...transactions].sort(
@@ -760,27 +711,13 @@ function validateTransactions(
   let balances = { ...openingBalances }
 
   for (const tx of sorted) {
-    if (isVnTwdTransaction(tx)) {
-      if (tx.vnAmount <= 0 || tx.twdAmount <= 0) {
-        return '請輸入有效的正數金額'
-      }
-      if (tx.vnAmount > balances.vn) {
-        return 'VN 庫存不足'
-      }
-      balances = applyTransaction(balances, tx)
-      continue
-    }
-
     if (tx.usdtAmount <= 0 || tx.fiatAmount <= 0) {
       return '請輸入有效的正數金額'
     }
 
     if (tx.type === 'buy') {
-      if (tx.fiatCurrency === 'twd' && tx.fiatAmount > balances.twd) {
+      if (tx.fiatAmount > balances.twd) {
         return '台幣庫存不足'
-      }
-      if (tx.fiatCurrency === 'vn' && tx.fiatAmount > balances.vn) {
-        return 'VN 庫存不足'
       }
     } else if (tx.usdtAmount > balances.usdt) {
       return 'USDT 庫存不足'
@@ -792,67 +729,19 @@ function validateTransactions(
   return null
 }
 
-interface CurrencyToggleProps {
-  value: FiatCurrency
-  onChange: (currency: FiatCurrency) => void
-  disabled?: boolean
-  buySide?: boolean
-}
-
-function CurrencyToggle({ value, onChange, disabled, buySide }: CurrencyToggleProps) {
-  return (
-    <div className="inline-flex rounded-md bg-slate-100 p-0.5">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onChange('twd')}
-        className={`rounded px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
-          value === 'twd'
-            ? 'bg-white text-emerald-700 shadow-sm'
-            : 'text-slate-600 hover:text-slate-900'
-        }`}
-      >
-        {buySide ? 'TWD 買' : '換 TWD'}
-      </button>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onChange('vn')}
-        className={`rounded px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
-          value === 'vn'
-            ? 'bg-white text-amber-700 shadow-sm'
-            : 'text-slate-600 hover:text-slate-900'
-        }`}
-      >
-        {buySide ? 'VN 買' : '換 VN'}
-      </button>
-    </div>
-  )
-}
-
 interface TransactionTableProps {
   transactions: UsdtTransaction[]
   editingId: string | null
   onEdit: (tx: UsdtTransaction) => void
   onDelete: (id: string) => void
   accent: 'buy' | 'sell'
-  /** buy 顯示當日買入均價；sell 不顯示均價 */
+  /** buy 顯示當日買入均價；sell 顯示每筆利潤 */
   showDayAverage?: boolean
-}
-
-function CurrencyBadge({ currency }: { currency: FiatCurrency }) {
-  if (currency === 'twd') {
-    return (
-      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-        TWD
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-      VN
-    </span>
-  )
+  sellProfitById?: Map<string, SellProfitInfo>
+  /** 明細 tbody 預設顯示列數，超出捲動 */
+  visibleRows?: number
+  bodyScrollRef?: RefObject<HTMLDivElement | null>
+  onBodyScroll?: (scrollTop: number) => void
 }
 
 function RowActionButtons({
@@ -912,6 +801,131 @@ function RowActionButtons({
   )
 }
 
+const TRANSACTION_VISIBLE_ROWS_MOBILE = 8
+const TRANSACTION_VISIBLE_ROWS_DESKTOP = 12
+
+function useTransactionVisibleRows(): number {
+  const [visibleRows, setVisibleRows] = useState(TRANSACTION_VISIBLE_ROWS_DESKTOP)
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1024px)')
+    const sync = () => {
+      setVisibleRows(media.matches ? TRANSACTION_VISIBLE_ROWS_DESKTOP : TRANSACTION_VISIBLE_ROWS_MOBILE)
+    }
+    sync()
+    media.addEventListener('change', sync)
+    return () => media.removeEventListener('change', sync)
+  }, [])
+
+  return visibleRows
+}
+
+const TRANSACTION_ROW_HEIGHT_REM = 2.25
+const TRANSACTION_HEAD_REM = 2
+const TRANSACTION_FOOT_REM = 2.5
+const TRANSACTION_TABLE_CLASS = 'w-full min-w-[260px] table-fixed text-left text-xs'
+const TRANSACTION_DATA_ROW_STYLE = { height: `${TRANSACTION_ROW_HEIGHT_REM}rem` } as const
+const TRANSACTION_CELL_CLASS = 'align-middle px-1.5 leading-none'
+
+function transactionBodyMaxHeight(visibleRows: number): string {
+  return `calc(${TRANSACTION_ROW_HEIGHT_REM}rem * ${visibleRows})`
+}
+
+function transactionTableStackHeight(visibleRows: number): string {
+  return `calc(${TRANSACTION_HEAD_REM}rem + ${TRANSACTION_ROW_HEIGHT_REM}rem * ${visibleRows} + ${TRANSACTION_FOOT_REM}rem)`
+}
+
+function TransactionTableHeader({
+  isBuy,
+}: {
+  isBuy: boolean
+}) {
+  return (
+    <thead>
+      <tr
+        className="border-b border-slate-200 text-[11px] text-slate-500"
+        style={{ height: `${TRANSACTION_HEAD_REM}rem` }}
+      >
+        <th className={`w-[4.5rem] ${TRANSACTION_CELL_CLASS} font-medium`}>時間</th>
+        <th className={`${TRANSACTION_CELL_CLASS} text-right font-medium`}>USDT</th>
+        <th className={`${TRANSACTION_CELL_CLASS} text-right font-medium`}>TWD</th>
+        <th className={`${TRANSACTION_CELL_CLASS} text-right font-medium`}>匯率</th>
+        {!isBuy && (
+          <th className={`${TRANSACTION_CELL_CLASS} text-right font-medium`}>利潤</th>
+        )}
+        <th className={`w-12 ${TRANSACTION_CELL_CLASS} text-right font-medium`}>操作</th>
+      </tr>
+    </thead>
+  )
+}
+
+function TransactionTableFooter({
+  isBuy,
+  transactions,
+  totalUsdt,
+  totalTwd,
+  twdAvg,
+  showDayAverage,
+  totalProfit,
+  hasProfitData,
+}: {
+  isBuy: boolean
+  transactions: UsdtTransaction[]
+  totalUsdt: number
+  totalTwd: number
+  twdAvg: number | null
+  showDayAverage: boolean
+  totalProfit: number
+  hasProfitData: boolean
+}) {
+  return (
+    <tfoot>
+      <tr
+        className={`border-t-2 bg-slate-50 ${
+          isBuy ? 'border-emerald-200' : 'border-rose-200'
+        }`}
+        style={{ height: `${TRANSACTION_FOOT_REM}rem` }}
+      >
+        <td colSpan={1} className={`${TRANSACTION_CELL_CLASS} font-semibold text-slate-800`}>
+          總結
+          <span className="ml-1 text-[10px] font-normal text-slate-500">
+            {transactions.length} 筆
+          </span>
+        </td>
+        <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums font-medium text-slate-800`}>
+          {formatNumber(totalUsdt)}
+        </td>
+        <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums font-medium text-slate-800`}>
+          {totalTwd > 0 ? formatTwd(totalTwd) : '—'}
+        </td>
+        <td className={`${TRANSACTION_CELL_CLASS} text-right text-[10px]`}>
+          {showDayAverage ? (
+            twdAvg !== null ? (
+              <span className={`font-bold tabular-nums ${isBuy ? 'text-emerald-600' : 'text-rose-600'}`}>
+                TWD/USDT @{formatRateDisplay(twdAvg)}
+              </span>
+            ) : (
+              <span className="text-slate-400">—</span>
+            )
+          ) : (
+            '—'
+          )}
+        </td>
+        {!isBuy && (
+          <td
+            className={`${TRANSACTION_CELL_CLASS} text-right text-[10px] font-bold tabular-nums ${
+              hasProfitData ? profitColorClass(totalProfit) : 'text-slate-400'
+            }`}
+          >
+            {hasProfitData ? formatProfit(totalProfit) : '—'}
+          </td>
+        )}
+        <td className={TRANSACTION_CELL_CLASS} />
+      </tr>
+    </tfoot>
+  )
+}
+
 function TransactionTable({
   transactions,
   editingId,
@@ -919,126 +933,117 @@ function TransactionTable({
   onDelete,
   accent,
   showDayAverage = false,
+  sellProfitById,
+  visibleRows = 8,
+  bodyScrollRef,
+  onBodyScroll,
 }: TransactionTableProps) {
   const isBuy = accent === 'buy'
   const twdAvg = showDayAverage
     ? calculateBuyDayAverageRate(transactions, 'twd')
     : calculateAverageRate(transactions, 'twd')
-  const vnAvg = showDayAverage
-    ? calculateBuyDayAverageRate(transactions, 'vn')
-    : calculateAverageRate(transactions, 'vn')
   const totalUsdt = transactions.reduce((sum, tx) => sum + tx.usdtAmount, 0)
-  const totalTwd = transactions
-    .filter((tx) => tx.fiatCurrency === 'twd')
-    .reduce((sum, tx) => sum + tx.fiatAmount, 0)
-  const totalVn = transactions
-    .filter((tx) => tx.fiatCurrency === 'vn')
-    .reduce((sum, tx) => sum + tx.fiatAmount, 0)
+  const totalTwd = transactions.reduce((sum, tx) => sum + tx.fiatAmount, 0)
+  const totalProfit = !isBuy
+    ? transactions.reduce((sum, tx) => sum + (sellProfitById?.get(tx.id)?.profit ?? 0), 0)
+    : 0
+  const hasProfitData = !isBuy && sellProfitById !== undefined
 
-  if (transactions.length === 0) {
-    return <p className="py-8 text-center text-sm text-slate-400">尚無紀錄</p>
+  const bodyHeight = transactionBodyMaxHeight(visibleRows)
+  const stackHeight = transactionTableStackHeight(visibleRows)
+  const footerProps = {
+    isBuy,
+    transactions,
+    totalUsdt,
+    totalTwd,
+    twdAvg,
+    showDayAverage,
+    totalProfit,
+    hasProfitData,
   }
 
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[280px] text-left text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-slate-500">
-            <th className="w-[4.5rem] shrink-0 pb-3 pr-2 font-medium">時間</th>
-            <th className="pb-3 pr-2 font-medium">幣別</th>
-            <th className="pb-3 pr-2 font-medium text-right">USDT</th>
-            <th className="pb-3 pr-2 font-medium text-right">金額</th>
-            <th className="pb-3 pr-2 font-medium text-right">匯率</th>
-            <th className="w-14 shrink-0 pb-3 pl-1 font-medium text-right">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {transactions.map((tx) => (
-            <tr
-              key={tx.id}
-              className={`border-b border-slate-100 ${
-                editingId === tx.id ? 'bg-amber-50/60' : ''
-              }`}
-            >
-              <td className="whitespace-nowrap py-2 pr-2 tabular-nums text-xs text-slate-600">
-                {formatTableDateTime(tx.timestamp)}
-              </td>
-              <td className="py-2 pr-2">
-                <CurrencyBadge currency={tx.fiatCurrency} />
-              </td>
-              <td className="py-2 pr-2 text-right tabular-nums text-slate-800">
-                {formatNumber(tx.usdtAmount)}
-              </td>
-              <td className="py-2 pr-2 text-right tabular-nums text-slate-800">
-                {formatNumber(tx.fiatAmount)}
-              </td>
-              <td className="py-2 pr-2 text-right tabular-nums text-slate-600">
-                {formatRateDisplay(tx.rate)}
-              </td>
-              <td className="whitespace-nowrap py-2 pl-1 text-right">
-                <RowActionButtons
-                  onEdit={() => onEdit(tx)}
-                  onDelete={() => onDelete(tx.id)}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr
-            className={`border-t-2 bg-slate-50 ${
-              isBuy ? 'border-emerald-200' : 'border-rose-200'
-            }`}
-          >
-            <td colSpan={2} className="py-3 pr-3 font-semibold text-slate-800">
-              總結
-              <span className="ml-1 text-xs font-normal text-slate-500">
-                {transactions.length} 筆
-              </span>
-            </td>
-            <td className="py-3 pr-3 text-right tabular-nums font-medium text-slate-800">
-              {formatNumber(totalUsdt)}
-            </td>
-            <td className="py-3 pr-3 text-right text-xs leading-5 text-slate-700">
-              {totalTwd > 0 && <p>TWD {formatNumber(totalTwd)}</p>}
-              {totalVn > 0 && <p>VN {formatNumber(totalVn)}</p>}
-              {totalTwd === 0 && totalVn === 0 && '—'}
-            </td>
-            <td className="py-3 pr-3 text-right text-xs leading-5">
-              {showDayAverage ? (
-                <>
-                  {twdAvg !== null && (
-                    <p className={`font-bold tabular-nums ${isBuy ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      TWD/USDT @{formatRateDisplay(twdAvg)}
-                    </p>
-                  )}
-                  {vnAvg !== null && (
-                    <p className={`font-bold tabular-nums ${isBuy ? 'text-amber-600' : 'text-rose-600'}`}>
-                      VN/USDT @{formatRateDisplay(vnAvg)}
-                    </p>
-                  )}
-                  {twdAvg === null && vnAvg === null && (
-                    <p className="text-slate-400">—</p>
-                  )}
-                </>
-              ) : (
-                '—'
-              )}
-            </td>
-            <td />
-          </tr>
-        </tfoot>
+  const tableStack = (
+    <div
+      className="flex shrink-0 flex-col overflow-x-auto"
+      style={{ height: stackHeight, minHeight: stackHeight }}
+    >
+      <table className={`${TRANSACTION_TABLE_CLASS} shrink-0`}>
+        <TransactionTableHeader isBuy={isBuy} />
+      </table>
+      <div
+        ref={bodyScrollRef}
+        className="shrink-0 overflow-y-auto overflow-x-auto"
+        style={{ height: bodyHeight, minHeight: bodyHeight, maxHeight: bodyHeight }}
+        onScroll={(event) => onBodyScroll?.(event.currentTarget.scrollTop)}
+      >
+        {transactions.length === 0 ? (
+          <div className="flex h-full min-h-full items-center justify-center text-sm text-slate-400">
+            尚無紀錄
+          </div>
+        ) : (
+          <table className={TRANSACTION_TABLE_CLASS}>
+            <tbody>
+              {transactions.map((tx) => {
+                const profitInfo = sellProfitById?.get(tx.id)
+                return (
+                  <tr
+                    key={tx.id}
+                    style={TRANSACTION_DATA_ROW_STYLE}
+                    className={`border-b border-slate-100 transition-colors hover:bg-slate-100/70 ${
+                      editingId === tx.id ? 'bg-amber-50/60 hover:bg-amber-50/80' : ''
+                    }`}
+                  >
+                    <td className={`w-[4.5rem] whitespace-nowrap ${TRANSACTION_CELL_CLASS} tabular-nums text-[11px] text-slate-600`}>
+                      {formatTableDateTime(tx.timestamp)}
+                    </td>
+                    <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums text-slate-800`}>
+                      {formatNumber(tx.usdtAmount)}
+                    </td>
+                    <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums text-slate-800`}>
+                      {formatTwd(tx.fiatAmount)}
+                    </td>
+                    <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums text-slate-600`}>
+                      {formatRateDisplay(tx.rate)}
+                    </td>
+                    {!isBuy && (
+                      <td
+                        className={`${TRANSACTION_CELL_CLASS} text-right text-[10px] font-semibold tabular-nums ${
+                          profitInfo !== undefined
+                            ? profitColorClass(profitInfo.profit)
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        {profitInfo?.unitCost !== null && profitInfo !== undefined
+                          ? formatProfit(profitInfo.profit)
+                          : '—'}
+                      </td>
+                    )}
+                    <td className={`w-12 whitespace-nowrap ${TRANSACTION_CELL_CLASS} text-right`}>
+                      <RowActionButtons
+                        onEdit={() => onEdit(tx)}
+                        onDelete={() => onDelete(tx.id)}
+                      />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <table className={`${TRANSACTION_TABLE_CLASS} shrink-0`}>
+        <TransactionTableFooter {...footerProps} />
       </table>
     </div>
   )
+
+  return tableStack
 }
 
 interface TradeFormProps {
   type: TransactionType
   title: string
   editTitle: string
-  currency: FiatCurrency
-  onCurrencyChange: (currency: FiatCurrency) => void
   usdt: string
   fiat: string
   rate: string
@@ -1052,14 +1057,14 @@ interface TradeFormProps {
   buttonClass: string
   focusClass: string
   balances: Balances
+  /** 整池 USDT 加權成本（TWD/USDT）；買入顯示成本、賣出算利潤 */
+  inventoryUnitCost?: number | null
 }
 
 function TradeForm({
   type,
   title,
   editTitle,
-  currency,
-  onCurrencyChange,
   usdt,
   fiat,
   rate,
@@ -1073,48 +1078,68 @@ function TradeForm({
   buttonClass,
   focusClass,
   balances,
+  inventoryUnitCost = null,
 }: TradeFormProps) {
   const prefix = type === 'buy' ? 'buy' : 'sell'
-  const rateLabel = currency === 'twd' ? '匯率 (TWD/USDT)' : '匯率 (VN/USDT)'
-  const inputClass = `w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs outline-none transition disabled:bg-slate-50 ${focusClass}`
+  const inputClass = `w-full rounded border border-slate-300 px-1.5 py-1 text-xs outline-none transition disabled:bg-slate-50 ${focusClass}`
 
   const usdtNum = parseFloat(usdt)
   const fiatNum = parseFloat(fiat)
   const usdtValid = !Number.isNaN(usdtNum) && usdtNum > 0
   const fiatValid = !Number.isNaN(fiatNum) && fiatNum > 0
-  const fiatLabel = currency === 'twd' ? 'TWD' : 'VN'
+  const twdInsufficient = type === 'buy' && fiatValid && fiatNum > balances.twd
+  const usdtInsufficient = type === 'sell' && usdtValid && usdtNum > balances.usdt
 
   let previewText: string | null = null
   let previewWarn = false
+  let profitPreview: { text: string; value: number } | null = null
+
   if (usdtValid && fiatValid) {
     if (type === 'buy') {
-      previewText = `−${fiatLabel} ${formatNumber(fiatNum)} · +USDT ${formatNumber(usdtNum)}`
-      previewWarn = currency === 'twd' ? fiatNum > balances.twd : fiatNum > balances.vn
+      previewText = `−TWD ${formatTwd(fiatNum)} · +USDT ${formatNumber(usdtNum)}`
+      previewWarn = fiatNum > balances.twd
     } else {
-      previewText = `−USDT ${formatNumber(usdtNum)} · +${fiatLabel} ${formatNumber(fiatNum)}`
+      previewText = `−USDT ${formatNumber(usdtNum)} · +TWD ${formatTwd(fiatNum)}`
       previewWarn = usdtNum > balances.usdt
+      if (inventoryUnitCost !== null) {
+        const costBasis = usdtNum * inventoryUnitCost
+        const profit = fiatNum - costBasis
+        profitPreview = {
+          text: `成本 ${formatTwd(costBasis)}（@${formatRateDisplay(inventoryUnitCost)}）· 利潤 ${formatProfit(profit)}`,
+          value: profit,
+        }
+      }
     }
   }
 
   return (
     <>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className={`text-sm font-semibold ${accentClass}`}>
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0">
+        <h2 className={`text-xs font-semibold ${accentClass}`}>
           {isEditing ? editTitle : title}
         </h2>
-        <CurrencyToggle
-          value={currency}
-          onChange={onCurrencyChange}
-          disabled={disabled}
-          buySide={type === 'buy'}
-        />
+        {inventoryUnitCost !== null && (
+          <p className="text-[9px] tabular-nums text-slate-500">
+            @{formatRateDisplay(inventoryUnitCost)}
+          </p>
+        )}
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-2">
-        <div className="grid grid-cols-3 gap-2">
+      <form onSubmit={onSubmit} className="space-y-1">
+        <div className="grid grid-cols-3 gap-1">
           <div>
-            <label htmlFor={`${prefix}Usdt`} className="mb-0.5 block text-xs font-medium text-slate-600">
+            <label
+              htmlFor={`${prefix}Usdt`}
+              className={`mb-0 block text-[10px] font-medium leading-tight ${
+                usdtInsufficient ? 'text-rose-600' : 'text-slate-600'
+              }`}
+            >
               USDT
+              {type === 'sell' && (
+                <span className="ml-0.5 font-normal text-slate-400">
+                  ({formatNumber(balances.usdt)})
+                </span>
+              )}
             </label>
             <input
               id={`${prefix}Usdt`}
@@ -1127,17 +1152,10 @@ function TradeForm({
               placeholder="0"
               className={inputClass}
             />
-            {type === 'sell' && (
-              <AvailableHint
-                label="USDT"
-                amount={balances.usdt}
-                spendAmount={usdtValid ? usdtNum : null}
-              />
-            )}
           </div>
           <div>
-            <label htmlFor={`${prefix}Rate`} className="mb-0.5 block text-xs font-medium text-slate-600">
-              {rateLabel}
+            <label htmlFor={`${prefix}Rate`} className="mb-0 block text-[10px] font-medium leading-tight text-slate-600">
+              匯率
             </label>
             <input
               id={`${prefix}Rate`}
@@ -1152,8 +1170,18 @@ function TradeForm({
             />
           </div>
           <div>
-            <label htmlFor={`${prefix}Fiat`} className="mb-0.5 block text-xs font-medium text-slate-600">
-              {currency === 'twd' ? '台幣' : 'VN'}
+            <label
+              htmlFor={`${prefix}Fiat`}
+              className={`mb-0 block text-[10px] font-medium leading-tight ${
+                twdInsufficient ? 'text-rose-600' : 'text-slate-600'
+              }`}
+            >
+              台幣
+              {type === 'buy' && (
+                <span className="ml-0.5 font-normal text-slate-400">
+                  ({formatTwd(balances.twd)})
+                </span>
+              )}
             </label>
             <input
               id={`${prefix}Fiat`}
@@ -1166,29 +1194,32 @@ function TradeForm({
               placeholder="0"
               className={inputClass}
             />
-            {type === 'buy' && (
-              <AvailableHint
-                label={fiatLabel}
-                amount={currency === 'twd' ? balances.twd : balances.vn}
-                spendAmount={fiatValid ? fiatNum : null}
-              />
-            )}
           </div>
         </div>
 
         {previewText && <SubmitPreview text={previewText} warn={previewWarn} />}
 
+        {profitPreview && (
+          <p
+            className={`rounded px-1.5 py-0.5 text-[10px] tabular-nums ${
+              profitPreview.value >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+            }`}
+          >
+            {profitPreview.text}
+          </p>
+        )}
+
         {error && (
-          <p className="rounded-md bg-rose-50 px-2 py-1 text-xs text-rose-600" role="alert">
+          <p className="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] text-rose-600" role="alert">
             {error}
           </p>
         )}
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           <button
             type="submit"
             disabled={disabled}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium text-white transition focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={`rounded px-2.5 py-1 text-[11px] font-medium text-white transition focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
               isEditing
                 ? 'bg-amber-600 hover:bg-amber-700 focus:ring-amber-600/30'
                 : buttonClass
@@ -1200,7 +1231,7 @@ function TradeForm({
             <button
               type="button"
               onClick={onCancel}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+              className="rounded border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 transition hover:bg-slate-50"
             >
               取消
             </button>
@@ -1208,232 +1239,6 @@ function TradeForm({
         </div>
       </form>
     </>
-  )
-}
-
-interface VnTwdFormProps {
-  vn: string
-  twd: string
-  rate: string
-  error: string
-  isEditing: boolean
-  disabled: boolean
-  onFieldChange: (field: 'vn' | 'twd' | 'rate', value: string) => void
-  onSubmit: (e: React.FormEvent) => void
-  onCancel: () => void
-  vnBalance: number
-}
-
-function VnTwdForm({
-  vn,
-  twd,
-  rate,
-  error,
-  isEditing,
-  disabled,
-  onFieldChange,
-  onSubmit,
-  onCancel,
-  vnBalance,
-}: VnTwdFormProps) {
-  const inputClass =
-    'w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs outline-none transition disabled:bg-slate-50 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20'
-
-  const vnNum = parseFloat(vn)
-  const twdNum = parseFloat(twd)
-  const vnValid = !Number.isNaN(vnNum) && vnNum > 0
-  const twdValid = !Number.isNaN(twdNum) && twdNum > 0
-
-  let previewText: string | null = null
-  let previewWarn = false
-  if (vnValid && twdValid) {
-    previewText = `−VN ${formatNumber(vnNum)} · +TWD ${formatNumber(twdNum)}`
-    previewWarn = vnNum > vnBalance
-  }
-
-  return (
-    <>
-      <h2 className="mb-2 text-sm font-semibold text-violet-700">
-        {isEditing ? '編輯 VN 換 TWD' : 'VN 換 TWD'}
-      </h2>
-
-      <form onSubmit={onSubmit} className="space-y-2">
-        <div className="grid grid-cols-3 gap-2">
-          <div>
-            <label htmlFor="vnTwdVn" className="mb-0.5 block text-xs font-medium text-slate-600">
-              VN
-            </label>
-            <input
-              id="vnTwdVn"
-              type="number"
-              min="0"
-              step="any"
-              value={vn}
-              onChange={(e) => onFieldChange('vn', e.target.value)}
-              disabled={disabled}
-              placeholder="0"
-              className={inputClass}
-            />
-            <AvailableHint
-              label="VN"
-              amount={vnBalance}
-              spendAmount={vnValid ? vnNum : null}
-            />
-          </div>
-          <div>
-            <label htmlFor="vnTwdRate" className="mb-0.5 block text-xs font-medium text-slate-600">
-              匯率 (VN/TWD)
-            </label>
-            <input
-              id="vnTwdRate"
-              type="number"
-              min="0"
-              step="any"
-              value={rate}
-              onChange={(e) => onFieldChange('rate', e.target.value)}
-              disabled={disabled}
-              placeholder="0"
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label htmlFor="vnTwdTwd" className="mb-0.5 block text-xs font-medium text-slate-600">
-              台幣
-            </label>
-            <input
-              id="vnTwdTwd"
-              type="number"
-              min="0"
-              step="any"
-              value={twd}
-              onChange={(e) => onFieldChange('twd', e.target.value)}
-              disabled={disabled}
-              placeholder="0"
-              className={inputClass}
-            />
-          </div>
-        </div>
-
-        {previewText && <SubmitPreview text={previewText} warn={previewWarn} />}
-
-        {error && (
-          <p className="rounded-md bg-rose-50 px-2 py-1 text-xs text-rose-600" role="alert">
-            {error}
-          </p>
-        )}
-
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="submit"
-            disabled={disabled}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium text-white transition focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-              isEditing
-                ? 'bg-amber-600 hover:bg-amber-700 focus:ring-amber-600/30'
-                : 'bg-violet-600 hover:bg-violet-700 focus:ring-violet-600/30'
-            }`}
-          >
-            {isEditing ? '儲存' : '新增兌換'}
-          </button>
-          {isEditing && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
-            >
-              取消
-            </button>
-          )}
-        </div>
-      </form>
-    </>
-  )
-}
-
-interface VnTwdTableProps {
-  transactions: VnTwdTransaction[]
-  editingId: string | null
-  onEdit: (tx: VnTwdTransaction) => void
-  onDelete: (id: string) => void
-}
-
-function VnTwdTable({ transactions, editingId, onEdit, onDelete }: VnTwdTableProps) {
-  const totalVn = transactions.reduce((sum, tx) => sum + tx.vnAmount, 0)
-  const totalTwd = transactions.reduce((sum, tx) => sum + tx.twdAmount, 0)
-  const dayAvg = calculateVnTwdDayAverageRate(transactions)
-
-  if (transactions.length === 0) {
-    return <p className="py-8 text-center text-sm text-slate-400">尚無紀錄</p>
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[280px] text-left text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-slate-500">
-            <th className="w-[4.5rem] shrink-0 pb-3 pr-2 font-medium">時間</th>
-            <th className="pb-3 pr-2 font-medium text-right">VN</th>
-            <th className="pb-3 pr-2 font-medium text-right">TWD</th>
-            <th className="pb-3 pr-2 font-medium text-right">匯率</th>
-            <th className="w-14 shrink-0 pb-3 pl-1 font-medium text-right">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {transactions.map((tx) => (
-            <tr
-              key={tx.id}
-              className={`border-b border-slate-100 ${
-                editingId === tx.id ? 'bg-amber-50/60' : ''
-              }`}
-            >
-              <td className="whitespace-nowrap py-2 pr-2 tabular-nums text-xs text-slate-600">
-                {formatTableDateTime(tx.timestamp)}
-              </td>
-              <td className="py-2 pr-2 text-right tabular-nums text-amber-700">
-                {formatNumber(tx.vnAmount)}
-              </td>
-              <td className="py-2 pr-2 text-right tabular-nums text-emerald-700">
-                {formatNumber(tx.twdAmount)}
-              </td>
-              <td className="py-2 pr-2 text-right tabular-nums text-slate-600">
-                {formatRateDisplay(tx.rate)}
-              </td>
-              <td className="whitespace-nowrap py-2 pl-1 text-right">
-                <RowActionButtons
-                  onEdit={() => onEdit(tx)}
-                  onDelete={() => onDelete(tx.id)}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="border-t-2 border-violet-200 bg-slate-50">
-            <td className="py-3 pr-3 font-semibold text-slate-800">
-              總結
-              <span className="ml-1 text-xs font-normal text-slate-500">
-                {transactions.length} 筆
-              </span>
-            </td>
-            <td className="py-3 pr-3 text-right tabular-nums font-medium text-amber-700">
-              {formatNumber(totalVn)}
-            </td>
-            <td className="py-3 pr-3 text-right tabular-nums font-medium text-emerald-700">
-              {formatNumber(totalTwd)}
-            </td>
-            <td className="py-3 pr-3 text-right text-xs">
-              {dayAvg !== null ? (
-                <p className="font-bold tabular-nums text-violet-600">
-                  @{formatRateDisplay(dayAvg)}
-                </p>
-              ) : (
-                <p className="text-slate-400">—</p>
-              )}
-            </td>
-            <td />
-          </tr>
-        </tfoot>
-      </table>
-    </div>
   )
 }
 
@@ -1445,6 +1250,25 @@ interface SettlementsPanelProps {
   currentTotalAssets: TotalAssetsTwd
   /** 本營業日尚有未結算交易時，最新卡才用即時均價 */
   hasCurrentPeriodTransactions: boolean
+  currentDayTotalProfit: number
+}
+
+function CollapsibleSection({
+  open,
+  children,
+}: {
+  open: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <div
+      className={`grid transition-[grid-template-rows] duration-300 ease-in-out motion-reduce:transition-none ${
+        open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+      }`}
+    >
+      <div className="overflow-hidden">{children}</div>
+    </div>
+  )
 }
 
 function SettlementsPanel({
@@ -1454,7 +1278,23 @@ function SettlementsPanel({
   currentDayBuyAvg,
   currentTotalAssets,
   hasCurrentPeriodTransactions,
+  currentDayTotalProfit,
 }: SettlementsPanelProps) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const cumulativeTotalProfit =
+    settlements.reduce((sum, item) => sum + item.dayTotalProfit, 0) +
+    (hasCurrentPeriodTransactions ? currentDayTotalProfit : 0)
+
   if (settlements.length === 0) {
     return (
       <p className="rounded-lg border border-slate-200 bg-white py-8 text-center text-xs text-slate-400 shadow-sm">
@@ -1465,11 +1305,31 @@ function SettlementsPanel({
 
   return (
     <div className="space-y-2">
+      <div className="rounded-lg border border-indigo-200 bg-indigo-50/80 px-3 py-2 shadow-sm">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0">
+          <p className="text-xs font-medium text-indigo-900">累計總利潤</p>
+          <p
+            className={`text-base font-bold tabular-nums ${
+              cumulativeTotalProfit > 0
+                ? 'text-emerald-600'
+                : cumulativeTotalProfit < 0
+                  ? 'text-rose-600'
+                  : 'text-slate-500'
+            }`}
+          >
+            {formatProfit(cumulativeTotalProfit)} TWD
+          </p>
+        </div>
+        <p className="mt-0.5 text-[10px] text-indigo-700/70">
+          共 {settlements.length} 次結算
+          {hasCurrentPeriodTransactions ? ' · 含本營業日未結算' : ''}
+        </p>
+      </div>
+
       {settlements.map((item, index) => {
         const isLatest = index === 0
         const twdBalance = isLatest ? currentBalances.twd : item.twdBalance
         const usdtBalance = isLatest ? currentBalances.usdt : item.usdtBalance
-        const vnBalance = isLatest ? currentBalances.vn : item.vnBalance
         const twdAvg = isLatest
           ? currentInventoryCost.twd
           : item.usdtInventoryAvgTwd
@@ -1477,90 +1337,118 @@ function SettlementsPanel({
           isLatest && hasCurrentPeriodTransactions
             ? currentDayBuyAvg.twd
             : item.dayBuyAvgTwd
-        const dayBuyVn =
-          isLatest && hasCurrentPeriodTransactions
-            ? currentDayBuyAvg.vn
-            : item.dayBuyAvgVn
         const displayAssets =
           isLatest && hasCurrentPeriodTransactions
             ? currentTotalAssets
             : totalAssetsFromSettlement(item)
+        const dayTotalProfit =
+          isLatest && hasCurrentPeriodTransactions
+            ? currentDayTotalProfit
+            : item.dayTotalProfit
+        const isExpanded = expandedIds.has(item.id)
+        const settledLabel = formatSettlementDateTime(item.settledAt)
 
         return (
         <article
           key={item.id}
-          className={`rounded-lg border bg-white p-3 shadow-sm ${
+          className={`rounded-lg border bg-white shadow-sm ${
             isLatest ? 'border-indigo-200 ring-1 ring-indigo-100' : 'border-slate-200'
           }`}
         >
-          <header className="mb-2 flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
-            <div className="flex items-center gap-1.5">
-              <h3 className="text-sm font-bold text-slate-900">{item.dateLabel}</h3>
-              {isLatest && (
-                <span className="rounded-full bg-indigo-50 px-1.5 py-px text-[10px] font-medium text-indigo-700">
-                  目前整池
-                </span>
-              )}
-            </div>
-            <span className="shrink-0 text-[10px] text-slate-400">
-              {item.transactionCount} 筆 ·{' '}
-              {item.settledAt.toLocaleTimeString('zh-TW', {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false,
-              })}{' '}
-              結算
-            </span>
-          </header>
-
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <p className="text-[10px] text-slate-500">TWD</p>
-              <p className="mt-0.5 text-sm font-bold tabular-nums text-emerald-600">
-                {formatNumber(twdBalance)}
+          <button
+            type="button"
+            onClick={() => toggleExpanded(item.id)}
+            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-slate-50"
+          >
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0">
+                <h3 className="text-sm font-semibold tabular-nums text-slate-800">
+                  {settledLabel}
+                </h3>
+                {isLatest && (
+                  <span className="rounded-full bg-indigo-50 px-1.5 py-px text-[10px] font-medium text-indigo-700">
+                    目前整池
+                  </span>
+                )}
+                <span className="text-[10px] text-slate-400">{item.transactionCount} 筆</span>
+              </div>
+              <p
+                className={`overflow-hidden text-[10px] tabular-nums text-slate-500 transition-all duration-300 ease-in-out motion-reduce:transition-none ${
+                  isExpanded ? 'mt-0 max-h-0 opacity-0' : 'mt-0.5 max-h-8 opacity-100'
+                }`}
+              >
+                總資產 {formatTwd(displayAssets.total)} TWD
               </p>
             </div>
-            <div>
-              <p className="text-[10px] text-slate-500">USDT</p>
-              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1 gap-y-0">
-                <p className="text-sm font-bold tabular-nums text-sky-600">
-                  {formatNumber(usdtBalance)}
-                </p>
-                {usdtBalance > 0 && twdAvg !== null && (
-                  <span className="text-[10px] tabular-nums text-slate-400">
-                    @{formatRateDisplay(twdAvg)}
+            <div className="flex shrink-0 items-center gap-2">
+              <p
+                className={`text-xs font-bold tabular-nums ${
+                  dayTotalProfit > 0
+                    ? 'text-emerald-600'
+                    : dayTotalProfit < 0
+                      ? 'text-rose-600'
+                      : 'text-slate-500'
+                }`}
+              >
+                {formatProfit(dayTotalProfit)}
+              </p>
+              <svg
+                className={`h-4 w-4 text-slate-400 transition-transform duration-300 ease-in-out motion-reduce:transition-none ${
+                  isExpanded ? 'rotate-180' : ''
+                }`}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
+              </svg>
+            </div>
+          </button>
+
+          <CollapsibleSection open={isExpanded}>
+            <div className="border-t border-slate-100 px-3 pb-3 pt-2">
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <p className="text-[10px] text-slate-500">TWD</p>
+                  <p className="mt-0.5 text-sm font-bold tabular-nums text-emerald-600">
+                    {formatTwd(twdBalance)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-500">USDT</p>
+                  <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1 gap-y-0">
+                    <p className="text-sm font-bold tabular-nums text-sky-600">
+                      {formatNumber(usdtBalance)}
+                    </p>
+                    {usdtBalance > 0 && twdAvg !== null && (
+                      <span className="text-[10px] tabular-nums text-slate-400">
+                        @{formatRateDisplay(twdAvg)}
+                      </span>
+                    )}
+                    {usdtBalance > 0 && displayAssets.usdtInTwd !== null && (
+                      <span className="text-[10px] tabular-nums text-sky-600/80">
+                        估值 {formatTwd(displayAssets.usdtInTwd)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <TotalAssetsColumn assets={displayAssets} />
+              </div>
+
+              <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0 text-[10px] text-slate-600">
+                <span className="text-slate-400">當日買入均價</span>
+                {dayBuyTwd !== null ? (
+                  <span className="tabular-nums">
+                    TWD/USDT <span className="font-semibold">@{formatRateDisplay(dayBuyTwd)}</span>
                   </span>
+                ) : (
+                  <span className="text-slate-400">—</span>
                 )}
               </div>
             </div>
-            <div>
-              <p className="text-[10px] text-slate-500">VN</p>
-              <p className="mt-0.5 text-sm font-bold tabular-nums text-amber-600">
-                {formatNumber(vnBalance)}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-1.5">
-            <TotalAssetsSummary assets={displayAssets} compact />
-          </div>
-
-          <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0 text-[10px] text-slate-600">
-            <span className="text-slate-400">當日買入均價</span>
-            {dayBuyTwd !== null && (
-              <span className="tabular-nums">
-                T <span className="font-semibold">@{formatRateDisplay(dayBuyTwd)}</span>
-              </span>
-            )}
-            {dayBuyVn !== null && (
-              <span className="tabular-nums">
-                VN <span className="font-semibold">@{formatRateDisplay(dayBuyVn)}</span>
-              </span>
-            )}
-            {dayBuyTwd === null && dayBuyVn === null && (
-              <span className="text-slate-400">—</span>
-            )}
-          </div>
+          </CollapsibleSection>
         </article>
         )
       })}
@@ -1568,7 +1456,84 @@ function SettlementsPanel({
   )
 }
 
+interface AppNavProps {
+  activeTab: PageTab
+  settlementsCount: number
+  onSelect: (tab: PageTab) => void
+  layout: 'sidebar' | 'drawer'
+  onNavigate?: () => void
+}
+
+function AppNav({ activeTab, settlementsCount, onSelect, layout, onNavigate }: AppNavProps) {
+  const isDrawer = layout === 'drawer'
+  const navClass = isDrawer ? 'space-y-1 p-3' : 'space-y-1'
+  const buttonClass = (tab: PageTab) =>
+    `w-full rounded-md font-medium leading-snug transition ${
+      isDrawer ? 'px-3 py-2.5 text-left text-sm' : 'px-1.5 py-2 text-center text-xs'
+    } ${
+      activeTab === tab
+        ? 'bg-slate-900 text-white'
+        : 'text-slate-600 hover:bg-slate-100'
+    }`
+
+  const selectTab = (tab: PageTab) => {
+    onSelect(tab)
+    onNavigate?.()
+  }
+
+  return (
+    <nav className={navClass}>
+      <button type="button" onClick={() => selectTab('daily')} className={buttonClass('daily')}>
+        每日明細
+      </button>
+      <button
+        type="button"
+        onClick={() => selectTab('settlements')}
+        className={buttonClass('settlements')}
+      >
+        每日結算
+        {settlementsCount > 0 && (
+          <span className={isDrawer ? 'ml-1 text-xs opacity-70' : 'block text-[10px] opacity-70'}>
+            ({settlementsCount})
+          </span>
+        )}
+      </button>
+    </nav>
+  )
+}
+
+function MobileNavCloseIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      aria-hidden
+    >
+      <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  )
+}
+
+function MobileNavMenuIcon() {
+  return (
+    <svg
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      aria-hidden
+    >
+      <path strokeLinecap="round" d="M4 7h16M4 12h16M4 17h16" />
+    </svg>
+  )
+}
+
 function App() {
+  const tableVisibleRows = useTransactionVisibleRows()
   const persistedRef = useRef(loadPersistedAppState())
   const persisted = persistedRef.current
 
@@ -1582,32 +1547,45 @@ function App() {
   const [settlements, setSettlements] = useState<DailySettlement[]>(
     persisted?.settlements ?? [],
   )
-  const [transactions, setTransactions] = useState<Transaction[]>(
-    persisted?.transactions ?? [],
+  const [transactions, setTransactions] = useState<UsdtTransaction[]>(
+    filterActiveTransactions(persisted?.transactions ?? []),
   )
 
-  const [buyCurrency, setBuyCurrency] = useState<FiatCurrency>('twd')
   const [buyUsdtAmount, setBuyUsdtAmount] = useState('')
   const [buyFiatAmount, setBuyFiatAmount] = useState('')
   const [buyRate, setBuyRate] = useState('')
   const [buyError, setBuyError] = useState('')
 
-  const [sellCurrency, setSellCurrency] = useState<FiatCurrency>('twd')
   const [sellUsdtAmount, setSellUsdtAmount] = useState('')
   const [sellFiatAmount, setSellFiatAmount] = useState('')
   const [sellRate, setSellRate] = useState('')
   const [sellError, setSellError] = useState('')
-
-  const [vnTwdVnAmount, setVnTwdVnAmount] = useState('')
-  const [vnTwdTwdAmount, setVnTwdTwdAmount] = useState('')
-  const [vnTwdRate, setVnTwdRate] = useState('')
-  const [vnTwdError, setVnTwdError] = useState('')
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingCategory, setEditingCategory] = useState<EditingCategory | null>(null)
   const [undoSnapshot, setUndoSnapshot] = useState<AppSnapshot | null>(null)
   const [undoMessage, setUndoMessage] = useState('')
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const buyBodyScrollRef = useRef<HTMLDivElement>(null)
+  const sellBodyScrollRef = useRef<HTMLDivElement>(null)
+  const syncBodyScrollLock = useRef(false)
+
+  useEffect(() => {
+    setMobileNavOpen(false)
+  }, [activeTab])
+
+  const closeMobileNav = () => setMobileNavOpen(false)
+
+  const syncTransactionBodyScroll = (source: 'buy' | 'sell', scrollTop: number) => {
+    if (syncBodyScrollLock.current) return
+    syncBodyScrollLock.current = true
+    const target = source === 'buy' ? sellBodyScrollRef.current : buyBodyScrollRef.current
+    if (target && target.scrollTop !== scrollTop) {
+      target.scrollTop = scrollTop
+    }
+    syncBodyScrollLock.current = false
+  }
 
   useEffect(() => {
     savePersistedAppState({
@@ -1630,10 +1608,9 @@ function App() {
   )
 
   const dayBuyAvg = useMemo((): UsdtInventoryCost => {
-    const usdtTxs = transactions.filter(isUsdtTransaction)
     return {
-      twd: calculateBuyDayAverageRate(usdtTxs, 'twd'),
-      vn: calculateBuyDayAverageRate(usdtTxs, 'vn'),
+      twd: calculateBuyDayAverageRate(transactions, 'twd'),
+      vn: null,
     }
   }, [transactions])
 
@@ -1659,27 +1636,26 @@ function App() {
   }
 
   const buyTransactions = useMemo(
-    () =>
-      transactions.filter(
-        (tx): tx is UsdtTransaction => isUsdtTransaction(tx) && tx.type === 'buy',
-      ),
+    () => transactions.filter((tx) => tx.type === 'buy'),
     [transactions],
   )
   const sellTransactions = useMemo(
-    () =>
-      transactions.filter(
-        (tx): tx is UsdtTransaction => isUsdtTransaction(tx) && tx.type === 'sell',
-      ),
+    () => transactions.filter((tx) => tx.type === 'sell'),
     [transactions],
   )
-  const vnTwdTransactions = useMemo(
-    () => transactions.filter(isVnTwdTransaction),
-    [transactions],
+  const sellProfitById = useMemo(
+    () => computeSellProfitById(openingBalances, openingUsdtCost, transactions),
+    [openingBalances, openingUsdtCost, transactions],
+  )
+
+  const dayTotalProfit = useMemo(
+    () => computeDayTotalProfit(openingBalances, openingUsdtCost, transactions),
+    [openingBalances, openingUsdtCost, transactions],
   )
 
   const totalAssets = useMemo(
-    () => computeTotalAssetsTwd(balances, inventoryCost, vnTwdTransactions),
-    [balances, inventoryCost, vnTwdTransactions],
+    () => computeTotalAssetsTwd(balances, inventoryCost),
+    [balances, inventoryCost],
   )
 
   const resetBuyForm = () => {
@@ -1687,7 +1663,6 @@ function App() {
     setBuyFiatAmount('')
     setBuyRate('')
     setBuyError('')
-    setBuyCurrency('twd')
     if (editingCategory === 'buy') {
       setEditingId(null)
       setEditingCategory(null)
@@ -1699,19 +1674,7 @@ function App() {
     setSellFiatAmount('')
     setSellRate('')
     setSellError('')
-    setSellCurrency('twd')
     if (editingCategory === 'sell') {
-      setEditingId(null)
-      setEditingCategory(null)
-    }
-  }
-
-  const resetVnTwdForm = () => {
-    setVnTwdVnAmount('')
-    setVnTwdTwdAmount('')
-    setVnTwdRate('')
-    setVnTwdError('')
-    if (editingCategory === 'vn_twd') {
       setEditingId(null)
       setEditingCategory(null)
     }
@@ -1739,30 +1702,17 @@ function App() {
     setSellRate(next.rate)
   }
 
-  const updateVnTwdForm = (field: 'vn' | 'twd' | 'rate', value: string) => {
-    const next = syncVnTwdFormFields(field, value, {
-      vn: vnTwdVnAmount,
-      twd: vnTwdTwdAmount,
-      rate: vnTwdRate,
-    })
-    setVnTwdVnAmount(next.vn)
-    setVnTwdTwdAmount(next.twd)
-    setVnTwdRate(next.rate)
-  }
-
   const handleSubmit = (type: TransactionType, e: React.FormEvent) => {
     e.preventDefault()
 
     const isBuy = type === 'buy'
     const usdtStr = isBuy ? buyUsdtAmount : sellUsdtAmount
     const fiatStr = isBuy ? buyFiatAmount : sellFiatAmount
-    const currency = isBuy ? buyCurrency : sellCurrency
     const setError = isBuy ? setBuyError : setSellError
     const otherSetError = isBuy ? setSellError : setBuyError
 
     setError('')
     otherSetError('')
-    setVnTwdError('')
 
     const usdt = parseFloat(usdtStr)
     const fiat = parseFloat(fiatStr)
@@ -1775,11 +1725,11 @@ function App() {
     const rate = calculateRate(fiat, usdt)
     const isEditing = editingId !== null && editingCategory === type
 
-    const buildUpdatedList = (list: Transaction[]) => {
+    const buildUpdatedList = (list: UsdtTransaction[]) => {
       if (isEditing) {
         return list.map((tx) =>
-          tx.id === editingId && isUsdtTransaction(tx)
-            ? { ...tx, type, fiatCurrency: currency, usdtAmount: usdt, fiatAmount: fiat, rate }
+          tx.id === editingId
+            ? { ...tx, type, fiatCurrency: 'twd' as const, usdtAmount: usdt, fiatAmount: fiat, rate }
             : tx,
         )
       }
@@ -1788,7 +1738,7 @@ function App() {
         timestamp: new Date(),
         category: 'usdt',
         type,
-        fiatCurrency: currency,
+        fiatCurrency: 'twd',
         usdtAmount: usdt,
         fiatAmount: fiat,
         rate,
@@ -1808,83 +1758,21 @@ function App() {
     else resetSellForm()
   }
 
-  const handleVnTwdSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-
-    setVnTwdError('')
-    setBuyError('')
-    setSellError('')
-
-    const vn = parseFloat(vnTwdVnAmount)
-    const twd = parseFloat(vnTwdTwdAmount)
-
-    if (Number.isNaN(vn) || Number.isNaN(twd) || vn <= 0 || twd <= 0) {
-      setVnTwdError('請輸入有效的正數金額')
-      return
-    }
-
-    const rate = calculateVnTwdRate(vn, twd)
-    const isEditing = editingId !== null && editingCategory === 'vn_twd'
-
-    const buildUpdatedList = (list: Transaction[]) => {
-      if (isEditing) {
-        return list.map((tx) =>
-          tx.id === editingId && isVnTwdTransaction(tx)
-            ? { ...tx, vnAmount: vn, twdAmount: twd, rate }
-            : tx,
-        )
-      }
-      const newTransaction: VnTwdTransaction = {
-        id: crypto.randomUUID(),
-        timestamp: new Date(),
-        category: 'vn_twd',
-        vnAmount: vn,
-        twdAmount: twd,
-        rate,
-      }
-      return [newTransaction, ...list]
-    }
-
-    const updatedTransactions = buildUpdatedList(transactions)
-    const validationError = validateTransactions(updatedTransactions, openingBalances)
-    if (validationError) {
-      setVnTwdError(validationError)
-      return
-    }
-
-    setTransactions(updatedTransactions)
-    resetVnTwdForm()
-  }
-
   const handleEdit = (tx: UsdtTransaction) => {
     setEditingId(tx.id)
     setEditingCategory(tx.type)
     setBuyError('')
     setSellError('')
-    setVnTwdError('')
 
     if (tx.type === 'buy') {
-      setBuyCurrency(tx.fiatCurrency)
       setBuyUsdtAmount(String(tx.usdtAmount))
       setBuyFiatAmount(String(tx.fiatAmount))
       setBuyRate(formatRateCalc(tx.rate))
     } else {
-      setSellCurrency(tx.fiatCurrency)
       setSellUsdtAmount(String(tx.usdtAmount))
       setSellFiatAmount(String(tx.fiatAmount))
       setSellRate(formatRateCalc(tx.rate))
     }
-  }
-
-  const handleEditVnTwd = (tx: VnTwdTransaction) => {
-    setEditingId(tx.id)
-    setEditingCategory('vn_twd')
-    setBuyError('')
-    setSellError('')
-    setVnTwdError('')
-    setVnTwdVnAmount(String(tx.vnAmount))
-    setVnTwdTwdAmount(String(tx.twdAmount))
-    setVnTwdRate(formatRateCalc(tx.rate))
   }
 
   const executeDelete = (id: string) => {
@@ -1894,7 +1782,6 @@ function App() {
     if (editingId === id) {
       resetBuyForm()
       resetSellForm()
-      resetVnTwdForm()
       setEditingId(null)
       setEditingCategory(null)
     }
@@ -1922,7 +1809,6 @@ function App() {
   const cancelEditing = () => {
     if (editingCategory === 'buy') resetBuyForm()
     else if (editingCategory === 'sell') resetSellForm()
-    else if (editingCategory === 'vn_twd') resetVnTwdForm()
   }
 
   const editingBannerLabel =
@@ -1930,13 +1816,10 @@ function App() {
       ? '正在編輯買入交易'
       : editingCategory === 'sell'
         ? '正在編輯賣出交易'
-        : editingCategory === 'vn_twd'
-          ? '正在編輯 VN 換 TWD 交易'
-          : null
+        : null
 
   const isEditingBuy = editingCategory === 'buy'
   const isEditingSell = editingCategory === 'sell'
-  const isEditingVnTwd = editingCategory === 'vn_twd'
 
   const executeSettle = () => {
     const snapshot = createSnapshot()
@@ -1947,23 +1830,28 @@ function App() {
       transactions,
     )
 
-    const usdtTxs = transactions.filter(isUsdtTransaction)
-    const vnTwdTxs = transactions.filter(isVnTwdTransaction)
-    const assetsAtSettle = computeTotalAssetsTwd(balances, inventoryAtSettle, vnTwdTxs)
+    const usdtTxs = transactions
+    const assetsAtSettle = computeTotalAssetsTwd(balances, inventoryAtSettle)
+    const settledDayProfit = computeDayTotalProfit(
+      openingBalances,
+      openingUsdtCost,
+      transactions,
+    )
 
     const settlement: DailySettlement = {
       id: crypto.randomUUID(),
       settledAt: new Date(),
-      dateLabel: formatSettlementDate(new Date()),
+      dateLabel: formatSettlementDateTime(new Date()),
       twdBalance: balances.twd,
       usdtBalance: balances.usdt,
       vnBalance: balances.vn,
       usdtInventoryAvgTwd: inventoryAtSettle.twd,
       usdtInventoryAvgVn: inventoryAtSettle.vn,
       dayBuyAvgTwd: calculateBuyDayAverageRate(usdtTxs, 'twd'),
-      dayBuyAvgVn: calculateBuyDayAverageRate(usdtTxs, 'vn'),
+      dayBuyAvgVn: null,
       ...settlementFromTotalAssets(assetsAtSettle),
       transactionCount: transactions.length,
+      dayTotalProfit: settledDayProfit,
     }
 
     setSettlements((prev) => [settlement, ...prev])
@@ -1972,7 +1860,6 @@ function App() {
     setTransactions([])
     resetBuyForm()
     resetSellForm()
-    resetVnTwdForm()
     setEditingId(null)
     setEditingCategory(null)
     setActiveTab('settlements')
@@ -1996,12 +1883,48 @@ function App() {
 
     setConfirmDialog({
       title: '確定結算今日明細？',
-      lines: buildSettleConfirmLines(transactions, balances, inventoryCost),
+      lines: buildSettleConfirmLines(
+        transactions,
+        balances,
+        inventoryCost,
+        openingBalances,
+        openingUsdtCost,
+      ),
       confirmLabel: '確認結算',
       variant: 'primary',
       onConfirm: () => {
         setConfirmDialog(null)
         executeSettle()
+      },
+    })
+  }
+
+  const executeResetAll = () => {
+    setTransactions([])
+    setSettlements([])
+    setOpeningBalances({ ...INITIAL_BALANCES })
+    setOpeningUsdtCost({ ...EMPTY_USDT_COST })
+    resetBuyForm()
+    resetSellForm()
+    setEditingId(null)
+    setEditingCategory(null)
+    setUndoSnapshot(null)
+    setUndoMessage('')
+    setActiveTab('daily')
+  }
+
+  const handleResetAll = () => {
+    setConfirmDialog({
+      title: '確定清空全部資料？',
+      lines: [
+        '將刪除所有交易與結算紀錄，並還原初始餘額。',
+        '此操作無法復原，僅供測試使用。',
+      ],
+      confirmLabel: '確認清空',
+      variant: 'danger',
+      onConfirm: () => {
+        setConfirmDialog(null)
+        executeResetAll()
       },
     })
   }
@@ -2019,116 +1942,145 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="h-dvh overflow-hidden bg-slate-50 text-slate-900">
       <ConfirmModal dialog={confirmDialog} onCancel={() => setConfirmDialog(null)} />
-      <div className="flex min-h-screen w-full">
-        {/* 左側頁籤 */}
-        <aside className="w-[5.5rem] shrink-0 border-r border-slate-200 bg-white px-1.5 py-3">
-          <nav className="space-y-1">
-            <button
-              type="button"
-              onClick={() => setActiveTab('daily')}
-              className={`w-full rounded-md px-1.5 py-2 text-center text-xs font-medium leading-snug transition ${
-                activeTab === 'daily'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              每日明細
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('settlements')}
-              className={`w-full rounded-md px-1.5 py-2 text-center text-xs font-medium leading-snug transition ${
-                activeTab === 'settlements'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              每日結算
-              {settlements.length > 0 && (
-                <span className="block text-[10px] opacity-70">({settlements.length})</span>
-              )}
-            </button>
-          </nav>
+      <div className="flex h-full w-full">
+        <aside className="hidden w-[5.5rem] shrink-0 border-r border-slate-200 bg-white px-1.5 py-3 lg:block">
+          <AppNav
+            activeTab={activeTab}
+            settlementsCount={settlements.length}
+            onSelect={setActiveTab}
+            layout="sidebar"
+          />
         </aside>
 
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col px-3 py-2 sm:px-4">
+        <div
+          className={`fixed inset-0 z-40 lg:hidden ${mobileNavOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+          aria-hidden={!mobileNavOpen}
+        >
+          <button
+            type="button"
+            aria-label="關閉選單"
+            tabIndex={mobileNavOpen ? 0 : -1}
+            className={`absolute inset-0 bg-black/40 ${mobileNavOpen ? 'opacity-100' : 'opacity-0'}`}
+            onClick={closeMobileNav}
+          />
+          <aside
+            className={`absolute inset-y-0 left-0 flex w-[9.5rem] flex-col border-r border-slate-200 bg-white shadow-xl ${
+              mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
+            }`}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-2.5 py-2">
+              <p className="text-sm font-semibold text-slate-800">選單</p>
+              <button
+                type="button"
+                aria-label="關閉選單"
+                tabIndex={mobileNavOpen ? 0 : -1}
+                onClick={closeMobileNav}
+                className="rounded-md p-1.5 text-slate-600 transition hover:bg-slate-100"
+              >
+                <MobileNavCloseIcon />
+              </button>
+            </div>
+            <AppNav
+              activeTab={activeTab}
+              settlementsCount={settlements.length}
+              onSelect={setActiveTab}
+              onNavigate={closeMobileNav}
+              layout="drawer"
+            />
+          </aside>
+        </div>
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <header className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-2 py-2 lg:hidden">
+            <button
+              type="button"
+              aria-label={mobileNavOpen ? '關閉選單' : '開啟選單'}
+              aria-expanded={mobileNavOpen}
+              onClick={() => setMobileNavOpen((open) => !open)}
+              className="rounded-md p-1.5 text-slate-700 transition hover:bg-slate-100"
+            >
+              {mobileNavOpen ? <MobileNavCloseIcon /> : <MobileNavMenuIcon />}
+            </button>
+            <p className="min-w-0 flex-1 text-sm font-medium text-slate-800">
+              {activeTab === 'daily' ? '每日明細' : '每日結算'}
+            </p>
+          </header>
+
+        <main
+          className={`flex min-h-0 flex-1 flex-col px-2 py-1 pb-4 sm:px-3 lg:overflow-y-auto lg:pb-1 ${
+            mobileNavOpen ? 'overflow-hidden touch-none' : 'overflow-y-auto overscroll-y-contain'
+          }`}
+        >
           {undoSnapshot && undoMessage && (
             <UndoBanner message={undoMessage} onUndo={handleUndo} onDismiss={dismissUndo} />
           )}
 
           {activeTab === 'daily' ? (
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex flex-col">
               {editingBannerLabel && (
                 <EditingBanner label={editingBannerLabel} onCancel={cancelEditing} />
               )}
-              <div className="mb-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm">
+              <div className="mb-1 shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="min-w-0 text-[11px] text-slate-500">
+                  <p className="min-w-0 text-[10px] text-slate-500">
                     營業日：{businessDayLabel}
                   </p>
-                  <button
-                    type="button"
-                    onClick={handleSettle}
-                    className="shrink-0 rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-600/30"
-                  >
-                    結算
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={handleResetAll}
+                      className="rounded border border-red-200 bg-white px-2 py-0.5 text-[10px] font-medium text-red-600 transition hover:bg-red-50"
+                    >
+                      清空
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSettle}
+                      className="rounded bg-indigo-600 px-2 py-0.5 text-[10px] font-medium text-white transition hover:bg-indigo-700"
+                    >
+                      結算
+                    </button>
+                  </div>
                 </div>
-                <div className="mt-1.5 grid grid-cols-3 gap-1.5">
-                  <div className="rounded bg-slate-50 px-1.5 py-1 text-center">
-                    <p className="text-[9px] text-slate-500">TWD</p>
-                    <p className="text-xs font-bold tabular-nums text-emerald-600">
-                      {formatNumber(balances.twd)}
+                <div className="mt-1 grid grid-cols-3 gap-1">
+                  <div className="rounded bg-slate-50 px-1 py-0.5 text-center leading-tight">
+                    <p className="text-[8px] text-slate-500">TWD</p>
+                    <p className="text-[11px] font-bold tabular-nums text-emerald-600">
+                      {formatTwd(balances.twd)}
                     </p>
                   </div>
-                  <div className="rounded bg-slate-50 px-1.5 py-1 text-center">
-                    <p className="text-[9px] text-slate-500">USDT</p>
-                    <p className="text-xs font-bold tabular-nums text-sky-600">
+                  <div className="rounded bg-slate-50 px-1 py-0.5 text-center leading-tight">
+                    <p className="text-[8px] text-slate-500">USDT</p>
+                    <p className="text-[11px] font-bold tabular-nums text-sky-600">
                       {formatNumber(balances.usdt)}
                     </p>
-                    {balances.usdt > 0 && inventoryCost.twd !== null && (
-                      <p className="mt-0.5 text-[10px] tabular-nums text-slate-400">
-                        @{formatRateDisplay(inventoryCost.twd)}
-                      </p>
-                    )}
-                    {balances.usdt > 0 && inventoryCost.vn !== null && (
-                      <p className="text-[10px] tabular-nums text-amber-600">
-                        VN @{formatRateDisplay(inventoryCost.vn)}
+                    {balances.usdt > 0 && (inventoryCost.twd !== null || totalAssets.usdtInTwd !== null) && (
+                      <p className="text-[8px] tabular-nums text-slate-500">
+                        {inventoryCost.twd !== null && `@${formatRateDisplay(inventoryCost.twd)}`}
+                        {inventoryCost.twd !== null && totalAssets.usdtInTwd !== null && ' · '}
+                        {totalAssets.usdtInTwd !== null && `估值 ${formatTwd(totalAssets.usdtInTwd)}`}
                       </p>
                     )}
                   </div>
-                  <div className="rounded bg-slate-50 px-1.5 py-1 text-center">
-                    <p className="text-[9px] text-slate-500">VN</p>
-                    <p className="text-xs font-bold tabular-nums text-amber-600">
-                      {formatNumber(balances.vn)}
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-1.5">
-                  <TotalAssetsSummary assets={totalAssets} compact />
+                  <TotalAssetsColumn assets={totalAssets} />
                 </div>
               </div>
 
-        <section className="grid min-h-0 flex-1 gap-2 lg:grid-cols-2 2xl:grid-cols-3">
-          <div className="flex min-h-0 flex-col gap-2">
+        <section className="grid shrink-0 gap-1.5 lg:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
             <div className={formCardClass('emerald', isEditingBuy)}>
               <TradeForm
                 type="buy"
                 title="買入 USDT"
                 editTitle="編輯買入"
-                currency={buyCurrency}
-                onCurrencyChange={(c) => {
-                  setBuyCurrency(c)
-                  setBuyError('')
-                }}
                 usdt={buyUsdtAmount}
                 fiat={buyFiatAmount}
                 rate={buyRate}
                 error={buyError}
                 isEditing={isEditingBuy}
-                disabled={isEditingSell || isEditingVnTwd}
+                disabled={isEditingSell}
                 onFieldChange={updateBuyForm}
                 onSubmit={(e) => handleSubmit('buy', e)}
                 onCancel={resetBuyForm}
@@ -2136,40 +2088,39 @@ function App() {
                 buttonClass="bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-600/30"
                 focusClass="focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                 balances={balances}
+                inventoryUnitCost={inventoryCost.twd}
               />
             </div>
             <div className={recordCardClass('emerald')}>
-              <h2 className="mb-2 shrink-0 text-xs font-semibold text-emerald-700">買入紀錄</h2>
-              <div className="min-h-0 flex-1 overflow-auto">
-                <TransactionTable
-                  transactions={buyTransactions}
-                  editingId={editingId}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                  accent="buy"
-                  showDayAverage
-                />
-              </div>
+              <h2 className="mb-0.5 shrink-0 text-[11px] font-semibold leading-none text-emerald-700">
+                買入紀錄
+              </h2>
+              <TransactionTable
+                transactions={buyTransactions}
+                editingId={editingId}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                accent="buy"
+                showDayAverage
+                visibleRows={tableVisibleRows}
+                bodyScrollRef={buyBodyScrollRef}
+                onBodyScroll={(scrollTop) => syncTransactionBodyScroll('buy', scrollTop)}
+              />
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
             <div className={formCardClass('rose', isEditingSell)}>
               <TradeForm
                 type="sell"
                 title="賣出 USDT"
                 editTitle="編輯賣出"
-                currency={sellCurrency}
-                onCurrencyChange={(c) => {
-                  setSellCurrency(c)
-                  setSellError('')
-                }}
                 usdt={sellUsdtAmount}
                 fiat={sellFiatAmount}
                 rate={sellRate}
                 error={sellError}
                 isEditing={isEditingSell}
-                disabled={isEditingBuy || isEditingVnTwd}
+                disabled={isEditingBuy}
                 onFieldChange={updateSellForm}
                 onSubmit={(e) => handleSubmit('sell', e)}
                 onCancel={resetSellForm}
@@ -2177,54 +2128,31 @@ function App() {
                 buttonClass="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600/30"
                 focusClass="focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20"
                 balances={balances}
+                inventoryUnitCost={inventoryCost.twd}
               />
             </div>
             <div className={recordCardClass('rose')}>
-              <h2 className="mb-2 shrink-0 text-xs font-semibold text-rose-700">賣出紀錄</h2>
-              <div className="min-h-0 flex-1 overflow-auto">
-                <TransactionTable
-                  transactions={sellTransactions}
-                  editingId={editingId}
-                  onEdit={handleEdit}
-                  onDelete={handleDelete}
-                  accent="sell"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex min-h-0 flex-col gap-2 lg:col-span-2 2xl:col-span-1">
-            <div className={formCardClass('violet', isEditingVnTwd)}>
-              <VnTwdForm
-                vn={vnTwdVnAmount}
-                twd={vnTwdTwdAmount}
-                rate={vnTwdRate}
-                error={vnTwdError}
-                isEditing={isEditingVnTwd}
-                disabled={isEditingBuy || isEditingSell}
-                onFieldChange={updateVnTwdForm}
-                onSubmit={handleVnTwdSubmit}
-                onCancel={resetVnTwdForm}
-                vnBalance={balances.vn}
+              <h2 className="mb-0.5 shrink-0 text-[11px] font-semibold leading-none text-rose-700">
+                賣出紀錄
+              </h2>
+              <TransactionTable
+                transactions={sellTransactions}
+                editingId={editingId}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                accent="sell"
+                sellProfitById={sellProfitById}
+                visibleRows={tableVisibleRows}
+                bodyScrollRef={sellBodyScrollRef}
+                onBodyScroll={(scrollTop) => syncTransactionBodyScroll('sell', scrollTop)}
               />
-            </div>
-            <div className={recordCardClass('violet')}>
-              <h2 className="mb-2 shrink-0 text-xs font-semibold text-violet-700">VN 換 TWD 紀錄</h2>
-              <div className="min-h-0 flex-1 overflow-auto">
-                <VnTwdTable
-                  transactions={vnTwdTransactions}
-                  editingId={editingId}
-                  onEdit={handleEditVnTwd}
-                  onDelete={handleDelete}
-                />
-              </div>
             </div>
           </div>
         </section>
             </div>
           ) : (
             <>
-              <h1 className="mb-2 text-sm font-semibold text-slate-800">每日結算</h1>
+              <h1 className="mb-2 shrink-0 text-sm font-semibold text-slate-800">每日結算</h1>
               <SettlementsPanel
                 settlements={settlements}
                 currentBalances={balances}
@@ -2232,10 +2160,12 @@ function App() {
                 currentDayBuyAvg={dayBuyAvg}
                 currentTotalAssets={totalAssets}
                 hasCurrentPeriodTransactions={transactions.length > 0}
+                currentDayTotalProfit={dayTotalProfit}
               />
             </>
           )}
         </main>
+        </div>
       </div>
     </div>
   )
