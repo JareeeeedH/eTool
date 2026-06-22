@@ -1,0 +1,111 @@
+import type { ExpenseType } from '../types'
+import { EXPENSE_TYPE_OPTIONS } from '../constants'
+
+export function expenseTypeLabel(type: ExpenseType): string {
+  return EXPENSE_TYPE_OPTIONS.find((item) => item.value === type)?.label ?? type
+}
+
+export function formatNumber(value: number): string {
+  return value.toLocaleString('zh-TW', {
+    maximumFractionDigits: 2,
+  })
+}
+
+/** 大數字緊湊顯示（如 VN 庫存）：億 / 萬 */
+export function formatCompactNumber(value: number): string {
+  const abs = Math.abs(value)
+  const sign = value < 0 ? '−' : ''
+  const n = Math.abs(value)
+
+  if (abs >= 100_000_000) {
+    const yi = n / 100_000_000
+    return `${sign}${yi.toLocaleString('zh-TW', { maximumFractionDigits: 2 })}億`
+  }
+  if (abs >= 10_000) {
+    const wan = n / 10_000
+    return `${sign}${wan.toLocaleString('zh-TW', { maximumFractionDigits: 2 })}萬`
+  }
+  return formatNumber(value)
+}
+
+export function floorTwd(value: number): number {
+  return Math.trunc(value)
+}
+
+export function formatTwd(value: number): string {
+  return floorTwd(value).toLocaleString('zh-TW', {
+    maximumFractionDigits: 0,
+  })
+}
+
+export function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+export function formatRateDisplay(value: number): string {
+  return roundMoney(value).toFixed(2)
+}
+
+/** USDT 成本均價（TWD/USDT）顯示：四捨五入至小數第三位 */
+export function formatUsdtCostRateDisplay(value: number): string {
+  return (Math.round(value * 1000) / 1000).toFixed(3)
+}
+
+export function formatVnNtdCostRate(rate: number): string {
+  return `1 NTD = ${formatRateDisplay(rate)} VN`
+}
+
+export function formatVnNtdCostRateCompact(rate: number): string {
+  return `${formatRateDisplay(rate)} VN/NTD`
+}
+
+export function formatVnUsdtCostRate(rate: number): string {
+  return `1 U = ${formatRateDisplay(rate)} VN`
+}
+
+export function formatVnUsdtCostRateCompact(rate: number): string {
+  return `${formatRateDisplay(rate)} VN/U`
+}
+
+export function formatProfit(value: number): string {
+  const prefix = value > 0 ? '+' : value < 0 ? '' : ''
+  return `${prefix}${formatTwd(value)}`
+}
+
+export function profitColorClass(value: number): string {
+  if (value > 0) return 'text-emerald-600'
+  if (value < 0) return 'text-rose-600'
+  return 'text-slate-500'
+}
+
+export function formatSettlementDate(date: Date): string {
+  return date.toLocaleDateString('zh-TW', {
+    month: '2-digit',
+    day: '2-digit',
+  })
+}
+
+export function formatSettlementDateTime(date: Date): string {
+  return `${formatSettlementDate(date)} ${date.toLocaleTimeString('zh-TW', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })} 結算`
+}
+
+export function formatTableDateTime(date: Date): string {
+  return date.toLocaleString('zh-TW', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
+export function formatArchiveDateRange(start: Date | null, end: Date | null): string {
+  if (!start || !end) return '—'
+  const startLabel = formatSettlementDate(start)
+  const endLabel = formatSettlementDate(end)
+  return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`
+}

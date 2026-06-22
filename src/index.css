@@ -7,9 +7,27 @@ body {
   overflow: hidden;
 }
 
-/** 交易明細：表頭 + 12 列 + 總結列（web） */
-.transaction-table-scroll {
-  max-height: calc(2rem + 12 * 2.25rem + 2.5rem);
-  overflow-y: auto;
-  overflow-x: auto;
+/** 交易明細 tbody 捲動區（僅在內容溢出時套用） */
+.transaction-table-body-scroll--overflow {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(148 163 184) rgb(241 245 249);
+}
+
+.transaction-table-body-scroll--overflow::-webkit-scrollbar {
+  width: 6px;
+}
+
+.transaction-table-body-scroll--overflow::-webkit-scrollbar-track {
+  background: rgb(241 245 249);
+  border-radius: 9999px;
+}
+
+.transaction-table-body-scroll--overflow::-webkit-scrollbar-thumb {
+  background: rgb(148 163 184);
+  border-radius: 9999px;
+}
+
+.transaction-table-body-scroll--overflow::-webkit-scrollbar-thumb:hover {
+  background: rgb(100 116 139);
 }

@@ -1,0 +1,57 @@
+import type { Balances, ExpenseType } from '../types'
+
+export const EXPENSE_TYPE_OPTIONS: { value: ExpenseType; label: string }[] = [
+  { value: 'rent', label: '車租' },
+  { value: 'fuel', label: '油資' },
+  { value: 'parking', label: '停車' },
+  { value: 'meal', label: '餐費' },
+  { value: 'telecom', label: '通訊' },
+  { value: 'misc', label: '雜支' },
+  { value: 'other', label: '其他' },
+]
+
+export const EXPENSE_QUICK_TYPES: ExpenseType[] = ['fuel', 'parking', 'meal']
+
+export const EXPENSE_INPUT_CLASS =
+  'w-full rounded border border-slate-300 px-1.5 py-1 text-xs outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50'
+
+export const TRADE_INPUT_CLASS =
+  'w-full rounded border border-slate-300 px-1.5 py-1 text-xs outline-none transition disabled:bg-slate-50'
+
+export const INITIAL_TWD = 5_000_000
+export const INITIAL_USDT = 0
+export const INITIAL_VN = 0
+
+export const INITIAL_BALANCES: Balances = {
+  twd: INITIAL_TWD,
+  usdt: INITIAL_USDT,
+  vn: INITIAL_VN,
+}
+
+export const EMPTY_USDT_COST = { twd: null, vn: null } as const
+
+export const EMPTY_EXPENSE_BY_CATEGORY: Record<ExpenseType, number> = {
+  rent: 0,
+  fuel: 0,
+  parking: 0,
+  meal: 0,
+  telecom: 0,
+  misc: 0,
+  other: 0,
+}
+
+export const TRANSACTION_VISIBLE_ROWS_MOBILE = 8
+export const TRANSACTION_VISIBLE_ROWS_DESKTOP = 12
+
+export const TRANSACTION_ROW_HEIGHT_REM = 2.5
+export const TRANSACTION_HEAD_REM = 2
+export const TRANSACTION_FOOT_REM = 2.5
+export const TRANSACTION_TABLE_CLASS = 'w-full min-w-[260px] table-fixed text-left text-xs'
+export const TRANSACTION_DATA_ROW_STYLE = {
+  height: `${TRANSACTION_ROW_HEIGHT_REM}rem`,
+} as const
+export const TRANSACTION_CELL_CLASS = 'align-middle px-1.5 leading-none'
+
+export const VN_TRANSACTION_TABLE_CLASS =
+  'w-full min-w-[340px] table-fixed text-left text-xs'
+export const EXPENSE_TABLE_CLASS = 'w-full min-w-[300px] table-fixed text-left text-xs'
