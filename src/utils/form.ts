@@ -15,6 +15,10 @@ export function formatFiatInput(value: number): string {
   return String(Math.round(value))
 }
 
+export function formatVnRateCalc(value: number): string {
+  return (Math.round(value * 10) / 10).toFixed(1)
+}
+
 export function formatRateCalc(value: number): string {
   return String(value)
 }
@@ -87,7 +91,7 @@ export function syncVnTradeFormFields(
       if (vn && rate) {
         next.pay = formatFiatInput(vn / rate)
       } else if (vn && pay) {
-        next.rate = formatRateCalc(vn / pay)
+        next.rate = formatVnRateCalc(vn / pay)
       }
       break
     case 'rate':
@@ -101,7 +105,7 @@ export function syncVnTradeFormFields(
       if (pay && rate) {
         next.vn = formatFiatInput(pay * rate)
       } else if (pay && vn) {
-        next.rate = formatRateCalc(vn / pay)
+        next.rate = formatVnRateCalc(vn / pay)
       }
       break
   }

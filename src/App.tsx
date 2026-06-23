@@ -25,7 +25,7 @@ import type {
   VnTradeTransaction,
 } from './types'
 import { EMPTY_USDT_COST, INITIAL_BALANCES } from './constants'
-import { calculateRate, formatRateCalc, syncFormFields, syncVnTradeFormFields } from './utils/form'
+import { calculateRate, formatRateCalc, formatVnRateCalc, syncFormFields, syncVnTradeFormFields } from './utils/form'
 import {
   assembleExpenseSettlementsForMonthlyClose,
   buildDeleteConfirmLines,
@@ -66,6 +66,7 @@ import {
   AppNav,
   ConfirmModal,
   DailyBalanceStrip,
+  DailyPageHeader,
   DailyTradeSettleBar,
   DailyWorkTabBar,
   EditingBanner,
@@ -505,6 +506,9 @@ function App() {
     else if (editingCategory === 'vn_sell') resetVnSellForm()
     else if (editingCategory === 'expense') resetExpenseForm()
     setDailyWorkTab(tab)
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
   }
 
   const handleExpenseSubmit = (e: FormEvent) => {
@@ -737,12 +741,12 @@ function App() {
       setVnBuyPayCurrency(normalized.payCurrency)
       setVnBuyVnAmount(String(normalized.vnAmount))
       setVnBuyPayAmount(String(vnTradePayAmount(normalized)))
-      setVnBuyRate(formatRateCalc(normalized.rate))
+      setVnBuyRate(formatVnRateCalc(normalized.rate))
     } else {
       setVnSellPayCurrency(normalized.payCurrency)
       setVnSellVnAmount(String(normalized.vnAmount))
       setVnSellPayAmount(String(vnTradePayAmount(normalized)))
-      setVnSellRate(formatRateCalc(normalized.rate))
+      setVnSellRate(formatVnRateCalc(normalized.rate))
     }
   }
 
@@ -804,9 +808,9 @@ function App() {
 
   const editingBannerLabel =
     editingCategory === 'buy'
-      ? '正在編輯買入 USDT'
+      ? '正在編輯收E'
       : editingCategory === 'sell'
-        ? '正在編輯賣出 USDT'
+        ? '正在編輯出E'
         : editingCategory === 'vn_buy'
           ? '正在編輯買入 VN'
           : editingCategory === 'vn_sell'
@@ -1215,22 +1219,27 @@ function App() {
             type="button"
             aria-label="關閉選單"
             tabIndex={mobileNavOpen ? 0 : -1}
-            className={`absolute inset-0 bg-black/40 ${mobileNavOpen ? 'opacity-100' : 'opacity-0'}`}
+            className={`absolute inset-0 bg-black/40 transition-opacity duration-300 ease-in-out ${
+              mobileNavOpen ? 'opacity-100' : 'opacity-0'
+            }`}
             onClick={closeMobileNav}
           />
           <aside
-            className={`absolute inset-y-0 left-0 flex w-[9.5rem] flex-col border-r border-slate-200 bg-white shadow-xl ${
+            className={`absolute inset-y-0 left-0 flex w-56 flex-col bg-gradient-to-b from-slate-100 via-slate-50 to-white shadow-2xl transition-transform duration-300 ease-in-out ${
               mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
             }`}
           >
-            <div className="flex items-center justify-between border-b border-slate-200 px-2.5 py-2">
-              <p className="text-sm font-semibold text-slate-800">選單</p>
+            <div className="flex items-center justify-between border-b border-slate-200/70 bg-white/90 px-4 py-3 backdrop-blur-sm">
+              <div>
+                <p className="text-[10px] font-medium tracking-wide text-slate-400">MENU</p>
+                <p className="text-sm font-semibold text-slate-800">選單</p>
+              </div>
               <button
                 type="button"
                 aria-label="關閉選單"
                 tabIndex={mobileNavOpen ? 0 : -1}
                 onClick={closeMobileNav}
-                className="rounded-md p-1.5 text-slate-600 transition hover:bg-slate-100"
+                className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700"
               >
                 <MobileNavCloseIcon />
               </button>
@@ -1246,21 +1255,21 @@ function App() {
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-2 py-2 lg:hidden">
+          <header className="flex shrink-0 items-center gap-1.5 border-b border-slate-200 bg-white px-2 py-1 lg:hidden">
             <button
               type="button"
               aria-label={mobileNavOpen ? '關閉選單' : '開啟選單'}
               aria-expanded={mobileNavOpen}
               onClick={() => setMobileNavOpen((open) => !open)}
-              className="rounded-md p-1.5 text-slate-700 transition hover:bg-slate-100"
+              className="rounded-md p-1 text-slate-700 transition hover:bg-slate-100"
             >
               {mobileNavOpen ? <MobileNavCloseIcon /> : <MobileNavMenuIcon />}
             </button>
-            <p className="min-w-0 flex-1 text-sm font-medium text-slate-800">
+            <p className="min-w-0 flex-1 text-xs font-medium text-slate-800">
               {activeTab === 'daily'
                 ? dailyWorkTab === 'usdt'
-                  ? 'USDT 買賣'
-                  : 'VN 買賣'
+                  ? 'E進出'
+                  : 'V進出'
                 : activeTab === 'expenses'
                   ? '營業開銷'
                   : activeTab === 'monthly'
@@ -1285,34 +1294,12 @@ function App() {
               {editingBannerLabel && (
                 <EditingBanner label={editingBannerLabel} onCancel={cancelEditing} />
               )}
-              <h1 className="mb-1 shrink-0 text-sm font-semibold text-slate-800">每日明細</h1>
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-[10px] text-slate-500">
-                  <span className="font-medium text-slate-700">{businessDayLabel}</span>
-                  {' 營業日 · '}
-                  待結{' '}
-                  <span className="tabular-nums font-medium text-slate-700">
-                    {tradeTransactions.length}
-                  </span>{' '}
-                  筆
-                </p>
-                <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleOpenOpeningBalance}
-                    className="rounded border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-600 transition hover:bg-slate-50"
-                  >
-                    期初
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleResetAll}
-                    className="text-[10px] font-medium text-red-500 transition hover:text-red-700 hover:underline"
-                  >
-                    清空資料
-                  </button>
-                </div>
-              </div>
+              <DailyPageHeader
+                businessDayLabel={businessDayLabel}
+                pendingCount={tradeTransactions.length}
+                onOpeningBalance={handleOpenOpeningBalance}
+                onResetAll={handleResetAll}
+              />
               <DailyBalanceStrip
                 balances={balances}
                 inventoryCost={inventoryCost}
@@ -1323,13 +1310,13 @@ function App() {
               <DailyWorkTabBar value={dailyWorkTab} onChange={handleWorkTabChange} />
 
               {dailyWorkTab === 'usdt' ? (
-                <section className="grid shrink-0 gap-2 lg:grid-cols-2 lg:items-start">
-                  <div className="flex flex-col gap-1.5">
+                <section className="grid shrink-0 gap-1 sm:gap-2 lg:grid-cols-2 lg:items-start">
+                  <div className="flex flex-col gap-1 sm:gap-1.5">
                     <div className={formCardClass('emerald', isEditingBuy)}>
                       <TradeForm
                         type="buy"
-                        title="買入 USDT"
-                        editTitle="編輯買入"
+                        title="收E"
+                        editTitle="編輯收E"
                         usdt={buyUsdtAmount}
                         fiat={buyFiatAmount}
                         rate={buyRate}
@@ -1370,8 +1357,8 @@ function App() {
                     <div className={formCardClass('rose', isEditingSell)}>
                       <TradeForm
                         type="sell"
-                        title="賣出 USDT"
-                        editTitle="編輯賣出"
+                        title="出E"
+                        editTitle="編輯出E"
                         usdt={sellUsdtAmount}
                         fiat={sellFiatAmount}
                         rate={sellRate}
@@ -1409,8 +1396,8 @@ function App() {
                   </div>
                 </section>
               ) : (
-                <section className="grid shrink-0 gap-2 lg:grid-cols-2 lg:items-start">
-                  <div className="flex flex-col gap-1.5">
+                <section className="grid shrink-0 gap-1 sm:gap-2 lg:grid-cols-2 lg:items-start">
+                  <div className="flex flex-col gap-1 sm:gap-1.5">
                     <div className={formCardClass('violet', isEditingVnBuy)}>
                       <VnTradeForm
                         type="buy"
@@ -1437,7 +1424,7 @@ function App() {
                       />
                     </div>
                     <div className={recordCardClass('violet')}>
-                      <h2 className="mb-1 shrink-0 text-[11px] font-semibold leading-none text-violet-700">
+                      <h2 className="mb-1 shrink-0 text-xs font-semibold leading-none text-violet-700">
                         買入紀錄
                       </h2>
                       <VnTradeTable
@@ -1447,12 +1434,6 @@ function App() {
                         onDelete={handleDelete}
                         accent="buy"
                         sideLabel="買入"
-                        showCostAverage
-                        openingBalances={openingBalances}
-                        openingUsdtCost={openingUsdtCost}
-                        allTransactions={transactions}
-                        buyImpliedTwdRateById={vnTradeAnalytics.buyImpliedTwdRateById}
-                        buyImpliedUsdtRateById={vnTradeAnalytics.buyImpliedUsdtRateById}
                         visibleRows={tableVisibleRows}
                         bodyScrollRef={vnBuyBodyScrollRef}
                         onBodyScroll={(scrollTop) => syncVnBodyScroll('buy', scrollTop)}
@@ -1487,7 +1468,7 @@ function App() {
                       />
                     </div>
                     <div className={recordCardClass('rose')}>
-                      <h2 className="mb-1 shrink-0 text-[11px] font-semibold leading-none text-amber-700">
+                      <h2 className="mb-1 shrink-0 text-xs font-semibold leading-none text-amber-700">
                         賣出紀錄
                       </h2>
                       <VnTradeTable

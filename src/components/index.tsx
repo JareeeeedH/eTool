@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type {
   AppNavProps,
   ConfirmModalProps,
@@ -24,7 +24,9 @@ import type {
   TotalAssetsTwd,
   UsdtTransaction,
   VnPayCurrency,
+  VnTradeTransaction,
   ExpenseType,
+  SellProfitInfo,
 } from '../types'
 import {
   EXPENSE_INPUT_CLASS,
@@ -36,19 +38,27 @@ import {
   TRANSACTION_DATA_ROW_STYLE,
   TRANSACTION_FOOT_REM,
   TRANSACTION_HEAD_REM,
+  TRANSACTION_NUM_CELL_CLASS,
+  TRANSACTION_ACTION_CELL_CLASS,
+  TRANSACTION_TIME_CELL_CLASS,
+  TRANSACTION_INDEX_CELL_CLASS,
   TRANSACTION_ROW_HEIGHT_REM,
   TRANSACTION_TABLE_CLASS,
   TRANSACTION_VISIBLE_ROWS_DESKTOP,
   TRANSACTION_VISIBLE_ROWS_MOBILE,
+  VN_MOBILE_ACTION_CELL_CLASS,
+  VN_MOBILE_CELL_CLASS,
+  VN_MOBILE_NUM_CELL_CLASS,
   VN_TRANSACTION_TABLE_CLASS,
 } from '../constants'
 import {
   expenseTypeLabel,
   formatArchiveDateRange,
-  formatCompactNumber,
+  assetCode,
   formatNumber,
   formatProfit,
   formatRateDisplay,
+  formatVnTradeRateDisplay,
   formatUsdtCostRateDisplay,
   formatSettlementDateTime,
   formatTableDateTime,
@@ -62,10 +72,7 @@ import {
 import {
   calculateAverageRate,
   calculateBuyDayAverageRate,
-  calculateVnBuyDayAverageRate,
-  calculateVnBuyDayAverageUsdtRate,
   computePendingExpenseBreakdown,
-  computeVnSellDayAverageRate,
   normalizeMonthlyCloseRecord,
   settlementHasSplitProfit,
   totalAssetsFromSettlement,
@@ -75,12 +82,20 @@ export function VnPoolCostLines({
   twdRate,
   usdtRate,
   className = 'text-[8px] tabular-nums text-slate-500',
+  inline = false,
 }: {
   twdRate: number | null
   usdtRate: number | null
   className?: string
+  inline?: boolean
 }) {
   if (twdRate === null && usdtRate === null) return null
+  if (inline) {
+    const parts: string[] = []
+    if (twdRate !== null) parts.push(formatVnNtdCostRateCompact(twdRate))
+    if (usdtRate !== null) parts.push(formatVnUsdtCostRateCompact(usdtRate))
+    return <p className={className}>{parts.join(' · ')}</p>
+  }
   return (
     <>
       {twdRate !== null && (
@@ -237,29 +252,94 @@ export function UndoBanner({ message, onUndo, onDismiss }: UndoBannerProps) {
   )
 }
 
-export function TotalAssetsColumn({ assets }: { assets: TotalAssetsTwd }) {
+const BALANCE_CARD_CLASS =
+  'rounded-lg border border-slate-200 bg-white px-1.5 py-1 text-center leading-tight shadow-sm sm:px-2 sm:py-1.5'
+const BALANCE_LABEL_CLASS = 'text-[9px] font-medium leading-tight text-slate-500 sm:text-[10px]'
+const BALANCE_VALUE_CLASS = 'text-xs font-bold tabular-nums leading-tight text-slate-800 sm:text-sm'
+const BALANCE_SUB_CLASS = 'mt-0.5 text-[9px] tabular-nums leading-tight text-slate-400 sm:text-[10px]'
+
+export function TotalAssetsColumn({
+  assets,
+  dense = false,
+}: {
+  assets: TotalAssetsTwd
+  dense?: boolean
+}) {
+  const cardClass = dense
+    ? BALANCE_CARD_CLASS
+    : 'rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center leading-tight shadow-sm'
+  const labelClass = dense ? BALANCE_LABEL_CLASS : 'text-[10px] font-medium text-slate-500'
+  const valueClass = dense
+    ? BALANCE_VALUE_CLASS + ' text-indigo-700'
+    : 'text-sm font-bold tabular-nums text-indigo-700'
+  const noteClass = dense
+    ? 'mt-0.5 text-[9px] text-amber-700 sm:text-[9px]'
+    : 'mt-0.5 text-[9px] text-amber-700'
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center leading-tight shadow-sm">
-      <p className="text-[10px] font-medium text-slate-500">
-        帳面總資產
-        <span className="ml-0.5 font-normal text-slate-400">TWD</span>
-        {!assets.isComplete && (
-          <span className="ml-1 rounded bg-amber-100 px-1 py-px text-[9px] font-medium text-amber-700">
+    <div className={cardClass}>
+      {!dense && (
+        <p className={labelClass}>
+          帳面總資產
+          <span className="ml-0.5 font-normal text-slate-400">TWD</span>
+          {!assets.isComplete && (
+            <span className="ml-1 rounded bg-amber-100 px-1 py-px text-[8px] font-medium text-amber-700 sm:text-[9px]">
+              部分
+            </span>
+          )}
+        </p>
+      )}
+      <p className={`${valueClass}${dense ? ' flex flex-wrap items-center justify-center gap-1' : ''}`} title={formatTwd(assets.total)}>
+        {formatTwd(assets.total)}
+        {dense && !assets.isComplete && (
+          <span className="rounded bg-amber-100 px-1 py-px text-[8px] font-medium text-amber-700">
             部分
           </span>
         )}
       </p>
-      <p
-        className="text-sm font-bold tabular-nums text-indigo-700"
-        title={formatTwd(assets.total)}
-      >
-        {formatTwd(assets.total)}
-      </p>
       {assets.missingNotes.length > 0 && (
-        <p className="mt-0.5 text-[9px] text-amber-700">
-          {assets.missingNotes.join('；')}
-        </p>
+        <p className={noteClass}>{assets.missingNotes.join('；')}</p>
       )}
+    </div>
+  )
+}
+
+export function DailyPageHeader({
+  businessDayLabel,
+  pendingCount,
+  onOpeningBalance,
+  onResetAll,
+}: {
+  businessDayLabel: string
+  pendingCount: number
+  onOpeningBalance: () => void
+  onResetAll: () => void
+}) {
+  return (
+    <div className="mb-1 flex items-center gap-x-2 gap-y-0">
+      <h1 className="shrink-0 text-xs font-semibold text-slate-800 sm:text-sm">每日明細</h1>
+      <p className="min-w-0 flex-1 truncate text-[10px] text-slate-500">
+        <span className="font-medium text-slate-700">{businessDayLabel}</span>
+        <span className="text-slate-300"> · </span>
+        待結
+        <span className="ml-0.5 tabular-nums font-medium text-slate-700">{pendingCount}</span>
+      </p>
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={onOpeningBalance}
+          className="rounded border border-slate-200 bg-white px-1.5 py-px text-[10px] font-medium text-slate-600 transition hover:bg-slate-50"
+        >
+          期初
+        </button>
+        <button
+          type="button"
+          onClick={onResetAll}
+          className="px-0.5 text-[10px] font-medium text-red-500 transition hover:text-red-700"
+        >
+          清空
+        </button>
+      </div>
     </div>
   )
 }
@@ -272,41 +352,35 @@ export function DailyBalanceStrip({
   vnUsdtRate,
 }: DailyBalanceStripProps) {
   return (
-    <div className="mb-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-      <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center shadow-sm">
-        <p className="text-[10px] font-medium text-slate-500">TWD</p>
-        <p className="text-sm font-bold tabular-nums text-slate-800" title={formatTwd(balances.twd)}>
+    <div className="mb-1 grid grid-cols-2 gap-1 sm:mb-1.5 sm:grid-cols-4 sm:gap-1.5">
+      <div className={BALANCE_CARD_CLASS}>
+        <p className={BALANCE_LABEL_CLASS}>T</p>
+        <p className={BALANCE_VALUE_CLASS} title={formatTwd(balances.twd)}>
           {formatTwd(balances.twd)}
         </p>
       </div>
-      <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center shadow-sm">
-        <p className="text-[10px] font-medium text-slate-500">USDT</p>
-        <p className="text-sm font-bold tabular-nums text-slate-800">
-          {formatNumber(balances.usdt)}
-        </p>
+      <div className={BALANCE_CARD_CLASS}>
+        <p className={BALANCE_LABEL_CLASS}>E</p>
+        <p className={BALANCE_VALUE_CLASS}>{formatNumber(balances.usdt)}</p>
         {balances.usdt > 0 && inventoryCost.twd !== null && (
-          <p className="text-[10px] tabular-nums text-slate-400">
-            @{formatUsdtCostRateDisplay(inventoryCost.twd)}
-          </p>
+          <p className={BALANCE_SUB_CLASS}>@{formatUsdtCostRateDisplay(inventoryCost.twd)}</p>
         )}
       </div>
-      <div className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center shadow-sm">
-        <p className="text-[10px] font-medium text-slate-500">VN</p>
-        <p
-          className="text-sm font-bold tabular-nums text-slate-800"
-          title={formatNumber(balances.vn)}
-        >
-          {formatCompactNumber(balances.vn)}
+      <div className={BALANCE_CARD_CLASS}>
+        <p className={BALANCE_LABEL_CLASS}>V</p>
+        <p className={BALANCE_VALUE_CLASS} title={formatNumber(balances.vn)}>
+          {formatNumber(balances.vn)}
         </p>
         {balances.vn > 0 && (
           <VnPoolCostLines
             twdRate={vnTwdRate}
             usdtRate={vnUsdtRate}
-            className="text-[10px] tabular-nums text-slate-400"
+            inline
+            className={BALANCE_SUB_CLASS}
           />
         )}
       </div>
-      <TotalAssetsColumn assets={totalAssets} />
+      <TotalAssetsColumn assets={totalAssets} dense />
     </div>
   )
 }
@@ -315,18 +389,12 @@ export function DailyTradeSettleBar({ tradeCount, onSettle }: DailyTradeSettleBa
   const canSettle = tradeCount > 0
 
   return (
-    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-gradient-to-r from-indigo-50/80 to-slate-50 px-2.5 py-1.5">
-      <div className="min-w-0">
-        <span className="text-xs font-semibold text-slate-800">
-          待結算
-          <span className="ml-1 text-[10px] font-normal text-slate-500">{tradeCount} 筆</span>
-        </span>
-      </div>
+    <div className="mt-1 flex justify-end sm:mt-1.5">
       <button
         type="button"
         onClick={onSettle}
         disabled={!canSettle}
-        className="shrink-0 rounded-md bg-indigo-600 px-3 py-1 text-xs font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+        className="w-full rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 sm:w-auto sm:bg-indigo-600 sm:py-0.5 sm:text-xs sm:text-white sm:shadow-sm sm:hover:bg-indigo-700 sm:disabled:bg-slate-300 sm:disabled:text-slate-500"
       >
         {canSettle ? '交易結算' : '尚無可結交易'}
       </button>
@@ -336,21 +404,27 @@ export function DailyTradeSettleBar({ tradeCount, onSettle }: DailyTradeSettleBa
 export function RowActionButtons({
   onEdit,
   onDelete,
+  compact = false,
 }: {
   onEdit: () => void
   onDelete: () => void
+  compact?: boolean
 }) {
+  const iconClass = compact ? 'h-3 w-3' : 'h-4 w-4'
+  const btnClass = compact
+    ? 'shrink-0 rounded p-0.5 transition'
+    : 'shrink-0 rounded p-1 transition'
   return (
-    <div className="flex flex-nowrap items-center justify-end gap-0.5">
+    <div className="flex flex-nowrap items-center justify-end gap-0">
       <button
         type="button"
         onClick={onEdit}
         title="編輯"
         aria-label="編輯"
-        className="shrink-0 rounded p-1 text-sky-600 transition hover:bg-sky-50"
+        className={`${btnClass} text-sky-600 hover:bg-sky-50`}
       >
         <svg
-          className="h-4 w-4"
+          className={iconClass}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -369,10 +443,10 @@ export function RowActionButtons({
         onClick={onDelete}
         title="刪除"
         aria-label="刪除"
-        className="shrink-0 rounded p-1 text-rose-600 transition hover:bg-rose-50"
+        className={`${btnClass} text-rose-600 hover:bg-rose-50`}
       >
         <svg
-          className="h-4 w-4"
+          className={iconClass}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -404,6 +478,22 @@ export function useTransactionVisibleRows(): number {
   }, [])
 
   return visibleRows
+}
+
+export function useIsLgUp(): boolean {
+  const [isLgUp, setIsLgUp] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
+  )
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1024px)')
+    const sync = () => setIsLgUp(media.matches)
+    sync()
+    media.addEventListener('change', sync)
+    return () => media.removeEventListener('change', sync)
+  }, [])
+
+  return isLgUp
 }
 
 export function transactionBodyMaxHeight(visibleRows: number): string {
@@ -449,25 +539,114 @@ export function useTableScrollAffordance(
   return { canScrollDown, canScrollUp }
 }
 
-export function TransactionTableHeader({
+export function TransactionTableColGroup({
   isBuy,
+  mobileRowIndex = false,
 }: {
   isBuy: boolean
+  mobileRowIndex?: boolean
 }) {
+  return (
+    <colgroup>
+      <col style={{ width: mobileRowIndex ? 0 : '4.25rem' }} />
+      <col style={{ width: mobileRowIndex ? (isBuy ? '27%' : '23%') : isBuy ? '24%' : '20%' }} />
+      <col style={{ width: mobileRowIndex ? (isBuy ? '33%' : '27%') : isBuy ? '30%' : '24%' }} />
+      <col style={{ width: mobileRowIndex ? (isBuy ? '19%' : '14%') : isBuy ? '18%' : '13%' }} />
+      {!isBuy && <col style={{ width: mobileRowIndex ? '15%' : '16%' }} />}
+      <col style={{ width: mobileRowIndex ? '2.5rem' : '3.25rem' }} />
+    </colgroup>
+  )
+}
+
+export function VnTradeTableColGroup({
+  isBuy,
+  mobileRowIndex = false,
+}: {
+  isBuy: boolean
+  mobileRowIndex?: boolean
+}) {
+  if (mobileRowIndex) {
+    if (isBuy) {
+      return (
+        <colgroup>
+          <col style={{ width: 0 }} />
+          <col style={{ width: '32%' }} />
+          <col style={{ width: '10px' }} />
+          <col style={{ width: '24%' }} />
+          <col style={{ width: '19%' }} />
+          <col style={{ width: '40px' }} />
+        </colgroup>
+      )
+    }
+    return (
+      <colgroup>
+        <col style={{ width: 0 }} />
+        <col style={{ width: '28%' }} />
+        <col style={{ width: '10px' }} />
+        <col style={{ width: '18%' }} />
+        <col style={{ width: '16%' }} />
+        <col style={{ width: '14%' }} />
+        <col style={{ width: '40px' }} />
+      </colgroup>
+    )
+  }
+
+  const coinCol = '1.375rem'
+  const actionCol = '3rem'
+
+  return (
+    <colgroup>
+      <col style={{ width: '4.25rem' }} />
+      <col style={{ width: '24%' }} />
+      <col style={{ width: coinCol }} />
+      <col style={{ width: '20%' }} />
+      <col style={{ width: isBuy ? '17%' : '15%' }} />
+      {!isBuy && <col style={{ width: '12%' }} />}
+      <col style={{ width: actionCol }} />
+    </colgroup>
+  )
+}
+
+export function TransactionTableHeader({
+  isBuy,
+  mobileRowIndex = false,
+}: {
+  isBuy: boolean
+  mobileRowIndex?: boolean
+}) {
+  const numCell = (extra = '') =>
+    mobileRowIndex
+      ? `${VN_MOBILE_NUM_CELL_CLASS} ${extra}`
+      : `${TRANSACTION_NUM_CELL_CLASS} ${extra}`
+
   return (
     <thead>
       <tr
-        className="border-b border-slate-200 text-[11px] text-slate-500"
+        className="border-b border-slate-200 text-[13px] text-slate-500"
         style={{ height: `${TRANSACTION_HEAD_REM}rem` }}
       >
-        <th className={`w-[4.5rem] ${TRANSACTION_CELL_CLASS} font-medium`}>時間</th>
-        <th className={`${TRANSACTION_CELL_CLASS} text-right font-medium`}>USDT</th>
-        <th className={`${TRANSACTION_CELL_CLASS} text-right font-medium`}>TWD</th>
-        <th className={`${TRANSACTION_CELL_CLASS} text-right font-medium`}>匯率</th>
+        <th
+          className={`${
+            mobileRowIndex ? TRANSACTION_INDEX_CELL_CLASS : TRANSACTION_TIME_CELL_CLASS
+          } font-medium text-slate-500`}
+        >
+          {mobileRowIndex ? '#' : '時間'}
+        </th>
+        <th className={numCell('font-medium text-slate-500')}>E</th>
+        <th className={numCell('font-medium text-slate-500')}>T</th>
+        <th className={numCell('font-medium text-slate-500')}>匯率</th>
         {!isBuy && (
-          <th className={`${TRANSACTION_CELL_CLASS} text-right font-medium`}>利潤</th>
+          <th className={numCell('px-0.5 font-medium text-slate-500')}>利潤</th>
         )}
-        <th className={`w-12 ${TRANSACTION_CELL_CLASS} text-right font-medium`}>操作</th>
+        <th
+          className={
+            mobileRowIndex
+              ? `${VN_MOBILE_ACTION_CELL_CLASS} font-medium text-slate-500`
+              : `${TRANSACTION_ACTION_CELL_CLASS} font-medium text-slate-500`
+          }
+        >
+          {mobileRowIndex ? '' : '操作'}
+        </th>
       </tr>
     </thead>
   )
@@ -482,6 +661,7 @@ export function TransactionTableFooter({
   showDayAverage,
   totalProfit,
   hasProfitData,
+  mobileRowIndex = false,
 }: {
   isBuy: boolean
   transactions: UsdtTransaction[]
@@ -491,7 +671,13 @@ export function TransactionTableFooter({
   showDayAverage: boolean
   totalProfit: number
   hasProfitData: boolean
+  mobileRowIndex?: boolean
 }) {
+  const numCell = (extra = '') =>
+    mobileRowIndex
+      ? `${VN_MOBILE_NUM_CELL_CLASS} ${extra}`
+      : `${TRANSACTION_NUM_CELL_CLASS} ${extra}`
+
   return (
     <tfoot>
       <tr
@@ -500,19 +686,27 @@ export function TransactionTableFooter({
         }`}
         style={{ height: `${TRANSACTION_FOOT_REM}rem` }}
       >
-        <td colSpan={2} className={`${TRANSACTION_CELL_CLASS} font-semibold text-slate-800`}>
-          總結
-          <span className="ml-1 text-[10px] font-normal text-slate-500">
-            {transactions.length} 筆
-          </span>
+        <td
+          className={`${
+            mobileRowIndex ? TRANSACTION_INDEX_CELL_CLASS : TRANSACTION_TIME_CELL_CLASS
+          } font-semibold text-slate-800`}
+        >
+          {mobileRowIndex ? null : (
+            <span className="whitespace-nowrap">
+              總結
+              <span className="ml-0.5 font-normal text-slate-500">
+                {transactions.length}筆
+              </span>
+            </span>
+          )}
         </td>
-        <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums font-medium text-slate-800`}>
+        <td className={numCell('font-medium text-slate-800')}>
           {formatNumber(totalUsdt)}
         </td>
-        <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums font-medium text-slate-800`}>
+        <td className={numCell('font-medium text-slate-800')}>
           {totalTwd > 0 ? formatTwd(totalTwd) : '—'}
         </td>
-        <td className={`${TRANSACTION_CELL_CLASS} text-right text-[10px]`}>
+        <td className={numCell()}>
           {showDayAverage ? (
             twdAvg !== null ? (
               <span className={`font-bold tabular-nums ${isBuy ? 'text-emerald-600' : 'text-rose-600'}`}>
@@ -527,14 +721,14 @@ export function TransactionTableFooter({
         </td>
         {!isBuy && (
           <td
-            className={`${TRANSACTION_CELL_CLASS} text-right text-[10px] font-bold tabular-nums ${
-              hasProfitData ? profitColorClass(totalProfit) : 'text-slate-400'
-            }`}
+            className={numCell(
+              `px-0.5 font-bold ${hasProfitData ? profitColorClass(totalProfit) : 'text-slate-400'}`,
+            )}
           >
             {hasProfitData ? formatProfit(totalProfit) : '—'}
           </td>
         )}
-        <td className={TRANSACTION_CELL_CLASS} />
+        <td className={mobileRowIndex ? VN_MOBILE_ACTION_CELL_CLASS : TRANSACTION_ACTION_CELL_CLASS} />
       </tr>
     </tfoot>
   )
@@ -554,6 +748,12 @@ export function TransactionTable({
   onBodyScroll,
 }: TransactionTableProps) {
   const isBuy = accent === 'buy'
+  const isLgUp = useIsLgUp()
+  const mobileRowIndex = !isLgUp
+  const usdtNumCell = (extra = '') =>
+    mobileRowIndex
+      ? `${VN_MOBILE_NUM_CELL_CLASS} ${extra}`
+      : `${TRANSACTION_NUM_CELL_CLASS} ${extra}`
   const twdAvg = showDayAverage
     ? calculateBuyDayAverageRate(transactions, 'twd')
     : calculateAverageRate(transactions, 'twd')
@@ -577,6 +777,7 @@ export function TransactionTable({
     showDayAverage,
     totalProfit,
     hasProfitData,
+    mobileRowIndex,
   }
   const emptyColSpan = isBuy ? 5 : 6
 
@@ -593,7 +794,7 @@ export function TransactionTable({
     row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [editingId])
 
-  const transactionRows = transactions.map((tx) => {
+  const transactionRows = transactions.map((tx, index) => {
     const profitInfo = sellProfitById?.get(tx.id)
     return (
       <tr
@@ -604,34 +805,41 @@ export function TransactionTable({
           editingId === tx.id ? 'bg-amber-50/60 hover:bg-amber-50/80' : ''
         }`}
       >
-        <td className={`w-[4.5rem] whitespace-nowrap ${TRANSACTION_CELL_CLASS} tabular-nums text-[11px] text-slate-600`}>
-          {formatTableDateTime(tx.timestamp)}
+        <td
+          className={`${
+            mobileRowIndex ? TRANSACTION_INDEX_CELL_CLASS : TRANSACTION_TIME_CELL_CLASS
+          } text-slate-600`}
+        >
+          {mobileRowIndex ? index + 1 : formatTableDateTime(tx.timestamp)}
         </td>
-        <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums text-slate-800`}>
+        <td className={usdtNumCell('text-slate-800')}>
           {formatNumber(tx.usdtAmount)}
         </td>
-        <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums text-slate-800`}>
+        <td className={usdtNumCell('text-slate-800')}>
           {formatTwd(tx.fiatAmount)}
         </td>
-        <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums text-slate-600`}>
+        <td className={usdtNumCell('text-slate-600')}>
           {formatRateDisplay(tx.rate)}
         </td>
         {!isBuy && (
           <td
-            className={`${TRANSACTION_CELL_CLASS} text-right text-[10px] font-semibold tabular-nums ${
-              profitInfo !== undefined
-                ? profitColorClass(profitInfo.profit)
-                : 'text-slate-400'
-            }`}
+            className={usdtNumCell(
+              `px-0.5 font-semibold ${
+                profitInfo !== undefined
+                  ? profitColorClass(profitInfo.profit)
+                  : 'text-slate-400'
+              }`,
+            )}
           >
             {profitInfo?.unitCost !== null && profitInfo !== undefined
               ? formatProfit(profitInfo.profit)
               : '—'}
           </td>
         )}
-        <td className={`w-12 whitespace-nowrap ${TRANSACTION_CELL_CLASS} text-right`}>
+        <td className={mobileRowIndex ? VN_MOBILE_ACTION_CELL_CLASS : TRANSACTION_ACTION_CELL_CLASS}>
           <div className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
             <RowActionButtons
+              compact={mobileRowIndex}
               onEdit={() => onEdit(tx)}
               onDelete={() => onDelete(tx.id)}
             />
@@ -653,7 +861,8 @@ export function TransactionTable({
     return (
       <div className="overflow-x-auto">
         <table className={TRANSACTION_TABLE_CLASS}>
-          <TransactionTableHeader isBuy={isBuy} />
+          <TransactionTableColGroup isBuy={isBuy} mobileRowIndex={mobileRowIndex} />
+          <TransactionTableHeader isBuy={isBuy} mobileRowIndex={mobileRowIndex} />
           <tbody>
             {transactions.length === 0 ? emptyBody : transactionRows}
           </tbody>
@@ -666,7 +875,8 @@ export function TransactionTable({
   return (
     <div className="flex shrink-0 flex-col overflow-x-auto">
       <table className={`${TRANSACTION_TABLE_CLASS} shrink-0`}>
-        <TransactionTableHeader isBuy={isBuy} />
+        <TransactionTableColGroup isBuy={isBuy} mobileRowIndex={mobileRowIndex} />
+        <TransactionTableHeader isBuy={isBuy} mobileRowIndex={mobileRowIndex} />
       </table>
       <div className="relative shrink-0">
         <div
@@ -676,7 +886,8 @@ export function TransactionTable({
           onScroll={(event) => onBodyScroll?.(event.currentTarget.scrollTop)}
         >
           <table className={TRANSACTION_TABLE_CLASS}>
-            <tbody>{transactionRows}</tbody>
+            <TransactionTableColGroup isBuy={isBuy} mobileRowIndex={mobileRowIndex} />
+            <tbody>{transactions.length === 0 ? emptyBody : transactionRows}</tbody>
           </table>
         </div>
         {canScrollUp && (
@@ -693,6 +904,7 @@ export function TransactionTable({
         )}
       </div>
       <table className={`${TRANSACTION_TABLE_CLASS} shrink-0`}>
+        <TransactionTableColGroup isBuy={isBuy} mobileRowIndex={mobileRowIndex} />
         <TransactionTableFooter {...footerProps} />
       </table>
     </div>
@@ -720,6 +932,7 @@ export function TradeForm({
   inventoryUnitCost = null,
 }: TradeFormProps) {
   const usdtRef = useRef<HTMLInputElement>(null)
+  const didMountRef = useRef(false)
   const prefix = type === 'buy' ? 'buy' : 'sell'
   const inputClass = `${TRADE_INPUT_CLASS} ${focusClass}`
 
@@ -731,8 +944,12 @@ export function TradeForm({
   const usdtInsufficient = type === 'sell' && usdtValid && usdtNum > balances.usdt
 
   useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true
+      return
+    }
     if (!disabled && !isEditing) {
-      usdtRef.current?.focus()
+      usdtRef.current?.focus({ preventScroll: true })
     }
   }, [disabled, isEditing, focusKey])
 
@@ -758,37 +975,18 @@ export function TradeForm({
     }
   }
 
-  const balanceLine =
-    type === 'buy'
-      ? `台幣餘額 ${formatTwd(balances.twd)}${
-          fiatValid ? ` → 扣後 ${formatTwd(balances.twd - fiatNum)}` : ''
-        }`
-      : `USDT 餘額 ${formatNumber(balances.usdt)}${
-          usdtValid ? ` → 扣後 ${formatNumber(balances.usdt - usdtNum)}` : ''
-        }`
+  const showTradeHint = previewText || twdInsufficient || usdtInsufficient
 
   return (
     <>
-      <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0">
-        <h2 className={`text-xs font-semibold ${accentClass}`}>
-          {isEditing ? editTitle : title}
-        </h2>
-        {inventoryUnitCost !== null && (
-          <p className="text-[10px] tabular-nums text-slate-500">
-            @{formatUsdtCostRateDisplay(inventoryUnitCost)}
-          </p>
-        )}
-      </div>
+      <h2 className={`mb-1 text-xs font-semibold ${accentClass}`}>
+        {isEditing ? editTitle : title}
+      </h2>
 
       <form onSubmit={onSubmit}>
-        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-end">
-          <label className="block min-w-0 flex-1 text-[10px] text-slate-600">
-            USDT
-            {type === 'sell' && (
-              <span className="ml-0.5 font-normal text-slate-400">
-                ({formatNumber(balances.usdt)})
-              </span>
-            )}
+        <div className="flex items-center gap-1">
+          <label className="flex min-w-0 flex-1 items-center gap-1 text-[10px] text-slate-600">
+            <span className="shrink-0">USDT</span>
             <input
               ref={usdtRef}
               id={`${prefix}Usdt`}
@@ -800,11 +998,13 @@ export function TradeForm({
               onChange={(e) => onFieldChange('usdt', e.target.value)}
               disabled={disabled}
               placeholder="0"
-              className={`mt-0.5 ${inputClass}`}
+              className={`min-w-0 flex-1 py-0.5 ${inputClass}`}
             />
           </label>
-          <label className="block w-full shrink-0 text-[10px] text-slate-600 sm:w-[4.5rem]">
-            匯率
+          <label className="flex w-[4.25rem] shrink-0 items-center gap-0.5 text-[10px] text-slate-600">
+            <span className="shrink-0" title="匯率">
+              率
+            </span>
             <input
               id={`${prefix}Rate`}
               type="number"
@@ -815,16 +1015,11 @@ export function TradeForm({
               onChange={(e) => onFieldChange('rate', e.target.value)}
               disabled={disabled}
               placeholder="0"
-              className={`mt-0.5 ${inputClass}`}
+              className={`min-w-0 flex-1 py-0.5 ${inputClass}`}
             />
           </label>
-          <label className="block min-w-0 flex-1 text-[10px] text-slate-600">
-            台幣
-            {type === 'buy' && (
-              <span className="ml-0.5 font-normal text-slate-400">
-                ({formatTwd(balances.twd)})
-              </span>
-            )}
+          <label className="flex min-w-0 flex-1 items-center gap-1 text-[10px] text-slate-600">
+            <span className="shrink-0">TWD</span>
             <input
               id={`${prefix}Fiat`}
               type="number"
@@ -835,10 +1030,10 @@ export function TradeForm({
               onChange={(e) => onFieldChange('fiat', e.target.value)}
               disabled={disabled}
               placeholder="0"
-              className={`mt-0.5 ${inputClass}`}
+              className={`min-w-0 flex-1 py-0.5 ${inputClass}`}
             />
           </label>
-          <div className="flex shrink-0 gap-1 sm:pb-px">
+          <div className="flex shrink-0 gap-1">
             <button
               type="submit"
               disabled={disabled}
@@ -862,18 +1057,18 @@ export function TradeForm({
           </div>
         </div>
 
-        <p
-          className={`mt-1 text-[10px] tabular-nums ${
-            twdInsufficient || usdtInsufficient || previewWarn
-              ? 'text-rose-600'
-              : 'text-slate-500'
-          }`}
-        >
-          {balanceLine}
-          {previewText && (
-            <span className="ml-1 text-slate-400">· {previewText}</span>
-          )}
-        </p>
+        {showTradeHint && (
+          <p
+            className={`mt-0.5 text-[10px] tabular-nums ${
+              twdInsufficient || usdtInsufficient || previewWarn
+                ? 'text-rose-600'
+                : 'text-slate-500'
+            }`}
+          >
+            {previewText ??
+              (twdInsufficient ? '台幣餘額不足' : usdtInsufficient ? 'USDT 餘額不足' : null)}
+          </p>
+        )}
 
         {profitPreview && (
           <p
@@ -903,19 +1098,29 @@ export function DailyWorkTabBar({
   onChange: (tab: DailyWorkTab) => void
 }) {
   const tabClass = (tab: DailyWorkTab) =>
-    `flex-1 border-b-2 px-2 py-1.5 text-[11px] font-medium transition ${
+    `flex-1 border-b-2 px-1.5 py-1 text-[10px] font-medium transition sm:px-2 sm:py-1.5 sm:text-[11px] ${
       value === tab
         ? 'border-slate-900 text-slate-900'
         : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
     }`
 
   return (
-    <div className="mb-2 flex gap-1 border-b border-slate-200">
-      <button type="button" className={tabClass('usdt')} onClick={() => onChange('usdt')}>
-        USDT 買賣
+    <div className="mb-1 flex gap-0 border-b border-slate-200 sm:mb-1.5">
+      <button
+        type="button"
+        className={tabClass('usdt')}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onChange('usdt')}
+      >
+        E進出
       </button>
-      <button type="button" className={tabClass('vn')} onClick={() => onChange('vn')}>
-        VN 買賣
+      <button
+        type="button"
+        className={tabClass('vn')}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onChange('vn')}
+      >
+        V進出
       </button>
     </div>
   )
@@ -937,18 +1142,6 @@ export function VnPayCurrencyToggle({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => onChange('twd')}
-        className={`rounded px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
-          value === 'twd'
-            ? 'bg-white text-emerald-700 shadow-sm'
-            : 'text-slate-600 hover:text-slate-900'
-        }`}
-      >
-        {buySide ? 'TWD 買' : '換 TWD'}
-      </button>
-      <button
-        type="button"
-        disabled={disabled}
         onClick={() => onChange('usdt')}
         className={`rounded px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
           value === 'usdt'
@@ -956,7 +1149,19 @@ export function VnPayCurrencyToggle({
             : 'text-slate-600 hover:text-slate-900'
         }`}
       >
-        {buySide ? 'USDT 買' : '換 USDT'}
+        {buySide ? 'E 買' : '換 E'}
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange('twd')}
+        className={`rounded px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
+          value === 'twd'
+            ? 'bg-white text-emerald-700 shadow-sm'
+            : 'text-slate-600 hover:text-slate-900'
+        }`}
+      >
+        {buySide ? 'T 買' : '換 T'}
       </button>
     </div>
   )
@@ -986,10 +1191,10 @@ export function VnTradeForm({
   vnInventoryTwdRate,
 }: VnTradeFormProps) {
   const vnRef = useRef<HTMLInputElement>(null)
+  const didMountRef = useRef(false)
   const prefix = type === 'buy' ? 'vnBuy' : 'vnSell'
   const inputClass = `${TRADE_INPUT_CLASS} ${focusClass}`
-  const rateLabel = payCurrency === 'usdt' ? '匯率 (VN/USDT)' : '匯率 (VN/TWD)'
-  const payLabel = payCurrency === 'usdt' ? 'USDT' : '台幣'
+  const payLabel = assetCode(payCurrency)
 
   const vnNum = parseFloat(vn)
   const payNum = parseFloat(pay)
@@ -1002,8 +1207,12 @@ export function VnTradeForm({
   const vnInsufficient = type === 'sell' && vnValid && vnNum > balances.vn
 
   useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true
+      return
+    }
     if (!disabled && !isEditing) {
-      vnRef.current?.focus()
+      vnRef.current?.focus({ preventScroll: true })
     }
   }, [disabled, isEditing, focusKey])
 
@@ -1049,23 +1258,12 @@ export function VnTradeForm({
     }
   }
 
-  const balanceLine =
-    type === 'buy'
-      ? payCurrency === 'twd'
-        ? `台幣餘額 ${formatTwd(balances.twd)}${
-            payValid ? ` → 扣後 ${formatTwd(balances.twd - payNum)}` : ''
-          }`
-        : `USDT 餘額 ${formatNumber(balances.usdt)}${
-            payValid ? ` → 扣後 ${formatNumber(balances.usdt - payNum)}` : ''
-          }`
-      : `VN 餘額 ${formatCompactNumber(balances.vn)}${
-          vnValid ? ` → 扣後 ${formatCompactNumber(balances.vn - vnNum)}` : ''
-        }`
+  const showVnHint = previewText || payInsufficient || vnInsufficient
 
   return (
     <>
-      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-        <h2 className={`text-xs font-semibold ${accentClass}`}>
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-1.5">
+        <h2 className={`text-sm font-semibold ${accentClass}`}>
           {isEditing ? editTitle : title}
         </h2>
         <VnPayCurrencyToggle
@@ -1077,14 +1275,9 @@ export function VnTradeForm({
       </div>
 
       <form onSubmit={onSubmit}>
-        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-end">
-          <label className="block min-w-0 flex-1 text-[10px] text-slate-600">
-            VN
-            {type === 'sell' && (
-              <span className="ml-0.5 font-normal text-slate-400" title={formatNumber(balances.vn)}>
-                ({formatCompactNumber(balances.vn)})
-              </span>
-            )}
+        <div className="flex items-center gap-1">
+          <label className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-slate-600">
+            <span className="shrink-0">VN</span>
             <input
               ref={vnRef}
               id={`${prefix}Vn`}
@@ -1096,11 +1289,13 @@ export function VnTradeForm({
               onChange={(e) => onFieldChange('vn', e.target.value)}
               disabled={disabled}
               placeholder="0"
-              className={`mt-0.5 ${inputClass}`}
+              className={`min-w-0 flex-1 py-0.5 ${inputClass}`}
             />
           </label>
-          <label className="block w-full shrink-0 text-[10px] text-slate-600 sm:w-[5.5rem]">
-            {rateLabel}
+          <label className="flex w-[4.25rem] shrink-0 items-center gap-0.5 text-[11px] text-slate-600">
+            <span className="shrink-0" title="匯率">
+              率
+            </span>
             <input
               id={`${prefix}Rate`}
               type="number"
@@ -1111,20 +1306,11 @@ export function VnTradeForm({
               onChange={(e) => onFieldChange('rate', e.target.value)}
               disabled={disabled}
               placeholder="0"
-              className={`mt-0.5 ${inputClass}`}
+              className={`min-w-0 flex-1 py-0.5 ${inputClass}`}
             />
           </label>
-          <label className="block min-w-0 flex-1 text-[10px] text-slate-600">
-            {payLabel}
-            {type === 'buy' && (
-              <span className="ml-0.5 font-normal text-slate-400">
-                (
-                {payCurrency === 'usdt'
-                  ? formatNumber(balances.usdt)
-                  : formatTwd(balances.twd)}
-                )
-              </span>
-            )}
+          <label className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-slate-600">
+            <span className="shrink-0">{payLabel}</span>
             <input
               id={`${prefix}Pay`}
               type="number"
@@ -1135,10 +1321,10 @@ export function VnTradeForm({
               onChange={(e) => onFieldChange('pay', e.target.value)}
               disabled={disabled}
               placeholder="0"
-              className={`mt-0.5 ${inputClass}`}
+              className={`min-w-0 flex-1 py-0.5 ${inputClass}`}
             />
           </label>
-          <div className="flex shrink-0 gap-1 sm:pb-px">
+          <div className="flex shrink-0 gap-1">
             <button
               type="submit"
               disabled={disabled}
@@ -1162,20 +1348,26 @@ export function VnTradeForm({
           </div>
         </div>
 
-        <p
-          className={`mt-1 text-[10px] tabular-nums ${
-            payInsufficient || vnInsufficient || previewWarn
-              ? 'text-rose-600'
-              : 'text-slate-500'
-          }`}
-        >
-          {balanceLine}
-          {previewText && <span className="ml-1 text-slate-400">· {previewText}</span>}
-        </p>
+        {showVnHint && (
+          <p
+            className={`mt-0.5 text-[11px] tabular-nums ${
+              payInsufficient || vnInsufficient || previewWarn
+                ? 'text-rose-600'
+                : 'text-slate-500'
+            }`}
+          >
+            {previewText ??
+              (payInsufficient
+                ? `${payLabel} 餘額不足`
+                : vnInsufficient
+                  ? 'VN 餘額不足'
+                  : null)}
+          </p>
+        )}
 
         {profitPreview && (
           <p
-            className={`mt-0.5 rounded px-1.5 py-0.5 text-[10px] tabular-nums ${
+            className={`mt-0.5 rounded px-1.5 py-0.5 text-[11px] tabular-nums ${
               profitPreview.value >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
             }`}
           >
@@ -1184,7 +1376,7 @@ export function VnTradeForm({
         )}
 
         {error && (
-          <p className="mt-1 text-[10px] text-rose-600" role="alert">
+          <p className="mt-1 text-[11px] text-rose-600" role="alert">
             {error}
           </p>
         )}
@@ -1200,38 +1392,27 @@ export function VnTradeTable({
   onDelete,
   accent,
   sideLabel,
-  showCostAverage = false,
   showSellAverage = false,
   openingBalances,
   openingUsdtCost,
   allTransactions,
-  buyImpliedTwdRateById,
-  buyImpliedUsdtRateById,
   sellProfitById,
   visibleRows = 8,
   bodyScrollRef,
   onBodyScroll,
 }: VnTradeTableProps) {
   const isBuy = accent === 'buy'
-  const costAvg =
-    showCostAverage && openingBalances && openingUsdtCost && allTransactions
-      ? calculateVnBuyDayAverageRate(openingBalances, openingUsdtCost, allTransactions)
-      : null
-  const costUsdtAvg =
-    showCostAverage && openingBalances && openingUsdtCost && allTransactions
-      ? calculateVnBuyDayAverageUsdtRate(openingBalances, openingUsdtCost, allTransactions)
-      : null
-  const sellAvg =
-    showSellAverage && openingBalances && openingUsdtCost && allTransactions
-      ? computeVnSellDayAverageRate(openingBalances, openingUsdtCost, allTransactions)
-      : null
+  const isLgUp = useIsLgUp()
+  const mobileRowIndex = !isLgUp
+  const columnCount = isBuy ? 6 : 7
+  const rateHeader = isBuy ? (mobileRowIndex ? '匯率' : '成交匯率') : '匯率'
+  const vnCell = (extra = '') =>
+    mobileRowIndex ? `${VN_MOBILE_CELL_CLASS} ${extra}` : `${TRANSACTION_CELL_CLASS} ${extra}`
+  const vnNumCell = (extra = '') =>
+    mobileRowIndex
+      ? `${VN_MOBILE_NUM_CELL_CLASS} ${extra}`
+      : `${TRANSACTION_CELL_CLASS} text-right tabular-nums ${extra}`
   const totalVn = transactions.reduce((sum, tx) => sum + tx.vnAmount, 0)
-  const totalTwd = transactions
-    .filter((tx) => tx.payCurrency === 'twd')
-    .reduce((sum, tx) => sum + tx.twdAmount, 0)
-  const totalUsdt = transactions
-    .filter((tx) => tx.payCurrency === 'usdt')
-    .reduce((sum, tx) => sum + tx.usdtAmount, 0)
   const totalProfit = !isBuy
     ? transactions.reduce((sum, tx) => sum + (sellProfitById?.get(tx.id)?.profit ?? 0), 0)
     : 0
@@ -1255,29 +1436,35 @@ export function VnTradeTable({
     row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [editingId])
 
+  const vnColGroup = (
+    <VnTradeTableColGroup isBuy={isBuy} mobileRowIndex={mobileRowIndex} />
+  )
+
   const vnTableHeader = (
     <thead>
       <tr
-        className="border-b border-slate-200 text-[11px] text-slate-500"
+        className="border-b border-slate-200 text-[13px] text-slate-500"
         style={{ height: `${TRANSACTION_HEAD_REM}rem` }}
       >
-        <th className={`w-[4.5rem] ${TRANSACTION_CELL_CLASS} font-medium`}>時間</th>
-        <th className={`${TRANSACTION_CELL_CLASS} text-right font-medium`}>VN</th>
-        <th className={`w-14 ${TRANSACTION_CELL_CLASS} text-center font-medium`}>
-          {isBuy ? '支付' : '兌換為'}
+        <th className={vnCell('whitespace-nowrap font-medium')}>
+          {mobileRowIndex ? '#' : '時間'}
         </th>
-        <th className={`${TRANSACTION_CELL_CLASS} text-right font-medium`}>金額</th>
-        <th className={`${TRANSACTION_CELL_CLASS} text-right font-medium`}>
-          {isBuy ? '成交匯率' : '匯率'}
-        </th>
-        {isBuy ? (
-          <th className={`w-[5.25rem] ${TRANSACTION_CELL_CLASS} text-right font-medium leading-tight`}>
-            成本
-          </th>
-        ) : (
-          <th className={`${TRANSACTION_CELL_CLASS} text-right font-medium`}>利潤</th>
+        <th className={vnNumCell('whitespace-nowrap font-medium')}>VN</th>
+        <th className={vnCell('whitespace-nowrap text-center font-medium')}>幣</th>
+        <th className={vnNumCell('whitespace-nowrap font-medium')}>金額</th>
+        <th className={vnNumCell('whitespace-nowrap font-medium')}>{rateHeader}</th>
+        {!isBuy && (
+          <th className={vnNumCell('whitespace-nowrap font-medium')}>利潤</th>
         )}
-        <th className={`w-12 ${TRANSACTION_CELL_CLASS} text-right font-medium`}>操作</th>
+        <th
+          className={
+            mobileRowIndex
+              ? `${VN_MOBILE_ACTION_CELL_CLASS} font-medium`
+              : `${TRANSACTION_CELL_CLASS} whitespace-nowrap text-right font-medium`
+          }
+        >
+          {mobileRowIndex ? '' : '操作'}
+        </th>
       </tr>
     </thead>
   )
@@ -1290,84 +1477,38 @@ export function VnTradeTable({
         }`}
         style={{ height: `${TRANSACTION_FOOT_REM}rem` }}
       >
-        <td colSpan={2} className={`${TRANSACTION_CELL_CLASS} font-semibold text-slate-800`}>
-          總結
-          <span className="ml-1 text-[10px] font-normal text-slate-500">
-            {transactions.length} 筆
-          </span>
-        </td>
-        <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums font-medium text-slate-800`}>
-          {formatNumber(totalVn)}
-        </td>
-        <td className={`w-14 ${TRANSACTION_CELL_CLASS} text-center text-[10px] text-slate-400`}>
-          —
-        </td>
-        <td className={`${TRANSACTION_CELL_CLASS} text-right text-[10px] tabular-nums text-slate-600`}>
-          {totalTwd > 0 && <span className="block text-emerald-700">T {formatTwd(totalTwd)}</span>}
-          {totalUsdt > 0 && (
-            <span className="block text-sky-700">U {formatNumber(totalUsdt)}</span>
-          )}
-          {totalTwd <= 0 && totalUsdt <= 0 && '—'}
-        </td>
-        <td className={`${TRANSACTION_CELL_CLASS} text-right text-[10px]`}>
-          {showSellAverage ? (
-            sellAvg !== null ? (
-              <span className="font-bold tabular-nums text-amber-600">
-                成交 {formatVnNtdCostRate(sellAvg)}
-              </span>
-            ) : (
-              <span className="text-slate-400">—</span>
-            )
-          ) : (
-            <span className="text-slate-400">—</span>
+        <td
+          className={`${
+            mobileRowIndex ? TRANSACTION_INDEX_CELL_CLASS : TRANSACTION_CELL_CLASS
+          } whitespace-nowrap font-semibold text-slate-800`}
+        >
+          {mobileRowIndex ? null : (
+            <span>
+              總結
+              <span className="font-normal text-slate-500"> {transactions.length}筆</span>
+            </span>
           )}
         </td>
-        {isBuy ? (
-          <td className={`w-[5.25rem] ${TRANSACTION_CELL_CLASS} text-right text-[10px] leading-tight`}>
-            {showCostAverage ? (
-              costAvg !== null || costUsdtAvg !== null ? (
-                <>
-                  {costAvg !== null ? (
-                    <span className="block font-bold tabular-nums text-violet-600">
-                      {formatVnNtdCostRateCompact(costAvg)}
-                    </span>
-                  ) : (
-                    <span className="block text-slate-400">—</span>
-                  )}
-                  {costUsdtAvg !== null ? (
-                    <span className="block font-bold tabular-nums text-violet-600">
-                      {formatVnUsdtCostRateCompact(costUsdtAvg)}
-                    </span>
-                  ) : (
-                    <span className="block text-slate-400">—</span>
-                  )}
-                </>
-              ) : (
-                <span className="text-slate-400">—</span>
-              )
-            ) : (
-              '—'
-            )}
-          </td>
-        ) : (
+        <td className={vnNumCell('font-medium text-amber-700')}>{formatNumber(totalVn)}</td>
+        <td className={vnCell('text-center text-[13px] text-slate-400')}>—</td>
+        <td className={vnNumCell('text-slate-400')}>—</td>
+        <td className={vnNumCell('text-slate-400')}>—</td>
+        {!isBuy && (
           <td
-            className={`${TRANSACTION_CELL_CLASS} text-right text-[10px] font-semibold tabular-nums ${
-              hasProfitData ? profitColorClass(totalProfit) : 'text-slate-400'
-            }`}
+            className={vnNumCell(
+              `font-semibold ${hasProfitData ? profitColorClass(totalProfit) : 'text-slate-400'}`,
+            )}
           >
             {hasProfitData ? formatProfit(totalProfit) : '—'}
           </td>
         )}
-        <td className={TRANSACTION_CELL_CLASS} />
+        <td className={mobileRowIndex ? VN_MOBILE_ACTION_CELL_CLASS : TRANSACTION_CELL_CLASS} />
       </tr>
     </tfoot>
   )
 
-  const vnTransactionRows = transactions.map((tx) => {
-    const impliedTwdRate = buyImpliedTwdRateById?.get(tx.id)
-    const impliedUsdtRate = buyImpliedUsdtRateById?.get(tx.id)
+  const vnTransactionRows = transactions.map((tx, index) => {
     const profitInfo = sellProfitById?.get(tx.id)
-    const rateUnit = tx.payCurrency === 'usdt' ? 'VN/U' : 'VN/TWD'
     return (
       <tr
         key={tx.id}
@@ -1377,57 +1518,44 @@ export function VnTradeTable({
           editingId === tx.id ? 'bg-amber-50/60 hover:bg-amber-50/80' : ''
         }`}
       >
-        <td className={`w-[4.5rem] whitespace-nowrap ${TRANSACTION_CELL_CLASS} tabular-nums text-[11px] text-slate-600`}>
-          {formatTableDateTime(tx.timestamp)}
+        <td
+          className={`${
+            mobileRowIndex ? TRANSACTION_INDEX_CELL_CLASS : TRANSACTION_CELL_CLASS
+          } whitespace-nowrap tabular-nums text-slate-600`}
+        >
+          {mobileRowIndex ? index + 1 : formatTableDateTime(tx.timestamp)}
         </td>
-        <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums text-amber-700`}>
-          {formatNumber(tx.vnAmount)}
-        </td>
-        <td className={`w-14 ${TRANSACTION_CELL_CLASS} text-center text-[10px] font-medium text-slate-500`}>
-          {tx.payCurrency === 'usdt' ? 'USDT' : 'TWD'}
+        <td className={vnNumCell('text-amber-700')}>{formatNumber(tx.vnAmount)}</td>
+        <td className={vnCell('text-center text-[13px] font-medium text-slate-500')}>
+          {assetCode(tx.payCurrency)}
         </td>
         <td
-          className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums ${
-            tx.payCurrency === 'usdt' ? 'text-sky-700' : 'text-emerald-700'
-          }`}
+          className={vnNumCell(
+            tx.payCurrency === 'usdt' ? 'text-sky-700' : 'text-emerald-700',
+          )}
         >
           {tx.payCurrency === 'usdt'
             ? formatNumber(tx.usdtAmount)
             : formatTwd(tx.twdAmount)}
         </td>
-        <td className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums text-slate-600`}>
-          <span>{formatRateDisplay(tx.rate)}</span>
-          <span className="ml-0.5 text-[9px] font-normal text-slate-400">{rateUnit}</span>
-        </td>
-        {isBuy ? (
-          <td className={`w-[5.25rem] ${TRANSACTION_CELL_CLASS} text-right text-[10px] leading-tight tabular-nums text-violet-700`}>
-            {impliedTwdRate !== undefined ? (
-              <span className="block">{formatVnNtdCostRateCompact(impliedTwdRate)}</span>
-            ) : (
-              <span className="block text-slate-400">—</span>
-            )}
-            {impliedUsdtRate !== undefined ? (
-              <span className="block">{formatVnUsdtCostRateCompact(impliedUsdtRate)}</span>
-            ) : impliedTwdRate === undefined ? null : (
-              <span className="block text-slate-400">—</span>
-            )}
-          </td>
-        ) : (
+        <td className={vnNumCell('text-slate-600')}>{formatVnTradeRateDisplay(tx.rate)}</td>
+        {!isBuy && (
           <td
-            className={`${TRANSACTION_CELL_CLASS} text-right tabular-nums ${
+            className={vnNumCell(
               profitInfo !== undefined
                 ? profitColorClass(profitInfo.profit)
-                : 'text-slate-400'
-            }`}
+                : 'text-slate-400',
+            )}
           >
             {profitInfo?.unitCost !== null && profitInfo !== undefined
               ? formatProfit(profitInfo.profit)
               : '—'}
           </td>
         )}
-        <td className={`w-12 whitespace-nowrap ${TRANSACTION_CELL_CLASS} text-right`}>
+        <td className={mobileRowIndex ? VN_MOBILE_ACTION_CELL_CLASS : TRANSACTION_ACTION_CELL_CLASS}>
           <div className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
             <RowActionButtons
+              compact={mobileRowIndex}
               onEdit={() => onEdit(tx)}
               onDelete={() => onDelete(tx.id)}
             />
@@ -1441,12 +1569,13 @@ export function VnTradeTable({
     return (
       <div className="overflow-x-auto">
         <table className={VN_TRANSACTION_TABLE_CLASS}>
+          {vnColGroup}
           {vnTableHeader}
           <tbody>
             {transactions.length === 0 ? (
               <tr style={TRANSACTION_DATA_ROW_STYLE}>
                 <td
-                  colSpan={7}
+                  colSpan={columnCount}
                   className={`${TRANSACTION_CELL_CLASS} py-8 text-center`}
                 >
                   <p className="text-sm text-slate-400">尚無{sideLabel}紀錄</p>
@@ -1464,7 +1593,10 @@ export function VnTradeTable({
 
   return (
     <div className="flex shrink-0 flex-col overflow-x-auto">
-      <table className={`${VN_TRANSACTION_TABLE_CLASS} shrink-0`}>{vnTableHeader}</table>
+      <table className={`${VN_TRANSACTION_TABLE_CLASS} shrink-0`}>
+        {vnColGroup}
+        {vnTableHeader}
+      </table>
       <div className="relative shrink-0">
         <div
           ref={scrollRef}
@@ -1473,6 +1605,7 @@ export function VnTradeTable({
           onScroll={(event) => onBodyScroll?.(event.currentTarget.scrollTop)}
         >
           <table className={VN_TRANSACTION_TABLE_CLASS}>
+            {vnColGroup}
             <tbody>{vnTransactionRows}</tbody>
           </table>
         </div>
@@ -1489,7 +1622,10 @@ export function VnTradeTable({
           />
         )}
       </div>
-      <table className={`${VN_TRANSACTION_TABLE_CLASS} shrink-0`}>{vnTableFooter}</table>
+      <table className={`${VN_TRANSACTION_TABLE_CLASS} shrink-0`}>
+        {vnColGroup}
+        {vnTableFooter}
+      </table>
     </div>
   )
 }
@@ -1586,7 +1722,6 @@ export function ExpenseForm({
             disabled={disabled}
             onChange={(e) => onNoteChange(e.target.value)}
             className={`mt-0.5 ${EXPENSE_INPUT_CLASS}`}
-            placeholder="例如：北區巡點"
           />
         </label>
         <div className="flex shrink-0 gap-1 sm:pb-px">
@@ -1608,22 +1743,17 @@ export function ExpenseForm({
           )}
         </div>
       </div>
-      <p
-        className={`mt-1 text-[10px] tabular-nums ${
-          insufficient ? 'text-rose-600' : 'text-slate-500'
-        }`}
-      >
-        台幣餘額 {formatTwd(twdBalance)}
-        {amountValid && (
-          <span>
-            {' '}
-            → 扣後 {formatTwd(twdBalance - amountNum)}
-            <span className="ml-1 text-slate-400">
-              · {expenseTypeLabel(expenseType)}
-            </span>
-          </span>
-        )}
-      </p>
+      {(insufficient || amountValid) && (
+        <p
+          className={`mt-1 text-[10px] tabular-nums ${
+            insufficient ? 'text-rose-600' : 'text-slate-500'
+          }`}
+        >
+          {insufficient
+            ? '台幣餘額不足'
+            : `扣後 ${formatTwd(twdBalance - amountNum)} · ${expenseTypeLabel(expenseType)}`}
+        </p>
+      )}
       {error && <p className="mt-1 text-[10px] text-rose-600">{error}</p>}
     </form>
   )
@@ -2541,13 +2671,64 @@ export function AppNav({
   onNavigate,
 }: AppNavProps) {
   const isDrawer = layout === 'drawer'
-  const navClass = isDrawer ? 'space-y-1 p-3' : 'space-y-1'
-  const buttonClass = (tab: PageTab) =>
-    `w-full rounded-md font-medium leading-snug transition ${
-      isDrawer ? 'px-3 py-2.5 text-left text-sm' : 'px-1.5 py-2 text-center text-xs'
-    } ${
+
+  const navItems: {
+    tab: PageTab
+    label: string
+    icon: (active: boolean) => ReactNode
+  }[] = [
+    {
+      tab: 'daily',
+      label: '每日明細',
+      icon: (_active) => (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+        </svg>
+      ),
+    },
+    {
+      tab: 'settlements',
+      label: '每日結算',
+      icon: (_active) => (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+        </svg>
+      ),
+    },
+    {
+      tab: 'expenses',
+      label: '營業開銷',
+      icon: (_active) => (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a4.5 4.5 0 0 0 4.5 4.5h10.5a4.5 4.5 0 0 0 4.5-4.5v-9a4.5 4.5 0 0 0-4.5-4.5H6.75a4.5 4.5 0 0 0-4.5 4.5v9Z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 9h7.5M8.25 12.75h4.5" />
+        </svg>
+      ),
+    },
+    {
+      tab: 'monthly',
+      label: '月結',
+      icon: (_active) => (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
+        </svg>
+      ),
+    },
+  ]
+
+  const drawerButtonClass = (tab: PageTab) => {
+    const active = activeTab === tab
+    return `group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium transition-all duration-200 ${
+      active
+        ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
+        : 'text-slate-600 hover:bg-white/80 hover:text-slate-900'
+    }`
+  }
+
+  const sidebarButtonClass = (tab: PageTab) =>
+    `w-full rounded-md px-1.5 py-2 text-center text-xs font-medium leading-snug transition ${
       activeTab === tab
-        ? 'bg-slate-900 text-white'
+        ? 'bg-slate-900 text-white shadow-sm'
         : 'text-slate-600 hover:bg-slate-100'
     }`
 
@@ -2556,29 +2737,50 @@ export function AppNav({
     onNavigate?.()
   }
 
+  if (isDrawer) {
+    return (
+      <nav className="flex flex-1 flex-col gap-1.5 px-3 py-4">
+        {navItems.map(({ tab, label, icon }) => {
+          const active = activeTab === tab
+          return (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => selectTab(tab)}
+              className={drawerButtonClass(tab)}
+            >
+              <span
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                  active
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700'
+                }`}
+              >
+                {icon(active)}
+              </span>
+              <span className="min-w-0 flex-1">{label}</span>
+              {tab === 'settlements' && settlementsCount > 0 && (
+                <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-indigo-700">
+                  {settlementsCount}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </nav>
+    )
+  }
+
   return (
-    <nav className={navClass}>
-      <button type="button" onClick={() => selectTab('daily')} className={buttonClass('daily')}>
-        每日明細
-      </button>
-      <button
-        type="button"
-        onClick={() => selectTab('settlements')}
-        className={buttonClass('settlements')}
-      >
-        每日結算
-        {settlementsCount > 0 && (
-          <span className={isDrawer ? 'ml-1 text-xs opacity-70' : 'block text-[10px] opacity-70'}>
-            ({settlementsCount})
-          </span>
-        )}
-      </button>
-      <button type="button" onClick={() => selectTab('expenses')} className={buttonClass('expenses')}>
-        營業開銷
-      </button>
-      <button type="button" onClick={() => selectTab('monthly')} className={buttonClass('monthly')}>
-        月結
-      </button>
+    <nav className="space-y-1">
+      {navItems.map(({ tab, label }) => (
+        <button key={tab} type="button" onClick={() => selectTab(tab)} className={sidebarButtonClass(tab)}>
+          {label}
+          {tab === 'settlements' && settlementsCount > 0 && (
+            <span className="block text-[10px] opacity-70">({settlementsCount})</span>
+          )}
+        </button>
+      ))}
     </nav>
   )
 }
@@ -2586,7 +2788,7 @@ export function AppNav({
 export function MobileNavCloseIcon() {
   return (
     <svg
-      className="h-5 w-5"
+      className="h-4 w-4"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -2601,7 +2803,7 @@ export function MobileNavCloseIcon() {
 export function MobileNavMenuIcon() {
   return (
     <svg
-      className="h-5 w-5"
+      className="h-4 w-4"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

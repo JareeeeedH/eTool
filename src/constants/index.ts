@@ -46,12 +46,25 @@ export const TRANSACTION_VISIBLE_ROWS_DESKTOP = 12
 export const TRANSACTION_ROW_HEIGHT_REM = 2.5
 export const TRANSACTION_HEAD_REM = 2
 export const TRANSACTION_FOOT_REM = 2.5
-export const TRANSACTION_TABLE_CLASS = 'w-full min-w-[260px] table-fixed text-left text-xs'
+export const TRANSACTION_TABLE_CLASS = 'w-full min-w-[260px] table-fixed text-left text-[13px]'
 export const TRANSACTION_DATA_ROW_STYLE = {
   height: `${TRANSACTION_ROW_HEIGHT_REM}rem`,
 } as const
 export const TRANSACTION_CELL_CLASS = 'align-middle px-1.5 leading-none'
+export const TRANSACTION_TIME_CELL_CLASS =
+  'align-middle w-[4.25rem] whitespace-nowrap px-1 text-[13px] tabular-nums leading-none'
+export const TRANSACTION_INDEX_CELL_CLASS =
+  'align-middle w-0 whitespace-nowrap p-0 pl-0 pr-px text-center text-[10px] tabular-nums leading-none'
+export const VN_MOBILE_CELL_CLASS = 'align-middle px-0.5 text-[13px] leading-none'
+export const VN_MOBILE_NUM_CELL_CLASS =
+  'align-middle px-0.5 text-right tabular-nums leading-none text-[13px]'
+export const VN_MOBILE_ACTION_CELL_CLASS =
+  'align-middle w-0 whitespace-nowrap p-0 text-right leading-none'
+export const TRANSACTION_NUM_CELL_CLASS =
+  'align-middle px-1 text-right tabular-nums leading-none'
+export const TRANSACTION_ACTION_CELL_CLASS =
+  'align-middle w-[3.25rem] whitespace-nowrap pl-1 pr-0 text-right leading-none'
 
 export const VN_TRANSACTION_TABLE_CLASS =
-  'w-full min-w-[340px] table-fixed text-left text-xs'
+  'w-full min-w-[300px] table-fixed text-left text-[13px]'
 export const EXPENSE_TABLE_CLASS = 'w-full min-w-[300px] table-fixed text-left text-xs'

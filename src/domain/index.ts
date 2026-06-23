@@ -32,7 +32,9 @@ import {
   formatSettlementDate,
   formatTwd,
   formatVnNtdCostRateCompact,
+  formatVnTradeRateDisplay,
   formatVnUsdtCostRateCompact,
+  roundVnTradeRate,
 } from '../utils/format'
 
 export function isExpenseTransaction(tx: Transaction): tx is ExpenseTransaction {
@@ -150,7 +152,7 @@ export function computeTotalAssetsTwd(
 
 export function calculateVnTwdRate(vnAmount: number, twdAmount: number): number {
   if (twdAmount <= 0) return 0
-  return vnAmount / twdAmount
+  return roundVnTradeRate(vnAmount / twdAmount)
 }
 
 export function createUsdtInventoryState(
@@ -947,7 +949,7 @@ export function buildDeleteConfirmLines(tx: Transaction): string[] {
       `類型：${typeLabel}（${payLabel}）`,
       `VN：${formatNumber(tx.vnAmount)}`,
       `${payLabel}：${payAmount}`,
-      `匯率 (${rateUnit})：${formatRateDisplay(tx.rate)}`,
+      `匯率 (${rateUnit})：${formatVnTradeRateDisplay(tx.rate)}`,
     ]
   }
 

@@ -11,6 +11,10 @@ export function formatNumber(value: number): string {
   })
 }
 
+export function assetCode(currency: 'twd' | 'usdt'): 'T' | 'E' {
+  return currency === 'usdt' ? 'E' : 'T'
+}
+
 /** 大數字緊湊顯示（如 VN 庫存）：億 / 萬 */
 export function formatCompactNumber(value: number): string {
   const abs = Math.abs(value)
@@ -46,25 +50,39 @@ export function formatRateDisplay(value: number): string {
   return roundMoney(value).toFixed(2)
 }
 
+/** VN 成交匯率：四捨五入至小數第一位 */
+export function roundVnTradeRate(value: number): number {
+  return Math.round(value * 10) / 10
+}
+
+export function formatVnTradeRateDisplay(value: number): string {
+  return roundVnTradeRate(value).toFixed(1)
+}
+
 /** USDT 成本均價（TWD/USDT）顯示：四捨五入至小數第三位 */
 export function formatUsdtCostRateDisplay(value: number): string {
   return (Math.round(value * 1000) / 1000).toFixed(3)
 }
 
 export function formatVnNtdCostRate(rate: number): string {
-  return `1 NTD = ${formatRateDisplay(rate)} VN`
+  return `1 NTD = ${formatVnTradeRateDisplay(rate)} VN`
+}
+
+/** VN 池成本 @ 顯示：四捨五入至小數第一位 */
+export function formatVnPoolCostRateDisplay(value: number): string {
+  return (Math.round(value * 10) / 10).toFixed(1)
 }
 
 export function formatVnNtdCostRateCompact(rate: number): string {
-  return `${formatRateDisplay(rate)} VN/NTD`
+  return `@${formatVnPoolCostRateDisplay(rate)}`
 }
 
 export function formatVnUsdtCostRate(rate: number): string {
-  return `1 U = ${formatRateDisplay(rate)} VN`
+  return `1 U = ${formatVnTradeRateDisplay(rate)} VN`
 }
 
 export function formatVnUsdtCostRateCompact(rate: number): string {
-  return `${formatRateDisplay(rate)} VN/U`
+  return `@${formatVnPoolCostRateDisplay(rate)}`
 }
 
 export function formatProfit(value: number): string {
