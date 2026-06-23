@@ -24,9 +24,7 @@ import type {
   TotalAssetsTwd,
   UsdtTransaction,
   VnPayCurrency,
-  VnTradeTransaction,
   ExpenseType,
-  SellProfitInfo,
 } from '../types'
 import {
   EXPENSE_INPUT_CLASS,
@@ -1392,10 +1390,6 @@ export function VnTradeTable({
   onDelete,
   accent,
   sideLabel,
-  showSellAverage = false,
-  openingBalances,
-  openingUsdtCost,
-  allTransactions,
   sellProfitById,
   visibleRows = 8,
   bodyScrollRef,
