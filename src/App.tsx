@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { loadPersistedAppState, savePersistedAppState } from './persistence'
+import {
+  loadPersistedAppStateAsync,
+  savePersistedAppStateAsync,
+  type PersistedAppState,
+} from './persistence'
 import type {
   AppSnapshot,
   Balances,
@@ -85,40 +89,24 @@ import {
 
 function App() {
   const tableVisibleRows = useTransactionVisibleRows()
-  const persistedRef = useRef(loadPersistedAppState())
-  const persisted = persistedRef.current
+  const persistedRef = useRef<PersistedAppState | null>(null)
+  const [ready, setReady] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const persistReadyRef = useRef(false)
 
-  const [activeTab, setActiveTab] = useState<PageTab>(persisted?.activeTab ?? 'daily')
-  const [dailyWorkTab, setDailyWorkTab] = useState<DailyWorkTab>(
-    persisted?.dailyWorkTab ?? 'usdt',
-  )
-  const [openingBalances, setOpeningBalances] = useState<Balances>(
-    persisted?.openingBalances ?? { ...INITIAL_BALANCES },
-  )
-  const [openingUsdtCost, setOpeningUsdtCost] = useState<UsdtInventoryCost>(
-    persisted?.openingUsdtCost ?? { ...EMPTY_USDT_COST },
-  )
-  const [openingVnTwdRate, setOpeningVnTwdRate] = useState<number | null>(
-    persisted?.openingVnTwdRate ?? null,
-  )
-  const [openingVnUsdtRate, setOpeningVnUsdtRate] = useState<number | null>(
-    persisted?.openingVnUsdtRate ?? null,
-  )
-  const [settlements, setSettlements] = useState<DailySettlement[]>(
-    (persisted?.settlements ?? []).map(normalizeLoadedSettlement),
-  )
-  const [expenseSettlements, setExpenseSettlements] = useState<ExpenseSettlement[]>(
-    persisted?.expenseSettlements ?? [],
-  )
-  const [monthlyCloses, setMonthlyCloses] = useState<MonthlyClose[]>(
-    (persisted?.monthlyCloses ?? []).map((item) => normalizeMonthlyClose(item)),
-  )
+  const [activeTab, setActiveTab] = useState<PageTab>('daily')
+  const [dailyWorkTab, setDailyWorkTab] = useState<DailyWorkTab>('usdt')
+  const [openingBalances, setOpeningBalances] = useState<Balances>({ ...INITIAL_BALANCES })
+  const [openingUsdtCost, setOpeningUsdtCost] = useState<UsdtInventoryCost>({ ...EMPTY_USDT_COST })
+  const [openingVnTwdRate, setOpeningVnTwdRate] = useState<number | null>(null)
+  const [openingVnUsdtRate, setOpeningVnUsdtRate] = useState<number | null>(null)
+  const [settlements, setSettlements] = useState<DailySettlement[]>([])
+  const [expenseSettlements, setExpenseSettlements] = useState<ExpenseSettlement[]>([])
+  const [monthlyCloses, setMonthlyCloses] = useState<MonthlyClose[]>([])
   const [selectedMonthlyCloseId, setSelectedMonthlyCloseId] = useState<string | null>(null)
   const [monthlyCloseModalOpen, setMonthlyCloseModalOpen] = useState(false)
   const [monthlyPeriodLabel, setMonthlyPeriodLabel] = useState('')
-  const [transactions, setTransactions] = useState<Transaction[]>(
-    normalizeLoadedTransactions(persisted?.transactions ?? []),
-  )
+  const [transactions, setTransactions] = useState<Transaction[]>([])
 
   const [buyUsdtAmount, setBuyUsdtAmount] = useState('')
   const [buyFiatAmount, setBuyFiatAmount] = useState('')
@@ -155,10 +143,10 @@ function App() {
   const [openingBalanceModalOpen, setOpeningBalanceModalOpen] = useState(false)
   const [openingBalanceForm, setOpeningBalanceForm] = useState<OpeningBalanceForm>(() =>
     openingBalanceToForm(
-      persisted?.openingBalances ?? { ...INITIAL_BALANCES },
-      persisted?.openingUsdtCost ?? { ...EMPTY_USDT_COST },
-      persisted?.openingVnTwdRate ?? null,
-      persisted?.openingVnUsdtRate ?? null,
+      { ...INITIAL_BALANCES },
+      { ...EMPTY_USDT_COST },
+      null,
+      null,
     ),
   )
   const [openingBalanceError, setOpeningBalanceError] = useState('')
@@ -174,6 +162,50 @@ function App() {
   const vnBuyBodyScrollRef = useRef<HTMLDivElement>(null)
   const vnSellBodyScrollRef = useRef<HTMLDivElement>(null)
   const syncBodyScrollLock = useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    void loadPersistedAppStateAsync().then((result) => {
+      if (cancelled) return
+
+      if (!result.ok) {
+        setLoadError(result.error)
+        setReady(true)
+        return
+      }
+
+      const data = result.state
+      if (data) {
+        persistedRef.current = data
+        setActiveTab(data.activeTab)
+        setDailyWorkTab(data.dailyWorkTab ?? 'usdt')
+        setOpeningBalances({ ...data.openingBalances })
+        setOpeningUsdtCost({ ...data.openingUsdtCost })
+        setOpeningVnTwdRate(data.openingVnTwdRate ?? null)
+        setOpeningVnUsdtRate(data.openingVnUsdtRate ?? null)
+        setSettlements(data.settlements.map(normalizeLoadedSettlement))
+        setExpenseSettlements(data.expenseSettlements ?? [])
+        setMonthlyCloses((data.monthlyCloses ?? []).map((item) => normalizeMonthlyClose(item)))
+        setTransactions(normalizeLoadedTransactions(data.transactions))
+        setOpeningBalanceForm(
+          openingBalanceToForm(
+            data.openingBalances,
+            data.openingUsdtCost,
+            data.openingVnTwdRate ?? null,
+            data.openingVnUsdtRate ?? null,
+          ),
+        )
+      }
+
+      persistReadyRef.current = true
+      setReady(true)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     setMobileNavOpen(false)
@@ -202,7 +234,9 @@ function App() {
   }
 
   useEffect(() => {
-    savePersistedAppState({
+    if (!persistReadyRef.current) return
+
+    const payload: PersistedAppState = {
       activeTab,
       dailyWorkTab,
       openingBalances,
@@ -213,7 +247,12 @@ function App() {
       settlements,
       expenseSettlements,
       monthlyCloses,
-    })
+    }
+
+    const timer = window.setTimeout(() => {
+      void savePersistedAppStateAsync(payload)
+    }, 400)
+    return () => window.clearTimeout(timer)
   }, [activeTab, dailyWorkTab, openingBalances, openingUsdtCost, openingVnTwdRate, openingVnUsdtRate, transactions, settlements, expenseSettlements, monthlyCloses])
 
   const balances = useMemo(
@@ -1112,6 +1151,23 @@ function App() {
 
     setUndoSnapshot(snapshot)
     setUndoMessage(`已完成「${monthlyClose.periodLabel}」月結封存`)
+  }
+
+  if (!ready) {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-slate-50 text-slate-600">
+        載入中…
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex h-dvh flex-col items-center justify-center gap-2 bg-slate-50 px-6 text-center">
+        <p className="font-medium text-slate-800">無法載入資料</p>
+        <p className="text-sm text-slate-600">{loadError}</p>
+      </div>
+    )
   }
 
   return (

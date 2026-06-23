@@ -1,10 +1,29 @@
 /**
- * 瀏覽器 localStorage 持久化。
- * 之後接後端時，可改為同一介面：load → GET /state、save → PUT /state（或 WebSocket 同步）。
+ * 持久化：僅 exchange-api（GET/PUT /api/state）。
+ * 需在 .env 設定 VITE_API_BASE_URL、VITE_API_TOKEN。
  */
 
-const STORAGE_KEY = 'exchange-app-state'
 const STORAGE_VERSION = 1
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? ''
+
+export function getPersistenceConfigError(): string | null {
+  if (!API_BASE_URL) return '請在 .env 設定 VITE_API_BASE_URL'
+  if (!API_TOKEN) return '請在 .env 設定 VITE_API_TOKEN'
+  return null
+}
+
+function apiHeaders(): HeadersInit {
+  return {
+    Authorization: `Bearer ${API_TOKEN}`,
+    'Content-Type': 'application/json',
+  }
+}
+
+export type LoadPersistedResult =
+  | { ok: true; state: PersistedAppState | null }
+  | { ok: false; error: string }
 
 type PageTab =
   | 'daily'
@@ -144,10 +163,6 @@ export interface PersistedAppState {
   settlements: DailySettlement[]
   expenseSettlements?: ExpenseSettlement[]
   monthlyCloses?: MonthlyClose[]
-}
-
-interface PersistedPayloadV1 extends PersistedAppState {
-  version: typeof STORAGE_VERSION
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -448,80 +463,119 @@ function parseMonthlyClose(value: unknown): MonthlyClose | null {
   }
 }
 
-export function loadPersistedAppState(): PersistedAppState | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
+function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
+  if (!isRecord(parsed)) return null
+  if ('version' in parsed && parsed.version !== STORAGE_VERSION) return null
 
-    const parsed: unknown = JSON.parse(raw)
-    if (!isRecord(parsed) || parsed.version !== STORAGE_VERSION) return null
+  const openingBalances = parseBalances(parsed.openingBalances)
+  const openingUsdtCost = parseUsdtCost(parsed.openingUsdtCost)
+  if (!openingBalances || !openingUsdtCost) return null
 
-    const openingBalances = parseBalances(parsed.openingBalances)
-    const openingUsdtCost = parseUsdtCost(parsed.openingUsdtCost)
-    if (!openingBalances || !openingUsdtCost) return null
+  const transactions = Array.isArray(parsed.transactions)
+    ? parsed.transactions
+        .map(parseTransaction)
+        .filter((tx): tx is Transaction => tx !== null)
+    : []
 
-    const transactions = Array.isArray(parsed.transactions)
-      ? parsed.transactions
-          .map(parseTransaction)
-          .filter((tx): tx is Transaction => tx !== null)
-      : []
+  const settlements = Array.isArray(parsed.settlements)
+    ? parsed.settlements
+        .map(parseSettlement)
+        .filter((item): item is DailySettlement => item !== null)
+    : []
 
-    const settlements = Array.isArray(parsed.settlements)
-      ? parsed.settlements
-          .map(parseSettlement)
-          .filter((item): item is DailySettlement => item !== null)
-      : []
+  const expenseSettlements = Array.isArray(parsed.expenseSettlements)
+    ? parsed.expenseSettlements
+        .map(parseExpenseSettlement)
+        .filter((item): item is ExpenseSettlement => item !== null)
+    : []
 
-    const expenseSettlements = Array.isArray(parsed.expenseSettlements)
-      ? parsed.expenseSettlements
-          .map(parseExpenseSettlement)
-          .filter((item): item is ExpenseSettlement => item !== null)
-      : []
+  const monthlyCloses = Array.isArray(parsed.monthlyCloses)
+    ? parsed.monthlyCloses
+        .map(parseMonthlyClose)
+        .filter((item): item is MonthlyClose => item !== null)
+    : []
 
-    const monthlyCloses = Array.isArray(parsed.monthlyCloses)
-      ? parsed.monthlyCloses
-          .map(parseMonthlyClose)
-          .filter((item): item is MonthlyClose => item !== null)
-      : []
-
-    const activeTab: PageTab =
-      parsed.activeTab === 'settlements'
-        ? 'settlements'
-        : parsed.activeTab === 'expenses'
+  const activeTab: PageTab =
+    parsed.activeTab === 'settlements'
+      ? 'settlements'
+      : parsed.activeTab === 'expenses'
+        ? 'expenses'
+        : parsed.activeTab === 'expense_settlements'
           ? 'expenses'
-          : parsed.activeTab === 'expense_settlements'
-            ? 'expenses'
-            : parsed.activeTab === 'monthly'
-              ? 'monthly'
-              : 'daily'
-    const dailyWorkTab: DailyWorkTab = parsed.dailyWorkTab === 'vn' ? 'vn' : 'usdt'
+          : parsed.activeTab === 'monthly'
+            ? 'monthly'
+            : 'daily'
+  const dailyWorkTab: DailyWorkTab = parsed.dailyWorkTab === 'vn' ? 'vn' : 'usdt'
 
-    return {
-      activeTab,
-      dailyWorkTab,
-      openingBalances,
-      openingUsdtCost,
-      openingVnTwdRate: parseNullableNumber(parsed.openingVnTwdRate),
-      openingVnUsdtRate: parseNullableNumber(parsed.openingVnUsdtRate),
-      transactions,
-      settlements,
-      expenseSettlements,
-      monthlyCloses,
-    }
-  } catch {
-    return null
+  return {
+    activeTab,
+    dailyWorkTab,
+    openingBalances,
+    openingUsdtCost,
+    openingVnTwdRate: parseNullableNumber(parsed.openingVnTwdRate),
+    openingVnUsdtRate: parseNullableNumber(parsed.openingVnUsdtRate),
+    transactions,
+    settlements,
+    expenseSettlements,
+    monthlyCloses,
   }
 }
 
-export function savePersistedAppState(state: PersistedAppState): boolean {
+export async function loadPersistedAppStateAsync(): Promise<LoadPersistedResult> {
+  const configError = getPersistenceConfigError()
+  if (configError) {
+    return { ok: false, error: configError }
+  }
+
   try {
-    const payload: PersistedPayloadV1 = {
-      version: STORAGE_VERSION,
-      ...state,
+    const res = await fetch(`${API_BASE_URL}/api/state`, {
+      headers: { Authorization: `Bearer ${API_TOKEN}` },
+    })
+    if (!res.ok) {
+      return { ok: false, error: `讀取失敗（HTTP ${res.status}），請確認後端已啟動` }
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-    return true
+
+    const body: unknown = await res.json()
+    if (body === null) {
+      return { ok: true, state: null }
+    }
+
+    const parsed = parsePersistedAppState(body)
+    if (!parsed) {
+      return { ok: false, error: '後端資料格式錯誤' }
+    }
+    return { ok: true, state: parsed }
   } catch {
+    return { ok: false, error: '無法連線後端，請確認 exchange-api 是否在跑' }
+  }
+}
+
+export async function savePersistedAppStateAsync(state: PersistedAppState): Promise<boolean> {
+  if (getPersistenceConfigError()) return false
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/state`, {
+      method: 'PUT',
+      headers: apiHeaders(),
+      body: JSON.stringify(state),
+    })
+    if (!res.ok) {
+      console.error('[persistence] PUT /api/state failed:', res.status)
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error('[persistence] PUT /api/state error:', err)
     return false
   }
+}
+
+/** @deprecated 僅供 App.legacy；主程式請用 loadPersistedAppStateAsync */
+export function loadPersistedAppState(): PersistedAppState | null {
+  return null
+}
+
+/** @deprecated 僅供 App.legacy；主程式請用 savePersistedAppStateAsync */
+export function savePersistedAppState(_state: PersistedAppState): boolean {
+  return false
 }
