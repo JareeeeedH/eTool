@@ -7,6 +7,15 @@ body {
   overflow: hidden;
 }
 
+/** iOS Safari：輸入框字體 < 16px 時 focus 會自動放大頁面 */
+@media (max-width: 639px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='button']):not([type='submit']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /** 交易明細 tbody 捲動區（僅在內容溢出時套用） */
 .transaction-table-body-scroll--overflow {
   scrollbar-gutter: stable;

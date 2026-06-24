@@ -135,11 +135,6 @@ function App() {
   const [expenseAmount, setExpenseAmount] = useState('')
   const [expenseNote, setExpenseNote] = useState('')
   const [expenseError, setExpenseError] = useState('')
-  const [expenseFormFocusKey, setExpenseFormFocusKey] = useState(0)
-  const [buyFormFocusKey, setBuyFormFocusKey] = useState(0)
-  const [sellFormFocusKey, setSellFormFocusKey] = useState(0)
-  const [vnBuyFormFocusKey, setVnBuyFormFocusKey] = useState(0)
-  const [vnSellFormFocusKey, setVnSellFormFocusKey] = useState(0)
 
   const [openingBalanceModalOpen, setOpeningBalanceModalOpen] = useState(false)
   const [openingBalanceForm, setOpeningBalanceForm] = useState<OpeningBalanceForm>(() =>
@@ -561,9 +556,6 @@ function App() {
 
     setTransactions(updatedTransactions)
     resetExpenseForm()
-    if (!isEditing) {
-      setExpenseFormFocusKey((key) => key + 1)
-    }
   }
 
   const handleSubmit = (type: TransactionType, e: FormEvent) => {
@@ -623,10 +615,8 @@ function App() {
     setTransactions(updatedTransactions)
     if (isBuy) {
       resetBuyForm()
-      if (!isEditing) setBuyFormFocusKey((key) => key + 1)
     } else {
       resetSellForm()
-      if (!isEditing) setSellFormFocusKey((key) => key + 1)
     }
   }
 
@@ -698,10 +688,8 @@ function App() {
     setTransactions(updatedTransactions)
     if (isBuy) {
       resetVnBuyForm()
-      if (!isEditing) setVnBuyFormFocusKey((key) => key + 1)
     } else {
       resetVnSellForm()
-      if (!isEditing) setVnSellFormFocusKey((key) => key + 1)
     }
   }
 
@@ -1323,7 +1311,6 @@ function App() {
                         error={buyError}
                         isEditing={isEditingBuy}
                         disabled={isEditingAny && !isEditingBuy}
-                        focusKey={buyFormFocusKey}
                         onFieldChange={updateBuyForm}
                         onSubmit={(e) => handleSubmit('buy', e)}
                         onCancel={resetBuyForm}
@@ -1365,7 +1352,6 @@ function App() {
                         error={sellError}
                         isEditing={isEditingSell}
                         disabled={isEditingAny && !isEditingSell}
-                        focusKey={sellFormFocusKey}
                         onFieldChange={updateSellForm}
                         onSubmit={(e) => handleSubmit('sell', e)}
                         onCancel={resetSellForm}
@@ -1411,7 +1397,6 @@ function App() {
                         error={vnBuyError}
                         isEditing={isEditingVnBuy}
                         disabled={isEditingAny && !isEditingVnBuy}
-                        focusKey={vnBuyFormFocusKey}
                         onFieldChange={updateVnBuyForm}
                         onSubmit={(e) => handleVnSubmit('buy', e)}
                         onCancel={resetVnBuyForm}
@@ -1455,7 +1440,6 @@ function App() {
                         error={vnSellError}
                         isEditing={isEditingVnSell}
                         disabled={isEditingAny && !isEditingVnSell}
-                        focusKey={vnSellFormFocusKey}
                         onFieldChange={updateVnSellForm}
                         onSubmit={(e) => handleVnSubmit('sell', e)}
                         onCancel={resetVnSellForm}
@@ -1501,21 +1485,24 @@ function App() {
               {editingBannerLabel && (
                 <EditingBanner label={editingBannerLabel} onCancel={cancelEditing} />
               )}
-              <h1 className="mb-1 shrink-0 text-sm font-semibold text-slate-800">營業開銷</h1>
-              <p className="mb-2 shrink-0 text-[10px] text-slate-500">
+              <h1 className="mb-0.5 shrink-0 text-sm font-semibold text-slate-800">營業開銷</h1>
+              <p className="mb-1 shrink-0 text-[10px] leading-tight text-slate-500">
                 <span className="font-medium text-slate-700">{expenseBusinessDayLabel}</span>
                 {' 營業日 · '}
                 待結{' '}
                 <span className="tabular-nums font-medium text-slate-700">
                   {expenseTransactions.length}
                 </span>{' '}
-                筆 · 台幣餘額{' '}
-                <span className="tabular-nums font-medium text-slate-700">
-                  {formatTwd(balances.twd)}
+                筆
+                <span className="hidden lg:inline">
+                  {' · 台幣餘額 '}
+                  <span className="tabular-nums font-medium text-slate-700">
+                    {formatTwd(balances.twd)}
+                  </span>
                 </span>
               </p>
-              <section className="mx-auto w-full max-w-2xl shrink-0 space-y-2">
-                <div className={formCardClass('orange', isEditingExpense)}>
+              <section className="mx-auto w-full max-w-2xl shrink-0 space-y-1.5">
+                <div className={`${formCardClass('orange', isEditingExpense)} !p-1.5`}>
                   <ExpenseForm
                     expenseType={expenseType}
                     amount={expenseAmount}
@@ -1524,7 +1511,6 @@ function App() {
                     isEditing={isEditingExpense}
                     disabled={isEditingAny && !isEditingExpense}
                     twdBalance={balances.twd}
-                    focusKey={expenseFormFocusKey}
                     onExpenseTypeChange={setExpenseType}
                     onAmountChange={setExpenseAmount}
                     onNoteChange={setExpenseNote}

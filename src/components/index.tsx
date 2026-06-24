@@ -31,7 +31,10 @@ import {
   EXPENSE_QUICK_TYPES,
   EXPENSE_TABLE_CLASS,
   EXPENSE_TYPE_OPTIONS,
+  TRADE_FORM_GRID_CLASS,
   TRADE_INPUT_CLASS,
+  TRADE_RATE_INPUT_CLASS,
+  TRADE_RATE_LABEL_CLASS,
   TRANSACTION_CELL_CLASS,
   TRANSACTION_DATA_ROW_STYLE,
   TRANSACTION_FOOT_REM,
@@ -919,7 +922,6 @@ export function TradeForm({
   error,
   isEditing,
   disabled,
-  focusKey,
   onFieldChange,
   onSubmit,
   onCancel,
@@ -929,10 +931,9 @@ export function TradeForm({
   balances,
   inventoryUnitCost = null,
 }: TradeFormProps) {
-  const usdtRef = useRef<HTMLInputElement>(null)
-  const didMountRef = useRef(false)
   const prefix = type === 'buy' ? 'buy' : 'sell'
   const inputClass = `${TRADE_INPUT_CLASS} ${focusClass}`
+  const rateInputClass = `${TRADE_RATE_INPUT_CLASS} ${focusClass}`
 
   const usdtNum = parseFloat(usdt)
   const fiatNum = parseFloat(fiat)
@@ -940,16 +941,6 @@ export function TradeForm({
   const fiatValid = !Number.isNaN(fiatNum) && fiatNum > 0
   const twdInsufficient = type === 'buy' && fiatValid && fiatNum > balances.twd
   const usdtInsufficient = type === 'sell' && usdtValid && usdtNum > balances.usdt
-
-  useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true
-      return
-    }
-    if (!disabled && !isEditing) {
-      usdtRef.current?.focus({ preventScroll: true })
-    }
-  }, [disabled, isEditing, focusKey])
 
   let previewText: string | null = null
   let previewWarn = false
@@ -982,11 +973,10 @@ export function TradeForm({
       </h2>
 
       <form onSubmit={onSubmit}>
-        <div className="flex items-center gap-1">
-          <label className="flex min-w-0 flex-1 items-center gap-1 text-[10px] text-slate-600">
+        <div className={TRADE_FORM_GRID_CLASS}>
+          <label className="order-1 col-start-1 row-start-1 flex min-w-0 items-center gap-1 text-[10px] text-slate-600 sm:flex-1">
             <span className="shrink-0">USDT</span>
             <input
-              ref={usdtRef}
               id={`${prefix}Usdt`}
               type="number"
               inputMode="decimal"
@@ -999,24 +989,7 @@ export function TradeForm({
               className={`min-w-0 flex-1 py-0.5 ${inputClass}`}
             />
           </label>
-          <label className="flex w-[4.25rem] shrink-0 items-center gap-0.5 text-[10px] text-slate-600">
-            <span className="shrink-0" title="匯率">
-              率
-            </span>
-            <input
-              id={`${prefix}Rate`}
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="any"
-              value={rate}
-              onChange={(e) => onFieldChange('rate', e.target.value)}
-              disabled={disabled}
-              placeholder="0"
-              className={`min-w-0 flex-1 py-0.5 ${inputClass}`}
-            />
-          </label>
-          <label className="flex min-w-0 flex-1 items-center gap-1 text-[10px] text-slate-600">
+          <label className="order-2 col-start-2 row-start-1 flex min-w-0 items-center gap-1 text-[10px] text-slate-600 sm:order-3 sm:flex-1">
             <span className="shrink-0">TWD</span>
             <input
               id={`${prefix}Fiat`}
@@ -1031,7 +1004,26 @@ export function TradeForm({
               className={`min-w-0 flex-1 py-0.5 ${inputClass}`}
             />
           </label>
-          <div className="flex shrink-0 gap-1">
+          <label
+            className={`order-3 col-start-1 row-start-2 ${TRADE_RATE_LABEL_CLASS} text-[10px] sm:order-2 sm:text-xs`}
+          >
+            <span className="shrink-0" title="匯率">
+              率
+            </span>
+            <input
+              id={`${prefix}Rate`}
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="any"
+              value={rate}
+              onChange={(e) => onFieldChange('rate', e.target.value)}
+              disabled={disabled}
+              placeholder="0"
+              className={`min-w-0 flex-1 py-0.5 ${rateInputClass}`}
+            />
+          </label>
+          <div className="order-4 col-start-2 row-start-2 flex shrink-0 justify-end gap-1 sm:order-4">
             <button
               type="submit"
               disabled={disabled}
@@ -1177,7 +1169,6 @@ export function VnTradeForm({
   error,
   isEditing,
   disabled,
-  focusKey,
   onFieldChange,
   onSubmit,
   onCancel,
@@ -1188,10 +1179,9 @@ export function VnTradeForm({
   usdtInventoryCostTwd,
   vnInventoryTwdRate,
 }: VnTradeFormProps) {
-  const vnRef = useRef<HTMLInputElement>(null)
-  const didMountRef = useRef(false)
   const prefix = type === 'buy' ? 'vnBuy' : 'vnSell'
   const inputClass = `${TRADE_INPUT_CLASS} ${focusClass}`
+  const rateInputClass = `${TRADE_RATE_INPUT_CLASS} ${focusClass}`
   const payLabel = assetCode(payCurrency)
 
   const vnNum = parseFloat(vn)
@@ -1203,16 +1193,6 @@ export function VnTradeForm({
     payValid &&
     (payCurrency === 'twd' ? payNum > balances.twd : payNum > balances.usdt)
   const vnInsufficient = type === 'sell' && vnValid && vnNum > balances.vn
-
-  useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true
-      return
-    }
-    if (!disabled && !isEditing) {
-      vnRef.current?.focus({ preventScroll: true })
-    }
-  }, [disabled, isEditing, focusKey])
 
   let previewText: string | null = null
   let previewWarn = false
@@ -1273,11 +1253,10 @@ export function VnTradeForm({
       </div>
 
       <form onSubmit={onSubmit}>
-        <div className="flex items-center gap-1">
-          <label className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-slate-600">
+        <div className={TRADE_FORM_GRID_CLASS}>
+          <label className="order-1 col-span-2 row-start-1 flex min-w-0 items-center gap-1 text-[11px] text-slate-600 sm:col-span-1 sm:flex-1">
             <span className="shrink-0">VN</span>
             <input
-              ref={vnRef}
               id={`${prefix}Vn`}
               type="number"
               inputMode="decimal"
@@ -1290,24 +1269,7 @@ export function VnTradeForm({
               className={`min-w-0 flex-1 py-0.5 ${inputClass}`}
             />
           </label>
-          <label className="flex w-[4.25rem] shrink-0 items-center gap-0.5 text-[11px] text-slate-600">
-            <span className="shrink-0" title="匯率">
-              率
-            </span>
-            <input
-              id={`${prefix}Rate`}
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="any"
-              value={rate}
-              onChange={(e) => onFieldChange('rate', e.target.value)}
-              disabled={disabled}
-              placeholder="0"
-              className={`min-w-0 flex-1 py-0.5 ${inputClass}`}
-            />
-          </label>
-          <label className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-slate-600">
+          <label className="order-2 col-start-2 row-start-2 flex min-w-0 items-center gap-1 text-[11px] text-slate-600 sm:order-3 sm:col-auto sm:row-auto sm:flex-1">
             <span className="shrink-0">{payLabel}</span>
             <input
               id={`${prefix}Pay`}
@@ -1322,7 +1284,26 @@ export function VnTradeForm({
               className={`min-w-0 flex-1 py-0.5 ${inputClass}`}
             />
           </label>
-          <div className="flex shrink-0 gap-1">
+          <label
+            className={`order-3 col-start-1 row-start-2 ${TRADE_RATE_LABEL_CLASS} text-[11px] sm:order-2 sm:text-xs`}
+          >
+            <span className="shrink-0" title="匯率">
+              率
+            </span>
+            <input
+              id={`${prefix}Rate`}
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="any"
+              value={rate}
+              onChange={(e) => onFieldChange('rate', e.target.value)}
+              disabled={disabled}
+              placeholder="0"
+              className={`min-w-0 flex-1 py-0.5 ${rateInputClass}`}
+            />
+          </label>
+          <div className="order-4 col-span-2 row-start-3 flex shrink-0 justify-end gap-1 sm:col-span-1 sm:row-start-auto sm:order-4">
             <button
               type="submit"
               disabled={disabled}
@@ -1632,71 +1613,64 @@ export function ExpenseForm({
   isEditing,
   disabled,
   twdBalance,
-  focusKey,
   onExpenseTypeChange,
   onAmountChange,
   onNoteChange,
   onSubmit,
   onCancel,
 }: ExpenseFormProps) {
-  const amountRef = useRef<HTMLInputElement>(null)
   const amountNum = parseFloat(amount)
   const amountValid = !Number.isNaN(amountNum) && amountNum > 0
   const insufficient = amountValid && amountNum > twdBalance
   const isQuickType = EXPENSE_QUICK_TYPES.includes(expenseType)
 
-  useEffect(() => {
-    if (!disabled && !isEditing) {
-      amountRef.current?.focus()
-    }
-  }, [disabled, isEditing, focusKey])
-
   return (
     <form onSubmit={onSubmit}>
-      <h2 className="mb-1.5 text-xs font-semibold text-orange-700">
-        {isEditing ? '編輯開銷' : '新增開銷'}
-      </h2>
-      <div className="mb-1.5 flex flex-wrap items-center gap-1">
-        {EXPENSE_QUICK_TYPES.map((type) => (
-          <button
-            key={type}
-            type="button"
-            disabled={disabled}
-            onClick={() => onExpenseTypeChange(type)}
-            className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition disabled:opacity-50 ${
-              expenseType === type
-                ? 'bg-orange-600 text-white shadow-sm'
-                : 'border border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:text-orange-700'
-            }`}
-          >
-            {expenseTypeLabel(type)}
-          </button>
-        ))}
-        <select
-          value={isQuickType ? '' : expenseType}
-          disabled={disabled}
-          onChange={(e) => {
-            if (e.target.value) {
-              onExpenseTypeChange(e.target.value as ExpenseType)
-            }
-          }}
-          className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-600 outline-none transition focus:border-orange-500 disabled:bg-slate-50"
-        >
-          <option value="">更多類別</option>
-          {EXPENSE_TYPE_OPTIONS.filter(
-            (item) => !EXPENSE_QUICK_TYPES.includes(item.value),
-          ).map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.label}
-            </option>
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+        <h2 className="text-[11px] font-semibold leading-none text-orange-700">
+          {isEditing ? '編輯開銷' : '新增開銷'}
+        </h2>
+        <div className="flex flex-wrap items-center gap-0.5">
+          {EXPENSE_QUICK_TYPES.map((type) => (
+            <button
+              key={type}
+              type="button"
+              disabled={disabled}
+              onClick={() => onExpenseTypeChange(type)}
+              className={`rounded-full px-2 py-px text-[10px] font-medium transition disabled:opacity-50 ${
+                expenseType === type
+                  ? 'bg-orange-600 text-white shadow-sm'
+                  : 'border border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:text-orange-700'
+              }`}
+            >
+              {expenseTypeLabel(type)}
+            </button>
           ))}
-        </select>
+          <select
+            value={isQuickType ? '' : expenseType}
+            disabled={disabled}
+            onChange={(e) => {
+              if (e.target.value) {
+                onExpenseTypeChange(e.target.value as ExpenseType)
+              }
+            }}
+            className="rounded-full border border-slate-200 bg-white px-1.5 py-px text-base text-slate-600 outline-none transition focus:border-orange-500 disabled:bg-slate-50 sm:text-[10px]"
+          >
+            <option value="">更多</option>
+            {EXPENSE_TYPE_OPTIONS.filter(
+              (item) => !EXPENSE_QUICK_TYPES.includes(item.value),
+            ).map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
-      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-end">
-        <label className="block shrink-0 text-[10px] text-slate-600 sm:w-[5.5rem]">
-          金額 TWD
+      <div className="flex items-center gap-1">
+        <label className="flex min-w-0 flex-[1.1] items-center gap-1 text-[11px] text-slate-600">
+          <span className="shrink-0">金額</span>
           <input
-            ref={amountRef}
             type="number"
             inputMode="numeric"
             min="0"
@@ -1704,25 +1678,25 @@ export function ExpenseForm({
             value={amount}
             disabled={disabled}
             onChange={(e) => onAmountChange(e.target.value)}
-            className={`mt-0.5 ${EXPENSE_INPUT_CLASS}`}
+            className={`min-w-0 flex-1 ${EXPENSE_INPUT_CLASS}`}
             placeholder="0"
           />
         </label>
-        <label className="block min-w-0 flex-1 text-[10px] text-slate-600">
-          備註（選填）
+        <label className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-slate-600">
+          <span className="shrink-0">備註</span>
           <input
             type="text"
             value={note}
             disabled={disabled}
             onChange={(e) => onNoteChange(e.target.value)}
-            className={`mt-0.5 ${EXPENSE_INPUT_CLASS}`}
+            className={`min-w-0 flex-1 ${EXPENSE_INPUT_CLASS}`}
           />
         </label>
-        <div className="flex shrink-0 gap-1 sm:pb-px">
+        <div className="flex shrink-0 gap-1">
           <button
             type="submit"
             disabled={disabled}
-            className="rounded bg-orange-600 px-3 py-1 text-xs font-medium text-white transition hover:bg-orange-700 focus:ring-2 focus:ring-orange-600/30 disabled:opacity-50"
+            className="rounded bg-orange-600 px-2.5 py-0.5 text-xs font-medium text-white transition hover:bg-orange-700 focus:ring-2 focus:ring-orange-600/30 disabled:opacity-50"
           >
             {isEditing ? '儲存' : '新增'}
           </button>
@@ -1730,25 +1704,17 @@ export function ExpenseForm({
             <button
               type="button"
               onClick={onCancel}
-              className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+              className="rounded border border-slate-300 px-1.5 py-0.5 text-xs text-slate-600 hover:bg-slate-50"
             >
               取消
             </button>
           )}
         </div>
       </div>
-      {(insufficient || amountValid) && (
-        <p
-          className={`mt-1 text-[10px] tabular-nums ${
-            insufficient ? 'text-rose-600' : 'text-slate-500'
-          }`}
-        >
-          {insufficient
-            ? '台幣餘額不足'
-            : `扣後 ${formatTwd(twdBalance - amountNum)} · ${expenseTypeLabel(expenseType)}`}
-        </p>
+      {insufficient && (
+        <p className="mt-0.5 text-[10px] leading-tight text-rose-600">台幣餘額不足</p>
       )}
-      {error && <p className="mt-1 text-[10px] text-rose-600">{error}</p>}
+      {error && <p className="mt-0.5 text-[10px] leading-tight text-rose-600">{error}</p>}
     </form>
   )
 }
@@ -2329,7 +2295,7 @@ export function MonthlyCloseModal({
             value={periodLabel}
             onChange={(event) => onPeriodLabelChange(event.target.value)}
             placeholder="例如：6月份、06/01–06/30"
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base text-slate-900 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/20 sm:text-sm"
           />
         </label>
 
@@ -2393,7 +2359,7 @@ export function OpeningBalanceModal({
   if (!open) return null
 
   const fieldClass =
-    'mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm tabular-nums text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20'
+    'mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1.5 text-base tabular-nums text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 sm:text-sm'
 
   return (
     <div

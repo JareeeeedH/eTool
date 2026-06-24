@@ -259,7 +259,6 @@ export interface TradeFormProps {
   error: string
   isEditing: boolean
   disabled: boolean
-  focusKey: number
   onFieldChange: (field: 'usdt' | 'fiat' | 'rate', value: string) => void
   onSubmit: (e: FormEvent) => void
   onCancel: () => void
@@ -284,7 +283,6 @@ export interface VnTradeFormProps {
   error: string
   isEditing: boolean
   disabled: boolean
-  focusKey: number
   onFieldChange: (field: 'vn' | 'pay' | 'rate', value: string) => void
   onSubmit: (e: FormEvent) => void
   onCancel: () => void
@@ -326,7 +324,6 @@ export interface ExpenseFormProps {
   isEditing: boolean
   disabled: boolean
   twdBalance: number
-  focusKey: number
   onExpenseTypeChange: (value: ExpenseType) => void
   onAmountChange: (value: string) => void
   onNoteChange: (value: string) => void

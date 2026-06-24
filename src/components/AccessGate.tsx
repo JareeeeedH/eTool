@@ -45,7 +45,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
               setPin(event.target.value)
               if (error) setError('')
             }}
-            className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-center text-sm tracking-[0.3em] text-slate-800 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-500/20"
+            className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-center text-base tracking-[0.3em] text-slate-800 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-500/20 sm:text-sm"
             aria-label="驗證碼"
           />
           <button

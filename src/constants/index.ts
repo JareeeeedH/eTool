@@ -13,10 +13,21 @@ export const EXPENSE_TYPE_OPTIONS: { value: ExpenseType; label: string }[] = [
 export const EXPENSE_QUICK_TYPES: ExpenseType[] = ['fuel', 'parking', 'meal']
 
 export const EXPENSE_INPUT_CLASS =
-  'w-full rounded border border-slate-300 px-1.5 py-1 text-xs outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50'
+  'w-full rounded border border-slate-300 px-1.5 py-0.5 text-base sm:text-xs outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50'
 
 export const TRADE_INPUT_CLASS =
-  'w-full rounded border border-slate-300 px-1.5 py-1 text-xs outline-none transition disabled:bg-slate-50'
+  'w-full rounded border border-slate-300 px-1.5 py-1 text-base tabular-nums sm:text-xs outline-none transition disabled:bg-slate-50'
+
+/** 買賣表單：手機兩行格線、桌面單行 flex */
+export const TRADE_FORM_GRID_CLASS =
+  'grid grid-cols-2 gap-1 sm:flex sm:items-center sm:gap-1'
+
+/** 買賣表單「率」欄：桌面版略寬、字體略大 */
+export const TRADE_RATE_LABEL_CLASS =
+  'flex min-w-0 w-full items-center gap-0.5 text-slate-600 sm:w-[7rem] sm:shrink-0'
+
+export const TRADE_RATE_INPUT_CLASS =
+  'w-full rounded border border-slate-300 px-1.5 py-1 text-base tabular-nums sm:text-sm outline-none transition disabled:bg-slate-50'
 
 export const INITIAL_TWD = 5_000_000
 export const INITIAL_USDT = 0
