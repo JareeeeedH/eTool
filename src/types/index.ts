@@ -145,9 +145,23 @@ export interface TotalAssetsTwd {
   missingNotes: string[]
 }
 
+export interface TradeSettleConfirmSummary {
+  tradeCount: number
+  usdtBuy: number
+  usdtSell: number
+  vnBuy: number
+  vnSell: number
+  showVn: boolean
+  dayUsdtProfit: number | null
+  dayVnProfit: number | null
+  dayTotalProfit: number
+  hasSells: boolean
+}
+
 export interface ConfirmDialogState {
   title: string
   lines: string[]
+  tradeSettleSummary?: TradeSettleConfirmSummary
   confirmLabel: string
   variant: 'danger' | 'primary'
   alertOnly?: boolean

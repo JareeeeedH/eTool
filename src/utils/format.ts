@@ -90,6 +90,14 @@ export function formatProfit(value: number): string {
   return `${prefix}${formatTwd(value)}`
 }
 
+/** 利潤率（相對成本），四捨五入至小數第 2 位 */
+export function formatProfitMarginPercent(profit: number, costBasis: number): string | null {
+  if (!Number.isFinite(costBasis) || costBasis <= 0) return null
+  const pct = Math.round((profit / costBasis) * 10000) / 100
+  const sign = pct > 0 ? '+' : ''
+  return `${sign}${pct.toFixed(2)}%`
+}
+
 export function profitColorClass(value: number): string {
   if (value > 0) return 'text-emerald-600'
   if (value < 0) return 'text-rose-600'

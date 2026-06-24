@@ -42,7 +42,7 @@ import {
   buildDeleteConfirmLines,
   buildMonthlyClose,
   buildMonthlyClosePreview,
-  buildTradeSettleConfirmLines,
+  buildTradeSettleConfirmSummary,
   calculateBuyDayAverageRate,
   calculateVnBuyDayAverageRate,
   computeInventoryCost,
@@ -293,7 +293,18 @@ function App() {
       void savePersistedAppStateAsync(payload)
     }, 400)
     return () => window.clearTimeout(timer)
-  }, [activeTab, dailyWorkTab, openingBalances, openingUsdtCost, openingVnTwdRate, openingVnUsdtRate, transactions, settlements, expenseSettlements, monthlyCloses])
+  }, [
+    activeTab,
+    dailyWorkTab,
+    openingBalances,
+    openingUsdtCost,
+    openingVnTwdRate,
+    openingVnUsdtRate,
+    transactions,
+    settlements,
+    expenseSettlements,
+    monthlyCloses,
+  ])
 
   const lastTradeSettledAt = useMemo(
     () => getLastTradeSettlementAt(settlements),
@@ -1064,10 +1075,9 @@ function App() {
 
     setConfirmDialog({
       title: '確定結算今日交易？',
-      lines: buildTradeSettleConfirmLines(
+      lines: [],
+      tradeSettleSummary: buildTradeSettleConfirmSummary(
         transactions,
-        balances,
-        inventoryCost,
         openingBalances,
         openingUsdtCost,
         openingVnTwdRate,
@@ -1136,6 +1146,21 @@ function App() {
   }
 
   const handleOpenOpeningBalance = () => {
+    if (tradeTransactions.length > 0) {
+      setConfirmDialog({
+        title: '請先完成每日結算',
+        lines: [
+          `尚有 ${tradeTransactions.length} 筆進行中的交易明細未日結。`,
+          '請先至「每日明細」結算今日交易，再調整期初餘額。',
+        ],
+        confirmLabel: '知道了',
+        variant: 'primary',
+        alertOnly: true,
+        onConfirm: () => setConfirmDialog(null),
+      })
+      return
+    }
+
     setOpeningBalanceForm(
       openingBalanceToForm(
         openingBalances,
@@ -1221,6 +1246,11 @@ function App() {
   const handleSaveOpeningBalance = () => {
     if (!parseOpeningBalanceForm()) return
 
+    if (tradeTransactions.length > 0) {
+      setOpeningBalanceError('尚有未日結的交易明細，請先完成每日結算。')
+      return
+    }
+
     const hasActivity =
       transactions.length > 0 ||
       settlements.length > 0 ||
@@ -1236,8 +1266,7 @@ function App() {
       title: '確定更新期初餘額？',
       lines: [
         '將更新期初庫存與成本設定。',
-        '既有流水與日結紀錄不會刪除，但顯示餘額會依新期初重算。',
-        '建議在無進行中資料時調整，或調整後自行核對。',
+        '既有日結與開銷紀錄不會刪除，但顯示餘額會依新期初重算。',
       ],
       confirmLabel: '確認儲存',
       variant: 'primary',

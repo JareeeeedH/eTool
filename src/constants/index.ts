@@ -68,9 +68,16 @@ export const TRANSACTION_TIME_CELL_CLASS =
   'align-middle w-[4.25rem] whitespace-nowrap px-1 text-[13px] tabular-nums leading-none'
 export const TRANSACTION_INDEX_CELL_CLASS =
   'align-middle w-0 whitespace-nowrap p-0 pl-0 pr-px text-center text-[10px] tabular-nums leading-none'
+/** VN 手機表：序號獨立窄欄，避免與 VN 數字重疊 */
+export const VN_MOBILE_INDEX_CELL_CLASS =
+  'align-middle w-[1.125rem] min-w-[1.125rem] whitespace-nowrap p-0 pl-0 pr-0.5 text-center text-[10px] tabular-nums leading-none text-slate-400'
 export const VN_MOBILE_CELL_CLASS = 'align-middle px-0.5 text-[13px] leading-none'
+export const VN_MOBILE_VN_CELL_CLASS =
+  'align-middle pl-0 pr-2 text-right tabular-nums leading-none text-[13px]'
+export const VN_MOBILE_COIN_CELL_CLASS =
+  'align-middle w-[1.5rem] min-w-[1.5rem] px-0 text-center text-[13px] leading-none'
 export const VN_MOBILE_NUM_CELL_CLASS =
-  'align-middle px-0.5 text-right tabular-nums leading-none text-[13px]'
+  'align-middle pl-0 pr-0.5 text-right tabular-nums leading-none text-[13px]'
 export const VN_MOBILE_ACTION_CELL_CLASS =
   'align-middle w-0 whitespace-nowrap p-0 text-right leading-none'
 export const TRANSACTION_NUM_CELL_CLASS =

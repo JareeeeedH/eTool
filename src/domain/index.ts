@@ -16,6 +16,7 @@ import type {
   VnTradeAnalytics,
   VnTradeTransaction,
   SellProfitInfo,
+  TradeSettleConfirmSummary,
 } from '../types'
 import {
   EMPTY_EXPENSE_BY_CATEGORY,
@@ -26,14 +27,10 @@ import {
   floorTwd,
   formatArchiveDateRange,
   formatNumber,
-  formatProfit,
   formatRateDisplay,
-  formatUsdtCostRateDisplay,
   formatSettlementDate,
   formatTwd,
-  formatVnNtdCostRateCompact,
   formatVnTradeRateDisplay,
-  formatVnUsdtCostRateCompact,
   roundVnTradeRate,
 } from '../utils/format'
 
@@ -970,30 +967,19 @@ export function buildDeleteConfirmLines(tx: Transaction): string[] {
   ]
 }
 
-export function buildTradeSettleConfirmLines(
+export function buildTradeSettleConfirmSummary(
   transactions: Transaction[],
-  balances: Balances,
-  inventoryCost: UsdtInventoryCost,
   openingBalances: Balances,
   openingUsdtCost: UsdtInventoryCost,
   openingVnTwdRate: number | null,
   openingVnUsdtRate: number | null,
-): string[] {
+): TradeSettleConfirmSummary {
   const usdtTxs = filterUsdtTransactions(transactions)
   const vnTxs = filterVnTradeTransactions(transactions)
-  const buyCount = usdtTxs.filter((tx) => tx.type === 'buy').length
-  const sellCount = usdtTxs.filter((tx) => tx.type === 'sell').length
-  const vnBuyCount = vnTxs.filter((tx) => tx.type === 'buy').length
-  const vnSellCount = vnTxs.filter((tx) => tx.type === 'sell').length
-  const assets = computeTotalAssetsTwd(
-    balances,
-    inventoryCost,
-    openingBalances,
-    openingUsdtCost,
-    openingVnTwdRate,
-    openingVnUsdtRate,
-    transactions,
-  )
+  const usdtBuy = usdtTxs.filter((tx) => tx.type === 'buy').length
+  const usdtSell = usdtTxs.filter((tx) => tx.type === 'sell').length
+  const vnBuy = vnTxs.filter((tx) => tx.type === 'buy').length
+  const vnSell = vnTxs.filter((tx) => tx.type === 'sell').length
   const dayUsdtProfit = computeUsdtDayTotalProfit(
     openingBalances,
     openingUsdtCost,
@@ -1006,46 +992,20 @@ export function buildTradeSettleConfirmLines(
     openingUsdtCost,
     transactions,
   )
-  const dayTotalProfit = dayUsdtProfit + dayVnProfit
-  const profitLines: string[] = []
-  if (sellCount > 0 || vnSellCount > 0) {
-    if (sellCount > 0) {
-      profitLines.push(`USDT 利潤：${formatProfit(dayUsdtProfit)} TWD`)
-    }
-    if (vnSellCount > 0) {
-      profitLines.push(`VN 利潤：${formatProfit(dayVnProfit)} TWD`)
-    }
-    profitLines.push(`當日毛利：${formatProfit(dayTotalProfit)} TWD`)
-  } else {
-    profitLines.push('當日毛利：—（無賣出）')
+  const hasSells = usdtSell > 0 || vnSell > 0
+
+  return {
+    tradeCount: usdtTxs.length + vnTxs.length,
+    usdtBuy,
+    usdtSell,
+    vnBuy,
+    vnSell,
+    showVn: vnTxs.length > 0,
+    dayUsdtProfit: usdtSell > 0 ? dayUsdtProfit : null,
+    dayVnProfit: vnSell > 0 ? dayVnProfit : null,
+    dayTotalProfit: dayUsdtProfit + dayVnProfit,
+    hasSells,
   }
-  const tradeCount = usdtTxs.length + vnTxs.length
-  return [
-    `交易筆數：${tradeCount}（USDT 買 ${buyCount} / 賣 ${sellCount}${
-      vnTxs.length > 0 ? ` · VN 買 ${vnBuyCount} / 賣 ${vnSellCount}` : ''
-    }）`,
-    `台幣庫存：${formatTwd(balances.twd)}`,
-    `USDT 庫存：${formatNumber(balances.usdt)}${
-      balances.usdt > 0 && inventoryCost.twd !== null
-        ? `（@${formatUsdtCostRateDisplay(inventoryCost.twd)}）`
-        : ''
-    }`,
-    `VN 庫存：${formatNumber(balances.vn)}${
-      balances.vn > 0 && assets.dayVnTwdRate !== null
-        ? `（${formatVnNtdCostRateCompact(assets.dayVnTwdRate)}${
-            assets.dayVnUsdtRate !== null
-              ? ` · ${formatVnUsdtCostRateCompact(assets.dayVnUsdtRate)}`
-              : ''
-          }）`
-        : ''
-    }`,
-    ...profitLines,
-    `帳面總資產：${formatTwd(assets.total)} TWD${
-      assets.isComplete ? '' : '（部分換算）'
-    }`,
-    '',
-    '結算後將封存交易紀錄並清空每日明細（開銷紀錄不受影響）。',
-  ]
 }
 export function applyExpenseTransaction(balances: Balances, tx: ExpenseTransaction): Balances {
   return {
