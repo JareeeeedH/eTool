@@ -10,6 +10,7 @@ import type {
   ConfirmDialogState,
   DailySettlement,
   DailyWorkTab,
+  DailyMobileTradePane,
   EditingCategory,
   ExpenseSettlement,
   ExpenseTransaction,
@@ -25,7 +26,17 @@ import type {
   VnTradeTransaction,
 } from './types'
 import { EMPTY_USDT_COST, INITIAL_BALANCES } from './constants'
-import { calculateRate, formatRateCalc, formatVnRateCalc, syncFormFields, syncVnTradeFormFields } from './utils/form'
+import {
+  formatRateCalc,
+  formatVnRateCalc,
+  resolveUsdtTradeFields,
+  resolveVnTradeFields,
+} from './utils/form'
+import {
+  assessRateDeviation,
+  formatRateDeviationConfirmLines,
+  formatRateDeviationConfirmTitle,
+} from './utils/rateSanity'
 import {
   assembleExpenseSettlementsForMonthlyClose,
   buildDeleteConfirmLines,
@@ -42,6 +53,7 @@ import {
   computeVnTradeAnalytics,
   filterExpenseTransactions,
   filterTradeTransactions,
+  getLastTradeSettlementAt,
   filterUsdtTransactions,
   filterVnTradeTransactions,
   getBusinessDayLabel,
@@ -57,10 +69,9 @@ import {
   settlementFromTotalAssets,
   suggestMonthlyPeriodLabel,
   validateTransactions,
-  calculateVnTwdRate,
   vnTradePayAmount,
 } from './domain'
-import { formatSettlementDateTime, formatTwd } from './utils/format'
+import { formatSettlementDateTime } from './utils/format'
 import { formCardClass, recordCardClass } from './utils/uiClasses'
 import {
   AppNav,
@@ -68,6 +79,7 @@ import {
   DailyBalanceStrip,
   DailyPageHeader,
   DailyTradeSettleBar,
+  DailyMobileTradeTabBar,
   DailyWorkTabBar,
   EditingBanner,
   ExpenseForm,
@@ -75,7 +87,6 @@ import {
   ExpenseTable,
   MobileNavCloseIcon,
   MobileNavMenuIcon,
-  MonthlyCloseDetail,
   MonthlyCloseModal,
   MonthlyClosesList,
   OpeningBalanceModal,
@@ -88,6 +99,26 @@ import {
   useTransactionVisibleRows,
 } from './components'
 
+const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'expenses'>, string> = {
+  settlements: '每日結算',
+  monthly: '月結',
+}
+
+function dailyTradePaneClass(
+  mobilePane: DailyMobileTradePane,
+  desktopTab: DailyWorkTab,
+  pane: DailyMobileTradePane,
+  parentTab: DailyWorkTab,
+): string {
+  return [
+    'flex flex-col gap-1 sm:gap-1.5',
+    mobilePane !== pane ? 'max-lg:hidden' : '',
+    desktopTab !== parentTab ? 'lg:hidden' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
 function App() {
   const tableVisibleRows = useTransactionVisibleRows()
   const persistedRef = useRef<PersistedAppState | null>(null)
@@ -97,6 +128,7 @@ function App() {
 
   const [activeTab, setActiveTab] = useState<PageTab>('daily')
   const [dailyWorkTab, setDailyWorkTab] = useState<DailyWorkTab>('usdt')
+  const [mobileTradePane, setMobileTradePane] = useState<DailyMobileTradePane>('buy_u')
   const [openingBalances, setOpeningBalances] = useState<Balances>({ ...INITIAL_BALANCES })
   const [openingUsdtCost, setOpeningUsdtCost] = useState<UsdtInventoryCost>({ ...EMPTY_USDT_COST })
   const [openingVnTwdRate, setOpeningVnTwdRate] = useState<number | null>(null)
@@ -152,6 +184,7 @@ function App() {
   const [undoSnapshot, setUndoSnapshot] = useState<AppSnapshot | null>(null)
   const [undoMessage, setUndoMessage] = useState('')
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
+  const [highlightedTransactionId, setHighlightedTransactionId] = useState<string | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const buyBodyScrollRef = useRef<HTMLDivElement>(null)
   const sellBodyScrollRef = useRef<HTMLDivElement>(null)
@@ -176,6 +209,7 @@ function App() {
         persistedRef.current = data
         setActiveTab(data.activeTab)
         setDailyWorkTab(data.dailyWorkTab ?? 'usdt')
+        setMobileTradePane(data.dailyWorkTab === 'vn' ? 'buy_vn' : 'buy_u')
         setOpeningBalances({ ...data.openingBalances })
         setOpeningUsdtCost({ ...data.openingUsdtCost })
         setOpeningVnTwdRate(data.openingVnTwdRate ?? null)
@@ -206,6 +240,16 @@ function App() {
   useEffect(() => {
     setMobileNavOpen(false)
   }, [activeTab])
+
+  useEffect(() => {
+    if (!highlightedTransactionId) return
+    const timer = window.setTimeout(() => setHighlightedTransactionId(null), 2400)
+    return () => window.clearTimeout(timer)
+  }, [highlightedTransactionId])
+
+  const flashNewTransaction = (id: string) => {
+    setHighlightedTransactionId(id)
+  }
 
   const closeMobileNav = () => setMobileNavOpen(false)
 
@@ -251,9 +295,14 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [activeTab, dailyWorkTab, openingBalances, openingUsdtCost, openingVnTwdRate, openingVnUsdtRate, transactions, settlements, expenseSettlements, monthlyCloses])
 
+  const lastTradeSettledAt = useMemo(
+    () => getLastTradeSettlementAt(settlements),
+    [settlements],
+  )
+
   const balances = useMemo(
-    () => recalculateBalances(transactions, openingBalances),
-    [transactions, openingBalances],
+    () => recalculateBalances(transactions, openingBalances, lastTradeSettledAt),
+    [transactions, openingBalances, lastTradeSettledAt],
   )
 
   const usdtTransactions = useMemo(
@@ -316,7 +365,9 @@ function App() {
     setMonthlyCloses((snapshot.monthlyCloses ?? []).map((item) => normalizeMonthlyClose(item)))
     setSelectedMonthlyCloseId(snapshot.selectedMonthlyCloseId ?? null)
     setActiveTab(snapshot.activeTab)
-    setDailyWorkTab(snapshot.dailyWorkTab ?? 'usdt')
+    const restoredWorkTab = snapshot.dailyWorkTab ?? 'usdt'
+    setDailyWorkTab(restoredWorkTab)
+    setMobileTradePane(restoredWorkTab === 'vn' ? 'buy_vn' : 'buy_u')
     setMonthlyCloseModalOpen(false)
     setMonthlyPeriodLabel('')
   }
@@ -414,26 +465,30 @@ function App() {
     }
   }
 
+  const clearBuyForm = () => {
+    setBuyUsdtAmount('')
+    setBuyFiatAmount('')
+    setBuyRate('')
+    setBuyError('')
+  }
+
+  const clearSellForm = () => {
+    setSellUsdtAmount('')
+    setSellFiatAmount('')
+    setSellRate('')
+    setSellError('')
+  }
+
   const updateBuyForm = (field: 'usdt' | 'fiat' | 'rate', value: string) => {
-    const next = syncFormFields(field, value, {
-      usdt: buyUsdtAmount,
-      fiat: buyFiatAmount,
-      rate: buyRate,
-    })
-    setBuyUsdtAmount(next.usdt)
-    setBuyFiatAmount(next.fiat)
-    setBuyRate(next.rate)
+    if (field === 'usdt') setBuyUsdtAmount(value)
+    else if (field === 'fiat') setBuyFiatAmount(value)
+    else setBuyRate(value)
   }
 
   const updateSellForm = (field: 'usdt' | 'fiat' | 'rate', value: string) => {
-    const next = syncFormFields(field, value, {
-      usdt: sellUsdtAmount,
-      fiat: sellFiatAmount,
-      rate: sellRate,
-    })
-    setSellUsdtAmount(next.usdt)
-    setSellFiatAmount(next.fiat)
-    setSellRate(next.rate)
+    if (field === 'usdt') setSellUsdtAmount(value)
+    else if (field === 'fiat') setSellFiatAmount(value)
+    else setSellRate(value)
   }
 
   const resetVnBuyForm = () => {
@@ -460,6 +515,20 @@ function App() {
     }
   }
 
+  const clearVnBuyForm = () => {
+    setVnBuyVnAmount('')
+    setVnBuyPayAmount('')
+    setVnBuyRate('')
+    setVnBuyError('')
+  }
+
+  const clearVnSellForm = () => {
+    setVnSellVnAmount('')
+    setVnSellPayAmount('')
+    setVnSellRate('')
+    setVnSellError('')
+  }
+
   const resetExpenseForm = () => {
     setExpenseType('fuel')
     setExpenseAmount('')
@@ -472,25 +541,15 @@ function App() {
   }
 
   const updateVnBuyForm = (field: 'vn' | 'pay' | 'rate', value: string) => {
-    const next = syncVnTradeFormFields(field, value, {
-      vn: vnBuyVnAmount,
-      pay: vnBuyPayAmount,
-      rate: vnBuyRate,
-    })
-    setVnBuyVnAmount(next.vn)
-    setVnBuyPayAmount(next.pay)
-    setVnBuyRate(next.rate)
+    if (field === 'vn') setVnBuyVnAmount(value)
+    else if (field === 'pay') setVnBuyPayAmount(value)
+    else setVnBuyRate(value)
   }
 
   const updateVnSellForm = (field: 'vn' | 'pay' | 'rate', value: string) => {
-    const next = syncVnTradeFormFields(field, value, {
-      vn: vnSellVnAmount,
-      pay: vnSellPayAmount,
-      rate: vnSellRate,
-    })
-    setVnSellVnAmount(next.vn)
-    setVnSellPayAmount(next.pay)
-    setVnSellRate(next.rate)
+    if (field === 'vn') setVnSellVnAmount(value)
+    else if (field === 'pay') setVnSellPayAmount(value)
+    else setVnSellRate(value)
   }
 
   const handleWorkTabChange = (tab: DailyWorkTab) => {
@@ -501,6 +560,20 @@ function App() {
     else if (editingCategory === 'vn_sell') resetVnSellForm()
     else if (editingCategory === 'expense') resetExpenseForm()
     setDailyWorkTab(tab)
+    setMobileTradePane(tab === 'usdt' ? 'buy_u' : 'buy_vn')
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur()
+    }
+  }
+
+  const handleMobileTradePaneChange = (pane: DailyMobileTradePane) => {
+    if (pane === mobileTradePane) return
+    if (editingCategory === 'buy' && pane !== 'buy_u') resetBuyForm()
+    else if (editingCategory === 'sell' && pane !== 'sell_u') resetSellForm()
+    else if (editingCategory === 'vn_buy' && pane !== 'buy_vn') resetVnBuyForm()
+    else if (editingCategory === 'vn_sell' && pane !== 'sell_vn') resetVnSellForm()
+    setMobileTradePane(pane)
+    setDailyWorkTab(pane === 'buy_u' || pane === 'sell_u' ? 'usdt' : 'vn')
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
@@ -548,7 +621,11 @@ function App() {
     }
 
     const updatedTransactions = buildUpdatedList(transactions)
-    const validationError = validateTransactions(updatedTransactions, openingBalances)
+    const validationError = validateTransactions(
+      updatedTransactions,
+      openingBalances,
+      lastTradeSettledAt,
+    )
     if (validationError) {
       setExpenseError(validationError)
       return
@@ -564,6 +641,7 @@ function App() {
     const isBuy = type === 'buy'
     const usdtStr = isBuy ? buyUsdtAmount : sellUsdtAmount
     const fiatStr = isBuy ? buyFiatAmount : sellFiatAmount
+    const rateStr = isBuy ? buyRate : sellRate
     const setError = isBuy ? setBuyError : setSellError
     const otherSetError = isBuy ? setSellError : setBuyError
 
@@ -573,16 +651,49 @@ function App() {
     setVnSellError('')
     setExpenseError('')
 
-    const usdt = parseFloat(usdtStr)
-    const fiat = parseFloat(fiatStr)
+    const isEditing = editingId !== null && editingCategory === type
 
-    if (Number.isNaN(usdt) || Number.isNaN(fiat) || usdt <= 0 || fiat <= 0) {
-      setError('請輸入有效的正數金額')
+    const resolved = resolveUsdtTradeFields(usdtStr, fiatStr, rateStr)
+    if (!resolved.ok) {
+      setError(resolved.error)
+      return
+    }
+    const { usdt, fiat, rate } = resolved
+
+    const rateCheck = assessRateDeviation(rate, inventoryCost.twd)
+    if (rateCheck?.level === 'confirm') {
+      setConfirmDialog({
+        title: formatRateDeviationConfirmTitle('usdt'),
+        lines: formatRateDeviationConfirmLines(rateCheck, 'usdt'),
+        confirmLabel: '仍要儲存',
+        variant: 'primary',
+        onConfirm: () => {
+          setConfirmDialog(null)
+          const newId = commitUsdtTrade(type, usdt, fiat, rate, isEditing)
+          if (newId) {
+            flashNewTransaction(newId)
+          }
+        },
+      })
       return
     }
 
-    const rate = calculateRate(fiat, usdt)
-    const isEditing = editingId !== null && editingCategory === type
+    const newId = commitUsdtTrade(type, usdt, fiat, rate, isEditing)
+    if (newId) {
+      flashNewTransaction(newId)
+    }
+  }
+
+  const commitUsdtTrade = (
+    type: TransactionType,
+    usdt: number,
+    fiat: number,
+    rate: number,
+    isEditing: boolean,
+  ): string | null => {
+    const isBuy = type === 'buy'
+    const setError = isBuy ? setBuyError : setSellError
+    const newId = crypto.randomUUID()
 
     const buildUpdatedList = (list: Transaction[]): Transaction[] => {
       if (isEditing) {
@@ -593,7 +704,7 @@ function App() {
         )
       }
       const newTransaction: UsdtTransaction = {
-        id: crypto.randomUUID(),
+        id: newId,
         timestamp: new Date(),
         category: 'usdt',
         type,
@@ -606,10 +717,14 @@ function App() {
     }
 
     const updatedTransactions = buildUpdatedList(transactions)
-    const validationError = validateTransactions(updatedTransactions, openingBalances)
+    const validationError = validateTransactions(
+      updatedTransactions,
+      openingBalances,
+      lastTradeSettledAt,
+    )
     if (validationError) {
       setError(validationError)
-      return
+      return null
     }
 
     setTransactions(updatedTransactions)
@@ -618,6 +733,7 @@ function App() {
     } else {
       resetSellForm()
     }
+    return isEditing ? null : newId
   }
 
   const handleVnSubmit = (type: TransactionType, e: FormEvent) => {
@@ -626,6 +742,7 @@ function App() {
     const isBuy = type === 'buy'
     const vnStr = isBuy ? vnBuyVnAmount : vnSellVnAmount
     const payStr = isBuy ? vnBuyPayAmount : vnSellPayAmount
+    const rateStr = isBuy ? vnBuyRate : vnSellRate
     const payCurrency = isBuy ? vnBuyPayCurrency : vnSellPayCurrency
     const setError = isBuy ? setVnBuyError : setVnSellError
     const otherSetError = isBuy ? setVnSellError : setVnBuyError
@@ -636,17 +753,55 @@ function App() {
     setSellError('')
     setExpenseError('')
 
-    const vn = parseFloat(vnStr)
-    const pay = parseFloat(payStr)
+    const editCategory = isBuy ? 'vn_buy' : 'vn_sell'
+    const isEditing = editingId !== null && editingCategory === editCategory
 
-    if (Number.isNaN(vn) || Number.isNaN(pay) || vn <= 0 || pay <= 0) {
-      setError('請輸入有效的正數金額')
+    const resolved = resolveVnTradeFields(vnStr, payStr, rateStr)
+    if (!resolved.ok) {
+      setError(resolved.error)
+      return
+    }
+    const { vn, pay, rate } = resolved
+
+    const vnReferenceRate =
+      payCurrency === 'twd'
+        ? vnTradeAnalytics.currentVnTwdRate
+        : vnTradeAnalytics.currentVnUsdtRate
+    const rateCheck = assessRateDeviation(rate, vnReferenceRate)
+    if (rateCheck?.level === 'confirm') {
+      setConfirmDialog({
+        title: formatRateDeviationConfirmTitle('vn'),
+        lines: formatRateDeviationConfirmLines(rateCheck, 'vn'),
+        confirmLabel: '仍要儲存',
+        variant: 'primary',
+        onConfirm: () => {
+          setConfirmDialog(null)
+          const newId = commitVnTrade(type, payCurrency, vn, pay, rate, isEditing)
+          if (newId) {
+            flashNewTransaction(newId)
+          }
+        },
+      })
       return
     }
 
-    const rate = calculateVnTwdRate(vn, pay)
-    const editCategory = isBuy ? 'vn_buy' : 'vn_sell'
-    const isEditing = editingId !== null && editingCategory === editCategory
+    const newId = commitVnTrade(type, payCurrency, vn, pay, rate, isEditing)
+    if (newId) {
+      flashNewTransaction(newId)
+    }
+  }
+
+  const commitVnTrade = (
+    type: TransactionType,
+    payCurrency: VnPayCurrency,
+    vn: number,
+    pay: number,
+    rate: number,
+    isEditing: boolean,
+  ): string | null => {
+    const isBuy = type === 'buy'
+    const setError = isBuy ? setVnBuyError : setVnSellError
+    const newId = crypto.randomUUID()
 
     const buildUpdatedList = (list: Transaction[]): Transaction[] => {
       if (isEditing) {
@@ -665,7 +820,7 @@ function App() {
         )
       }
       const newTransaction: VnTradeTransaction = {
-        id: crypto.randomUUID(),
+        id: newId,
         timestamp: new Date(),
         category: 'vn_trade',
         type,
@@ -679,10 +834,14 @@ function App() {
     }
 
     const updatedTransactions = buildUpdatedList(transactions)
-    const validationError = validateTransactions(updatedTransactions, openingBalances)
+    const validationError = validateTransactions(
+      updatedTransactions,
+      openingBalances,
+      lastTradeSettledAt,
+    )
     if (validationError) {
       setError(validationError)
-      return
+      return null
     }
 
     setTransactions(updatedTransactions)
@@ -691,11 +850,13 @@ function App() {
     } else {
       resetVnSellForm()
     }
+    return isEditing ? null : newId
   }
 
   const handleEdit = (tx: UsdtTransaction) => {
     setActiveTab('daily')
     setDailyWorkTab('usdt')
+    setMobileTradePane(tx.type === 'buy' ? 'buy_u' : 'sell_u')
     setEditingId(tx.id)
     setEditingCategory(tx.type)
     setBuyError('')
@@ -718,6 +879,7 @@ function App() {
     const normalized = normalizeVnTradeTransaction(tx)
     setActiveTab('daily')
     setDailyWorkTab('vn')
+    setMobileTradePane(normalized.type === 'buy' ? 'buy_vn' : 'sell_vn')
     setEditingId(normalized.id)
     setEditingCategory(normalized.type === 'buy' ? 'vn_buy' : 'vn_sell')
     setBuyError('')
@@ -1253,19 +1415,13 @@ function App() {
             >
               {mobileNavOpen ? <MobileNavCloseIcon /> : <MobileNavMenuIcon />}
             </button>
-            <p className="min-w-0 flex-1 text-xs font-medium text-slate-800">
-              {activeTab === 'daily'
-                ? dailyWorkTab === 'usdt'
-                  ? 'E進出'
-                  : 'V進出'
-                : activeTab === 'expenses'
-                  ? '營業開銷'
-                  : activeTab === 'monthly'
-                      ? selectedMonthlyClose
-                        ? selectedMonthlyClose.periodLabel
-                        : '月結'
-                      : '每日結算'}
-            </p>
+            {activeTab !== 'daily' && activeTab !== 'expenses' && (
+              <p className="min-w-0 flex-1 text-xs font-medium text-slate-800">
+                {activeTab === 'monthly' && selectedMonthlyClose
+                  ? selectedMonthlyClose.periodLabel
+                  : MOBILE_TAB_LABEL[activeTab]}
+              </p>
+            )}
           </header>
 
         <main
@@ -1285,8 +1441,6 @@ function App() {
               <DailyPageHeader
                 businessDayLabel={businessDayLabel}
                 pendingCount={tradeTransactions.length}
-                onOpeningBalance={handleOpenOpeningBalance}
-                onResetAll={handleResetAll}
               />
               <DailyBalanceStrip
                 balances={balances}
@@ -1295,186 +1449,207 @@ function App() {
                 vnTwdRate={vnTradeAnalytics.currentVnTwdRate}
                 vnUsdtRate={vnTradeAnalytics.currentVnUsdtRate}
               />
-              <DailyWorkTabBar value={dailyWorkTab} onChange={handleWorkTabChange} />
+              <DailyMobileTradeTabBar
+                className="lg:hidden"
+                value={mobileTradePane}
+                onChange={handleMobileTradePaneChange}
+              />
+              <DailyWorkTabBar
+                className="hidden lg:flex"
+                value={dailyWorkTab}
+                onChange={handleWorkTabChange}
+              />
 
-              {dailyWorkTab === 'usdt' ? (
-                <section className="grid shrink-0 gap-1 sm:gap-2 lg:grid-cols-2 lg:items-start">
-                  <div className="flex flex-col gap-1 sm:gap-1.5">
-                    <div className={formCardClass('emerald', isEditingBuy)}>
-                      <TradeForm
-                        type="buy"
-                        title="收E"
-                        editTitle="編輯收E"
-                        usdt={buyUsdtAmount}
-                        fiat={buyFiatAmount}
-                        rate={buyRate}
-                        error={buyError}
-                        isEditing={isEditingBuy}
-                        disabled={isEditingAny && !isEditingBuy}
-                        onFieldChange={updateBuyForm}
-                        onSubmit={(e) => handleSubmit('buy', e)}
-                        onCancel={resetBuyForm}
-                        accentClass="text-emerald-700"
-                        buttonClass="bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-600/30"
-                        focusClass="focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                        balances={balances}
-                        inventoryUnitCost={inventoryCost.twd}
-                      />
-                    </div>
-                    <div className={recordCardClass('emerald')}>
-                      <h2 className="mb-1 shrink-0 text-[11px] font-semibold leading-none text-emerald-700">
-                        買入紀錄
-                      </h2>
-                      <TransactionTable
-                        transactions={buyTransactions}
-                        editingId={editingId}
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                        accent="buy"
-                        sideLabel="買入"
-                        showDayAverage
-                        visibleRows={tableVisibleRows}
-                        bodyScrollRef={buyBodyScrollRef}
-                        onBodyScroll={(scrollTop) => syncTransactionBodyScroll('buy', scrollTop)}
-                      />
-                    </div>
+              <section className="grid shrink-0 gap-1 sm:gap-2 lg:grid-cols-2 lg:items-start">
+                <div
+                  className={dailyTradePaneClass(mobileTradePane, dailyWorkTab, 'buy_u', 'usdt')}
+                >
+                  <div className={formCardClass('emerald', isEditingBuy)}>
+                    <TradeForm
+                      type="buy"
+                      title="收E"
+                      editTitle="編輯收E"
+                      usdt={buyUsdtAmount}
+                      fiat={buyFiatAmount}
+                      rate={buyRate}
+                      error={buyError}
+                      isEditing={isEditingBuy}
+                      disabled={isEditingAny && !isEditingBuy}
+                      onFieldChange={updateBuyForm}
+                      onSubmit={(e) => handleSubmit('buy', e)}
+                      onCancel={resetBuyForm}
+                      onClear={clearBuyForm}
+                      accentClass="text-emerald-700"
+                      buttonClass="bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-600/30"
+                      focusClass="focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                      balances={balances}
+                      inventoryUnitCost={inventoryCost.twd}
+                    />
                   </div>
+                  <div className={recordCardClass('emerald')}>
+                    <h2 className="mb-1 shrink-0 text-[11px] font-semibold leading-none text-emerald-700">
+                      買入紀錄
+                    </h2>
+                    <TransactionTable
+                      transactions={buyTransactions}
+                      editingId={editingId}
+                      highlightedId={highlightedTransactionId}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      accent="buy"
+                      sideLabel="買入"
+                      showDayAverage
+                      visibleRows={tableVisibleRows}
+                      bodyScrollRef={buyBodyScrollRef}
+                      onBodyScroll={(scrollTop) => syncTransactionBodyScroll('buy', scrollTop)}
+                    />
+                  </div>
+                </div>
 
-                  <div className="flex flex-col gap-1.5">
-                    <div className={formCardClass('rose', isEditingSell)}>
-                      <TradeForm
-                        type="sell"
-                        title="出E"
-                        editTitle="編輯出E"
-                        usdt={sellUsdtAmount}
-                        fiat={sellFiatAmount}
-                        rate={sellRate}
-                        error={sellError}
-                        isEditing={isEditingSell}
-                        disabled={isEditingAny && !isEditingSell}
-                        onFieldChange={updateSellForm}
-                        onSubmit={(e) => handleSubmit('sell', e)}
-                        onCancel={resetSellForm}
-                        accentClass="text-rose-700"
-                        buttonClass="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600/30"
-                        focusClass="focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20"
-                        balances={balances}
-                        inventoryUnitCost={inventoryCost.twd}
-                      />
-                    </div>
-                    <div className={recordCardClass('rose')}>
-                      <h2 className="mb-1 shrink-0 text-[11px] font-semibold leading-none text-rose-700">
-                        賣出紀錄
-                      </h2>
-                      <TransactionTable
-                        transactions={sellTransactions}
-                        editingId={editingId}
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                        accent="sell"
-                        sideLabel="賣出"
-                        sellProfitById={sellProfitById}
-                        visibleRows={tableVisibleRows}
-                        bodyScrollRef={sellBodyScrollRef}
-                        onBodyScroll={(scrollTop) => syncTransactionBodyScroll('sell', scrollTop)}
-                      />
-                    </div>
+                <div
+                  className={dailyTradePaneClass(mobileTradePane, dailyWorkTab, 'sell_u', 'usdt')}
+                >
+                  <div className={formCardClass('rose', isEditingSell)}>
+                    <TradeForm
+                      type="sell"
+                      title="出E"
+                      editTitle="編輯出E"
+                      usdt={sellUsdtAmount}
+                      fiat={sellFiatAmount}
+                      rate={sellRate}
+                      error={sellError}
+                      isEditing={isEditingSell}
+                      disabled={isEditingAny && !isEditingSell}
+                      onFieldChange={updateSellForm}
+                      onSubmit={(e) => handleSubmit('sell', e)}
+                      onCancel={resetSellForm}
+                      onClear={clearSellForm}
+                      accentClass="text-rose-700"
+                      buttonClass="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600/30"
+                      focusClass="focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20"
+                      balances={balances}
+                      inventoryUnitCost={inventoryCost.twd}
+                    />
                   </div>
-                </section>
-              ) : (
-                <section className="grid shrink-0 gap-1 sm:gap-2 lg:grid-cols-2 lg:items-start">
-                  <div className="flex flex-col gap-1 sm:gap-1.5">
-                    <div className={formCardClass('violet', isEditingVnBuy)}>
-                      <VnTradeForm
-                        type="buy"
-                        title="買入 VN"
-                        editTitle="編輯買入 VN"
-                        payCurrency={vnBuyPayCurrency}
-                        onPayCurrencyChange={setVnBuyPayCurrency}
-                        vn={vnBuyVnAmount}
-                        pay={vnBuyPayAmount}
-                        rate={vnBuyRate}
-                        error={vnBuyError}
-                        isEditing={isEditingVnBuy}
-                        disabled={isEditingAny && !isEditingVnBuy}
-                        onFieldChange={updateVnBuyForm}
-                        onSubmit={(e) => handleVnSubmit('buy', e)}
-                        onCancel={resetVnBuyForm}
-                        accentClass="text-violet-700"
-                        buttonClass="bg-violet-600 hover:bg-violet-700 focus:ring-violet-600/30"
-                        focusClass="focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
-                        balances={balances}
-                        usdtInventoryCostTwd={inventoryCost.twd}
-                        vnInventoryTwdRate={null}
-                      />
-                    </div>
-                    <div className={recordCardClass('violet')}>
-                      <h2 className="mb-1 shrink-0 text-xs font-semibold leading-none text-violet-700">
-                        買入紀錄
-                      </h2>
-                      <VnTradeTable
-                        transactions={vnBuyTransactions}
-                        editingId={editingId}
-                        onEdit={handleEditVn}
-                        onDelete={handleDelete}
-                        accent="buy"
-                        sideLabel="買入"
-                        visibleRows={tableVisibleRows}
-                        bodyScrollRef={vnBuyBodyScrollRef}
-                        onBodyScroll={(scrollTop) => syncVnBodyScroll('buy', scrollTop)}
-                      />
-                    </div>
+                  <div className={recordCardClass('rose')}>
+                    <h2 className="mb-1 shrink-0 text-[11px] font-semibold leading-none text-rose-700">
+                      賣出紀錄
+                    </h2>
+                    <TransactionTable
+                      transactions={sellTransactions}
+                      editingId={editingId}
+                      highlightedId={highlightedTransactionId}
+                      onEdit={handleEdit}
+                      onDelete={handleDelete}
+                      accent="sell"
+                      sideLabel="賣出"
+                      sellProfitById={sellProfitById}
+                      visibleRows={tableVisibleRows}
+                      bodyScrollRef={sellBodyScrollRef}
+                      onBodyScroll={(scrollTop) => syncTransactionBodyScroll('sell', scrollTop)}
+                    />
                   </div>
+                </div>
 
-                  <div className="flex flex-col gap-1.5">
-                    <div className={formCardClass('rose', isEditingVnSell)}>
-                      <VnTradeForm
-                        type="sell"
-                        title="賣出 VN"
-                        editTitle="編輯賣出 VN"
-                        payCurrency={vnSellPayCurrency}
-                        onPayCurrencyChange={setVnSellPayCurrency}
-                        vn={vnSellVnAmount}
-                        pay={vnSellPayAmount}
-                        rate={vnSellRate}
-                        error={vnSellError}
-                        isEditing={isEditingVnSell}
-                        disabled={isEditingAny && !isEditingVnSell}
-                        onFieldChange={updateVnSellForm}
-                        onSubmit={(e) => handleVnSubmit('sell', e)}
-                        onCancel={resetVnSellForm}
-                        accentClass="text-amber-700"
-                        buttonClass="bg-amber-600 hover:bg-amber-700 focus:ring-amber-600/30"
-                        focusClass="focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-                        balances={balances}
-                        usdtInventoryCostTwd={inventoryCost.twd}
-                        vnInventoryTwdRate={vnTradeAnalytics.currentVnTwdRate}
-                      />
-                    </div>
-                    <div className={recordCardClass('rose')}>
-                      <h2 className="mb-1 shrink-0 text-xs font-semibold leading-none text-amber-700">
-                        賣出紀錄
-                      </h2>
-                      <VnTradeTable
-                        transactions={vnSellTransactions}
-                        editingId={editingId}
-                        onEdit={handleEditVn}
-                        onDelete={handleDelete}
-                        accent="sell"
-                        sideLabel="賣出"
-                        showSellAverage
-                        openingBalances={openingBalances}
-                        openingUsdtCost={openingUsdtCost}
-                        allTransactions={transactions}
-                        sellProfitById={vnTradeAnalytics.sellProfitById}
-                        visibleRows={tableVisibleRows}
-                        bodyScrollRef={vnSellBodyScrollRef}
-                        onBodyScroll={(scrollTop) => syncVnBodyScroll('sell', scrollTop)}
-                      />
-                    </div>
+                <div
+                  className={dailyTradePaneClass(mobileTradePane, dailyWorkTab, 'buy_vn', 'vn')}
+                >
+                  <div className={formCardClass('violet', isEditingVnBuy)}>
+                    <VnTradeForm
+                      type="buy"
+                      title="買入 VN"
+                      editTitle="編輯買入 VN"
+                      payCurrency={vnBuyPayCurrency}
+                      onPayCurrencyChange={setVnBuyPayCurrency}
+                      vn={vnBuyVnAmount}
+                      pay={vnBuyPayAmount}
+                      rate={vnBuyRate}
+                      error={vnBuyError}
+                      isEditing={isEditingVnBuy}
+                      disabled={isEditingAny && !isEditingVnBuy}
+                      onFieldChange={updateVnBuyForm}
+                      onSubmit={(e) => handleVnSubmit('buy', e)}
+                      onCancel={resetVnBuyForm}
+                      onClear={clearVnBuyForm}
+                      accentClass="text-violet-700"
+                      buttonClass="bg-violet-600 hover:bg-violet-700 focus:ring-violet-600/30"
+                      focusClass="focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
+                      balances={balances}
+                      usdtInventoryCostTwd={inventoryCost.twd}
+                      vnInventoryTwdRate={null}
+                    />
                   </div>
-                </section>
-              )}
+                  <div className={recordCardClass('violet')}>
+                    <h2 className="mb-1 shrink-0 text-xs font-semibold leading-none text-violet-700">
+                      買入紀錄
+                    </h2>
+                    <VnTradeTable
+                      transactions={vnBuyTransactions}
+                      editingId={editingId}
+                      highlightedId={highlightedTransactionId}
+                      onEdit={handleEditVn}
+                      onDelete={handleDelete}
+                      accent="buy"
+                      sideLabel="買入"
+                      visibleRows={tableVisibleRows}
+                      bodyScrollRef={vnBuyBodyScrollRef}
+                      onBodyScroll={(scrollTop) => syncVnBodyScroll('buy', scrollTop)}
+                    />
+                  </div>
+                </div>
+
+                <div
+                  className={dailyTradePaneClass(mobileTradePane, dailyWorkTab, 'sell_vn', 'vn')}
+                >
+                  <div className={formCardClass('rose', isEditingVnSell)}>
+                    <VnTradeForm
+                      type="sell"
+                      title="賣出 VN"
+                      editTitle="編輯賣出 VN"
+                      payCurrency={vnSellPayCurrency}
+                      onPayCurrencyChange={setVnSellPayCurrency}
+                      vn={vnSellVnAmount}
+                      pay={vnSellPayAmount}
+                      rate={vnSellRate}
+                      error={vnSellError}
+                      isEditing={isEditingVnSell}
+                      disabled={isEditingAny && !isEditingVnSell}
+                      onFieldChange={updateVnSellForm}
+                      onSubmit={(e) => handleVnSubmit('sell', e)}
+                      onCancel={resetVnSellForm}
+                      onClear={clearVnSellForm}
+                      accentClass="text-amber-700"
+                      buttonClass="bg-amber-600 hover:bg-amber-700 focus:ring-amber-600/30"
+                      focusClass="focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                      balances={balances}
+                      usdtInventoryCostTwd={inventoryCost.twd}
+                      vnInventoryTwdRate={vnTradeAnalytics.currentVnTwdRate}
+                    />
+                  </div>
+                  <div className={recordCardClass('rose')}>
+                    <h2 className="mb-1 shrink-0 text-xs font-semibold leading-none text-amber-700">
+                      賣出紀錄
+                    </h2>
+                    <VnTradeTable
+                      transactions={vnSellTransactions}
+                      editingId={editingId}
+                      highlightedId={highlightedTransactionId}
+                      onEdit={handleEditVn}
+                      onDelete={handleDelete}
+                      accent="sell"
+                      sideLabel="賣出"
+                      showSellAverage
+                      openingBalances={openingBalances}
+                      openingUsdtCost={openingUsdtCost}
+                      allTransactions={transactions}
+                      sellProfitById={vnTradeAnalytics.sellProfitById}
+                      visibleRows={tableVisibleRows}
+                      bodyScrollRef={vnSellBodyScrollRef}
+                      onBodyScroll={(scrollTop) => syncVnBodyScroll('sell', scrollTop)}
+                    />
+                  </div>
+                </div>
+              </section>
               <DailyTradeSettleBar
                 tradeCount={tradeTransactions.length}
                 onSettle={handleTradeSettle}
@@ -1485,22 +1660,18 @@ function App() {
               {editingBannerLabel && (
                 <EditingBanner label={editingBannerLabel} onCancel={cancelEditing} />
               )}
-              <h1 className="mb-0.5 shrink-0 text-sm font-semibold text-slate-800">營業開銷</h1>
-              <p className="mb-1 shrink-0 text-[10px] leading-tight text-slate-500">
-                <span className="font-medium text-slate-700">{expenseBusinessDayLabel}</span>
-                {' 營業日 · '}
-                待結{' '}
-                <span className="tabular-nums font-medium text-slate-700">
-                  {expenseTransactions.length}
-                </span>{' '}
-                筆
-                <span className="hidden lg:inline">
-                  {' · 台幣餘額 '}
+              <div className="mb-0.5 hidden shrink-0 lg:block">
+                <h1 className="text-sm font-semibold text-slate-800">營業開銷</h1>
+                <p className="mt-0.5 text-[10px] leading-tight text-slate-500">
+                  <span className="font-medium text-slate-700">{expenseBusinessDayLabel}</span>
+                  {' 營業日 · '}
+                  待結{' '}
                   <span className="tabular-nums font-medium text-slate-700">
-                    {formatTwd(balances.twd)}
-                  </span>
-                </span>
-              </p>
+                    {expenseTransactions.length}
+                  </span>{' '}
+                  筆
+                </p>
+              </div>
               <section className="mx-auto w-full max-w-2xl shrink-0 space-y-1.5">
                 <div className={`${formCardClass('orange', isEditingExpense)} !p-1.5`}>
                   <ExpenseForm
@@ -1541,18 +1712,14 @@ function App() {
           ) : (
             <>
               <h1 className="mb-2 shrink-0 text-sm font-semibold text-slate-800">月結</h1>
-              {selectedMonthlyClose ? (
-                <MonthlyCloseDetail
-                  monthlyClose={selectedMonthlyClose}
-                  onBack={() => setSelectedMonthlyCloseId(null)}
-                />
-              ) : (
-                <MonthlyClosesList
-                  closes={monthlyCloses}
-                  onSelect={setSelectedMonthlyCloseId}
-                  onStartClose={handleOpenMonthlyClose}
-                />
-              )}
+              <MonthlyClosesList
+                closes={monthlyCloses}
+                expandedId={selectedMonthlyCloseId}
+                onExpandedChange={setSelectedMonthlyCloseId}
+                onStartClose={handleOpenMonthlyClose}
+                onOpeningBalance={handleOpenOpeningBalance}
+                onResetAll={handleResetAll}
+              />
             </>
           )}
         </main>

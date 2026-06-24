@@ -70,6 +70,22 @@ export function filterTradeTransactions(transactions: Transaction[]): Array<
   )
 }
 
+/** 最近一次交易日結時間；該時間點前的流水已納入 openingBalances */
+export function getLastTradeSettlementAt(
+  settlements: DailySettlement[],
+): Date | null {
+  return settlements[0]?.settledAt ?? null
+}
+
+export function filterBalanceAffectingTransactions(
+  transactions: Transaction[],
+  lastTradeSettledAt: Date | null,
+): Transaction[] {
+  if (!lastTradeSettledAt) return transactions
+  const cutoff = lastTradeSettledAt.getTime()
+  return transactions.filter((tx) => tx.timestamp.getTime() > cutoff)
+}
+
 export function normalizeVnTradeTransaction(tx: VnTradeTransaction): VnTradeTransaction {
   const payCurrency: VnPayCurrency =
     tx.payCurrency === 'usdt' ? 'usdt' : 'twd'
@@ -828,25 +844,21 @@ export function buildMonthlyClosePreview(
   }
 }
 
+/**
+ * 由本期庫存成本計價帳面與淨利反推期初帳面。
+ * 期初 + 淨利 = 期末（帳面），避免用「首日結總資產 − 當日毛利」
+ * （該算法會把日結前已扣的開銷誤算進期初，造成開銷在月報表雙重扣除）。
+ */
 export function inferOpeningTotalAssets(
-  archivedTrade: DailySettlement[],
   closingBookTotal: number,
   netProfit: number,
 ): number {
-  if (archivedTrade.length > 0) {
-    const first = [...archivedTrade].sort(
-      (a, b) => a.settledAt.getTime() - b.settledAt.getTime(),
-    )[0]
-    return first.totalAssetsTwd - first.dayTotalProfit
-  }
   return closingBookTotal - netProfit
 }
 
 export function normalizeMonthlyCloseRecord(item: MonthlyClose): MonthlyClose & { openingTotalAssets: number } {
-  const openingTotalAssets =
-    item.openingTotalAssets ??
-    inferOpeningTotalAssets(item.tradeSettlements, item.closingBookTotalAssets ?? item.closingTotalAssets, item.netProfit)
   const closingBookTotalAssets = item.closingBookTotalAssets ?? item.closingTotalAssets
+  const openingTotalAssets = closingBookTotalAssets - item.netProfit
 
   return {
     ...item,
@@ -885,11 +897,7 @@ export function buildMonthlyClose(
   const vnProfit = archivedTrade.reduce((sum, item) => sum + (item.dayVnProfit ?? 0), 0)
   const expenseTotal = archivedExpense.reduce((sum, item) => sum + item.expenseTotal, 0)
   const netProfit = grossProfit - expenseTotal
-  const openingTotalAssets = inferOpeningTotalAssets(
-    archivedTrade,
-    fallbackTotalAssets,
-    netProfit,
-  )
+  const openingTotalAssets = inferOpeningTotalAssets(fallbackTotalAssets, netProfit)
 
   return {
     id: crypto.randomUUID(),
@@ -1091,8 +1099,13 @@ export function applyTransaction(balances: Balances, tx: Transaction): Balances 
 export function recalculateBalances(
   transactions: Transaction[],
   openingBalances: Balances = INITIAL_BALANCES,
+  lastTradeSettledAt: Date | null = null,
 ): Balances {
-  const sorted = [...transactions].sort(
+  const applicable = filterBalanceAffectingTransactions(
+    transactions,
+    lastTradeSettledAt,
+  )
+  const sorted = [...applicable].sort(
     (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
   )
 
@@ -1104,8 +1117,13 @@ export function recalculateBalances(
 export function validateTransactions(
   transactions: Transaction[],
   openingBalances: Balances = INITIAL_BALANCES,
+  lastTradeSettledAt: Date | null = null,
 ): string | null {
-  const sorted = [...transactions].sort(
+  const applicable = filterBalanceAffectingTransactions(
+    transactions,
+    lastTradeSettledAt,
+  )
+  const sorted = [...applicable].sort(
     (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
   )
 

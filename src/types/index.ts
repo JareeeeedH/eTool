@@ -1,8 +1,11 @@
 import type { FormEvent, RefObject } from 'react'
 
 export type TransactionType = 'buy' | 'sell'
+export type UsdtTradeField = 'usdt' | 'fiat' | 'rate'
+export type VnTradeField = 'vn' | 'pay' | 'rate'
 export type EditingCategory = TransactionType | 'vn_buy' | 'vn_sell' | 'expense'
 export type DailyWorkTab = 'usdt' | 'vn'
+export type DailyMobileTradePane = 'buy_u' | 'sell_u' | 'buy_vn' | 'sell_vn'
 export type FiatCurrency = 'twd' | 'vn'
 export type VnPayCurrency = 'twd' | 'usdt'
 export type ExpenseType = 'rent' | 'fuel' | 'parking' | 'meal' | 'telecom' | 'misc' | 'other'
@@ -235,6 +238,7 @@ export interface DailyTradeSettleBarProps {
 export interface TransactionTableProps {
   transactions: UsdtTransaction[]
   editingId: string | null
+  highlightedId?: string | null
   onEdit: (tx: UsdtTransaction) => void
   onDelete: (id: string) => void
   accent: 'buy' | 'sell'
@@ -262,6 +266,7 @@ export interface TradeFormProps {
   onFieldChange: (field: 'usdt' | 'fiat' | 'rate', value: string) => void
   onSubmit: (e: FormEvent) => void
   onCancel: () => void
+  onClear: () => void
   accentClass: string
   buttonClass: string
   focusClass: string
@@ -286,6 +291,7 @@ export interface VnTradeFormProps {
   onFieldChange: (field: 'vn' | 'pay' | 'rate', value: string) => void
   onSubmit: (e: FormEvent) => void
   onCancel: () => void
+  onClear: () => void
   accentClass: string
   buttonClass: string
   focusClass: string
@@ -298,6 +304,7 @@ export interface VnTradeFormProps {
 export interface VnTradeTableProps {
   transactions: VnTradeTransaction[]
   editingId: string | null
+  highlightedId?: string | null
   onEdit: (tx: VnTradeTransaction) => void
   onDelete: (id: string) => void
   accent: 'buy' | 'sell'
@@ -402,14 +409,11 @@ export interface OpeningBalanceModalProps {
 
 export interface MonthlyClosesListProps {
   closes: MonthlyClose[]
-  onSelect: (id: string) => void
+  expandedId: string | null
+  onExpandedChange: (id: string | null) => void
   onStartClose: () => void
-}
-
-
-export interface MonthlyCloseDetailProps {
-  monthlyClose: MonthlyClose
-  onBack: () => void
+  onOpeningBalance: () => void
+  onResetAll: () => void
 }
 
 
