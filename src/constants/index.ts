@@ -66,25 +66,32 @@ export const TRANSACTION_DATA_ROW_STYLE = {
 export const TRANSACTION_CELL_CLASS = 'align-middle px-1.5 leading-none'
 export const TRANSACTION_TIME_CELL_CLASS =
   'align-middle w-[4.25rem] whitespace-nowrap px-1 text-[13px] tabular-nums leading-none'
+/** 表格日期欄（僅 MM/DD，較窄） */
+export const TRANSACTION_DATE_CELL_CLASS =
+  'align-middle w-[2.75rem] whitespace-nowrap px-0.5 text-[13px] tabular-nums leading-none'
 export const TRANSACTION_INDEX_CELL_CLASS =
   'align-middle w-0 whitespace-nowrap p-0 pl-0 pr-px text-center text-[10px] tabular-nums leading-none'
 /** VN 手機表：序號獨立窄欄，避免與 VN 數字重疊 */
 export const VN_MOBILE_INDEX_CELL_CLASS =
-  'align-middle w-[1.125rem] min-w-[1.125rem] whitespace-nowrap p-0 pl-0 pr-0.5 text-center text-[10px] tabular-nums leading-none text-slate-400'
+  'align-middle w-[1.25rem] min-w-[1.25rem] whitespace-nowrap p-0 pl-0 pr-1 text-center text-[11px] tabular-nums leading-none text-slate-400'
 export const VN_MOBILE_CELL_CLASS = 'align-middle px-0.5 text-[13px] leading-none'
 export const VN_MOBILE_VN_CELL_CLASS =
-  'align-middle pl-0 pr-2 text-right tabular-nums leading-none text-[13px]'
+  'align-middle min-w-0 pl-0.5 pr-0.5 text-left tabular-nums leading-tight text-[12px]'
 export const VN_MOBILE_COIN_CELL_CLASS =
-  'align-middle w-[1.5rem] min-w-[1.5rem] px-0 text-center text-[13px] leading-none'
+  'align-middle w-[1.125rem] min-w-[1.125rem] max-w-[1.125rem] shrink-0 px-0 text-center text-[12px] leading-none'
 export const VN_MOBILE_NUM_CELL_CLASS =
-  'align-middle pl-0 pr-0.5 text-right tabular-nums leading-none text-[13px]'
+  'align-middle min-w-0 pl-0 pr-0.5 text-right tabular-nums leading-tight text-[12px]'
 export const VN_MOBILE_ACTION_CELL_CLASS =
-  'align-middle w-0 whitespace-nowrap p-0 text-right leading-none'
+  'align-middle w-[2.5rem] min-w-[2.5rem] shrink-0 whitespace-nowrap p-0 text-right leading-none'
 export const TRANSACTION_NUM_CELL_CLASS =
   'align-middle px-1 text-right tabular-nums leading-none'
 export const TRANSACTION_ACTION_CELL_CLASS =
   'align-middle w-[3.25rem] whitespace-nowrap pl-1 pr-0 text-right leading-none'
 
+export const VN_DESKTOP_VN_CELL_CLASS =
+  'align-middle pl-0.5 pr-1 text-left tabular-nums leading-none text-[13px]'
 export const VN_TRANSACTION_TABLE_CLASS =
   'w-full min-w-[300px] table-fixed text-left text-[13px]'
+export const VN_TRANSACTION_TABLE_MOBILE_CLASS =
+  'w-full max-w-full table-fixed text-left text-[12px]'
 export const EXPENSE_TABLE_CLASS = 'w-full min-w-[300px] table-fixed text-left text-xs'

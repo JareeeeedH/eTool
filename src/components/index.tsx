@@ -44,6 +44,7 @@ import {
   TRANSACTION_NUM_CELL_CLASS,
   TRANSACTION_ACTION_CELL_CLASS,
   TRANSACTION_TIME_CELL_CLASS,
+  TRANSACTION_DATE_CELL_CLASS,
   TRANSACTION_INDEX_CELL_CLASS,
   TRANSACTION_ROW_HEIGHT_REM,
   TRANSACTION_TABLE_CLASS,
@@ -54,7 +55,9 @@ import {
   VN_MOBILE_VN_CELL_CLASS,
   VN_MOBILE_COIN_CELL_CLASS,
   VN_MOBILE_NUM_CELL_CLASS,
+  VN_DESKTOP_VN_CELL_CLASS,
   VN_TRANSACTION_TABLE_CLASS,
+  VN_TRANSACTION_TABLE_MOBILE_CLASS,
 } from '../constants'
 import {
   expenseTypeLabel,
@@ -500,7 +503,7 @@ export function RowActionButtons({
   onDelete: () => void
   compact?: boolean
 }) {
-  const iconClass = compact ? 'h-3 w-3' : 'h-4 w-4'
+  const iconClass = compact ? 'h-3.5 w-3.5' : 'h-4 w-4'
   const btnClass = compact
     ? 'shrink-0 rounded p-0.5 transition'
     : 'shrink-0 rounded p-1 transition'
@@ -656,38 +659,42 @@ export function VnTradeTableColGroup({
   mobileRowIndex?: boolean
 }) {
   if (mobileRowIndex) {
+    const indexCol = '1.25rem'
+    const coinCol = '1.125rem'
+    const actionCol = '2.5rem'
     if (isBuy) {
       return (
         <colgroup>
-          <col style={{ width: '1.125rem' }} />
-          <col style={{ width: '5.5rem' }} />
-          <col style={{ width: '1.5rem' }} />
-          <col style={{ width: '3.5rem' }} />
-          <col style={{ width: '3.25rem' }} />
-          <col style={{ width: '2.5rem' }} />
+          <col style={{ width: indexCol }} />
+          <col style={{ width: '32%' }} />
+          <col style={{ width: coinCol }} />
+          <col style={{ width: '25%' }} />
+          <col style={{ width: '18%' }} />
+          <col style={{ width: actionCol }} />
         </colgroup>
       )
     }
     return (
       <colgroup>
-        <col style={{ width: '1.125rem' }} />
-        <col style={{ width: '5.375rem' }} />
-        <col style={{ width: '1.5rem' }} />
-        <col style={{ width: '3.25rem' }} />
-        <col style={{ width: '3rem' }} />
-        <col style={{ width: '2.75rem' }} />
-        <col style={{ width: '2.5rem' }} />
+        <col style={{ width: indexCol }} />
+        <col style={{ width: '29%' }} />
+        <col style={{ width: coinCol }} />
+        <col style={{ width: '22%' }} />
+        <col style={{ width: '14%' }} />
+        <col style={{ width: '14%' }} />
+        <col style={{ width: actionCol }} />
       </colgroup>
     )
   }
 
-  const coinCol = '1.375rem'
+  const coinCol = '1.75rem'
   const actionCol = '3rem'
+  const vnCol = '8.25rem'
 
   return (
     <colgroup>
-      <col style={{ width: '4.25rem' }} />
-      <col style={{ width: '24%' }} />
+      <col style={{ width: '2.75rem' }} />
+      <col style={{ width: vnCol }} />
       <col style={{ width: coinCol }} />
       <col style={{ width: '20%' }} />
       <col style={{ width: isBuy ? '17%' : '15%' }} />
@@ -1360,6 +1367,57 @@ export function DailyMobileTradeTabBar({
   )
 }
 
+function vnPayCurrencyRowAccent(payCurrency: VnPayCurrency): string {
+  return payCurrency === 'usdt' ? 'border-l-2 border-l-sky-400' : 'border-l-2 border-l-emerald-500'
+}
+
+export function VnPayCurrencyBadge({
+  currency,
+  size = 'sm',
+}: {
+  currency: VnPayCurrency
+  size?: 'sm' | 'xs'
+}) {
+  const isUsdt = currency === 'usdt'
+  const sizeClass =
+    size === 'xs'
+      ? 'min-w-[1.125rem] px-0.5 text-[11px]'
+      : 'min-w-[1.25rem] px-1 text-[12px]'
+
+  return (
+    <span
+      className={`inline-flex items-center justify-center rounded py-px font-bold leading-none tabular-nums ${sizeClass} ${
+        isUsdt
+          ? 'bg-sky-100 text-sky-800 ring-1 ring-inset ring-sky-200/80'
+          : 'bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-200/80'
+      }`}
+      title={isUsdt ? 'USDT (E)' : '台幣 (T)'}
+    >
+      {assetCode(currency)}
+    </span>
+  )
+}
+
+function vnRateUnitSuffix(payCurrency: VnPayCurrency): string {
+  return payCurrency === 'usdt' ? '/E' : '/T'
+}
+
+function vnMobileRateCell(rate: number, payCurrency: VnPayCurrency) {
+  const unitClass =
+    payCurrency === 'usdt' ? 'text-sky-600' : 'text-emerald-600'
+
+  return (
+    <div className="flex flex-col items-end leading-tight">
+      <span className="tabular-nums text-[12px] text-slate-600">
+        {formatVnTradeRateDisplay(rate)}
+      </span>
+      <span className={`text-[10px] font-semibold ${unitClass}`}>
+        {vnRateUnitSuffix(payCurrency)}
+      </span>
+    </div>
+  )
+}
+
 export function VnPayCurrencyToggle({
   value,
   onChange,
@@ -1379,8 +1437,8 @@ export function VnPayCurrencyToggle({
       onClick={() => onChange('usdt')}
       className={`rounded px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
         value === 'usdt'
-          ? 'bg-white text-sky-700 shadow-sm'
-          : 'text-slate-600 hover:text-slate-900'
+          ? 'bg-sky-100 text-sky-800 shadow-sm ring-1 ring-sky-200'
+          : 'text-slate-600 hover:text-sky-700'
       }`}
     >
       {buySide ? 'E 買' : '換 E'}
@@ -1394,8 +1452,8 @@ export function VnPayCurrencyToggle({
       onClick={() => onChange('twd')}
       className={`rounded px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
         value === 'twd'
-          ? 'bg-white text-emerald-700 shadow-sm'
-          : 'text-slate-600 hover:text-slate-900'
+          ? 'bg-emerald-100 text-emerald-800 shadow-sm ring-1 ring-emerald-200'
+          : 'text-slate-600 hover:text-emerald-700'
       }`}
     >
       {buySide ? 'T 買' : '換 T'}
@@ -1656,12 +1714,15 @@ export function VnTradeTable({
   const isBuy = accent === 'buy'
   const isLgUp = useIsLgUp()
   const mobileRowIndex = !isLgUp
+  const tableClass = mobileRowIndex
+    ? VN_TRANSACTION_TABLE_MOBILE_CLASS
+    : VN_TRANSACTION_TABLE_CLASS
   const columnCount = isBuy ? 6 : 7
   const rateHeader = isBuy ? (mobileRowIndex ? '匯率' : '成交匯率') : '匯率'
   const vnIndexCell = (extra = '') =>
     mobileRowIndex
       ? `${VN_MOBILE_INDEX_CELL_CLASS} ${extra}`
-      : `${TRANSACTION_TIME_CELL_CLASS} ${extra}`
+      : `${TRANSACTION_DATE_CELL_CLASS} ${extra}`
   const vnCoinCell = (extra = '') =>
     mobileRowIndex
       ? `${VN_MOBILE_COIN_CELL_CLASS} ${extra}`
@@ -1669,12 +1730,14 @@ export function VnTradeTable({
   const vnAmountCell = (extra = '') =>
     mobileRowIndex
       ? `${VN_MOBILE_VN_CELL_CLASS} ${extra}`
-      : `${TRANSACTION_CELL_CLASS} text-right tabular-nums ${extra}`
+      : `${VN_DESKTOP_VN_CELL_CLASS} ${extra}`
   const vnNumCell = (extra = '') =>
     mobileRowIndex
       ? `${VN_MOBILE_NUM_CELL_CLASS} ${extra}`
       : `${TRANSACTION_CELL_CLASS} text-right tabular-nums ${extra}`
   const totalVn = transactions.reduce((sum, tx) => sum + tx.vnAmount, 0)
+  const usdtRowCount = transactions.filter((tx) => tx.payCurrency === 'usdt').length
+  const twdRowCount = transactions.filter((tx) => tx.payCurrency === 'twd').length
   const totalProfit = !isBuy
     ? transactions.reduce((sum, tx) => sum + (sellProfitById?.get(tx.id)?.profit ?? 0), 0)
     : 0
@@ -1711,7 +1774,9 @@ export function VnTradeTable({
   const vnTableHeader = (
     <thead>
       <tr
-        className="border-b border-slate-200 text-[13px] text-slate-500"
+        className={`border-b border-slate-200 text-slate-500 ${
+          mobileRowIndex ? 'text-[12px]' : 'text-[13px]'
+        }`}
         style={{ height: `${TRANSACTION_HEAD_REM}rem` }}
       >
         <th className={vnIndexCell('font-medium text-slate-500')}>
@@ -1757,14 +1822,47 @@ export function VnTradeTable({
             </span>
           )}
         </td>
-        <td className={vnAmountCell('font-medium text-amber-700')}>{formatNumber(totalVn)}</td>
-        <td className={vnCoinCell('text-[13px] text-slate-400')}>—</td>
+        <td className={vnAmountCell('font-medium text-amber-700')}>
+          <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+            {formatNumber(totalVn)}
+          </span>
+        </td>
+        <td className={vnCoinCell()}>
+          {transactions.length > 0 ? (
+            <div
+              className={`flex items-center justify-center ${
+                mobileRowIndex ? 'flex-col gap-0.5' : 'gap-1'
+              }`}
+            >
+              {usdtRowCount > 0 && (
+                <span className="inline-flex items-center gap-0.5">
+                  <VnPayCurrencyBadge currency="usdt" size="xs" />
+                  <span className="text-[11px] font-medium tabular-nums text-sky-700">
+                    {usdtRowCount}
+                  </span>
+                </span>
+              )}
+              {twdRowCount > 0 && (
+                <span className="inline-flex items-center gap-0.5">
+                  <VnPayCurrencyBadge currency="twd" size="xs" />
+                  <span className="text-[11px] font-medium tabular-nums text-emerald-700">
+                    {twdRowCount}
+                  </span>
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-slate-400">—</span>
+          )}
+        </td>
         <td className={vnNumCell('text-slate-400')}>—</td>
         <td className={vnNumCell('text-slate-400')}>—</td>
         {!isBuy && (
           <td
             className={vnNumCell(
-              `font-semibold ${hasProfitData ? profitColorClass(totalProfit) : 'text-slate-400'}`,
+              `font-semibold ${
+                hasProfitData ? profitColorClass(totalProfit) : 'text-slate-400'
+              }`,
             )}
           >
             {hasProfitData ? formatProfit(totalProfit) : '—'}
@@ -1782,25 +1880,50 @@ export function VnTradeTable({
         key={tx.id}
         data-vn-row={tx.id}
         style={TRANSACTION_DATA_ROW_STYLE}
-        className={`group border-b border-slate-100 transition-colors hover:bg-slate-100/70 ${transactionDataRowClass(tx.id, editingId, highlightedId)}`}
+        className={`group border-b border-slate-100 transition-colors hover:bg-slate-100/70 ${vnPayCurrencyRowAccent(tx.payCurrency)} ${transactionDataRowClass(tx.id, editingId, highlightedId)}`}
       >
         <td className={vnIndexCell()}>
           {mobileRowIndex ? index + 1 : formatTableDateTime(tx.timestamp)}
         </td>
-        <td className={vnAmountCell('text-amber-700')}>{formatNumber(tx.vnAmount)}</td>
-        <td className={vnCoinCell('text-[13px] font-medium text-slate-500')}>
-          {assetCode(tx.payCurrency)}
+        <td className={vnAmountCell('text-amber-700')}>
+          <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+            {formatNumber(tx.vnAmount)}
+          </span>
+        </td>
+        <td className={vnCoinCell()}>
+          <VnPayCurrencyBadge currency={tx.payCurrency} size="xs" />
         </td>
         <td
           className={vnNumCell(
-            tx.payCurrency === 'usdt' ? 'text-sky-700' : 'text-emerald-700',
+            tx.payCurrency === 'usdt'
+              ? 'font-medium text-sky-700'
+              : 'font-medium text-emerald-700',
           )}
         >
-          {tx.payCurrency === 'usdt'
-            ? formatNumber(tx.usdtAmount)
-            : formatTwd(tx.twdAmount)}
+          <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+            {tx.payCurrency === 'usdt'
+              ? formatNumber(tx.usdtAmount)
+              : formatTwd(tx.twdAmount)}
+          </span>
         </td>
-        <td className={vnNumCell('text-slate-600')}>{formatVnTradeRateDisplay(tx.rate)}</td>
+        <td className={vnNumCell()}>
+          {mobileRowIndex ? (
+            vnMobileRateCell(tx.rate, tx.payCurrency)
+          ) : (
+            <>
+              <span className="tabular-nums text-slate-600">
+                {formatVnTradeRateDisplay(tx.rate)}
+              </span>
+              <span
+                className={`ml-0.5 text-[9px] font-semibold ${
+                  tx.payCurrency === 'usdt' ? 'text-sky-600' : 'text-emerald-600'
+                }`}
+              >
+                {vnRateUnitSuffix(tx.payCurrency)}
+              </span>
+            </>
+          )}
+        </td>
         {!isBuy && (
           <td
             className={vnNumCell(
@@ -1809,9 +1932,11 @@ export function VnTradeTable({
                 : 'text-slate-400',
             )}
           >
-            {profitInfo?.unitCost !== null && profitInfo !== undefined
-              ? formatProfit(profitInfo.profit)
-              : '—'}
+            <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+              {profitInfo?.unitCost !== null && profitInfo !== undefined
+                ? formatProfit(profitInfo.profit)
+                : '—'}
+            </span>
           </td>
         )}
         <td className={mobileRowIndex ? VN_MOBILE_ACTION_CELL_CLASS : TRANSACTION_ACTION_CELL_CLASS}>
@@ -1827,10 +1952,18 @@ export function VnTradeTable({
     )
   })
 
+  const tableWrapClass = mobileRowIndex ? 'max-w-full overflow-hidden' : 'overflow-x-auto'
+  const bodyScrollClass = mobileRowIndex
+    ? 'transaction-table-body-scroll--overflow overflow-x-hidden overflow-y-auto'
+    : 'transaction-table-body-scroll--overflow overflow-x-auto overflow-y-auto'
+  const scrollOuterClass = mobileRowIndex
+    ? 'flex shrink-0 flex-col max-w-full overflow-hidden'
+    : 'flex shrink-0 flex-col overflow-x-auto'
+
   if (!hasOverflow) {
     return (
-      <div className="overflow-x-auto">
-        <table className={VN_TRANSACTION_TABLE_CLASS}>
+      <div className={tableWrapClass}>
+        <table className={tableClass}>
           {vnColGroup}
           {vnTableHeader}
           <tbody>
@@ -1854,19 +1987,21 @@ export function VnTradeTable({
   }
 
   return (
-    <div className="flex shrink-0 flex-col overflow-x-auto">
-      <table className={`${VN_TRANSACTION_TABLE_CLASS} shrink-0`}>
-        {vnColGroup}
-        {vnTableHeader}
-      </table>
-      <div className="relative shrink-0">
+    <div className={scrollOuterClass}>
+      <div className={mobileRowIndex ? 'max-w-full shrink-0 pr-1.5' : undefined}>
+        <table className={tableClass}>
+          {vnColGroup}
+          {vnTableHeader}
+        </table>
+      </div>
+      <div className="relative shrink-0 max-w-full overflow-hidden">
         <div
           ref={scrollRef}
-          className="transaction-table-body-scroll--overflow overflow-x-auto overflow-y-auto"
+          className={bodyScrollClass}
           style={{ maxHeight: maxBodyHeight }}
           onScroll={(event) => onBodyScroll?.(event.currentTarget.scrollTop)}
         >
-          <table className={VN_TRANSACTION_TABLE_CLASS}>
+          <table className={tableClass}>
             {vnColGroup}
             <tbody>{vnTransactionRows}</tbody>
           </table>
@@ -1884,10 +2019,12 @@ export function VnTradeTable({
           />
         )}
       </div>
-      <table className={`${VN_TRANSACTION_TABLE_CLASS} shrink-0`}>
-        {vnColGroup}
-        {vnTableFooter}
-      </table>
+      <div className={mobileRowIndex ? 'max-w-full shrink-0 pr-1.5' : undefined}>
+        <table className={tableClass}>
+          {vnColGroup}
+          {vnTableFooter}
+        </table>
+      </div>
     </div>
   )
 }

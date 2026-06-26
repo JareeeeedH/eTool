@@ -142,13 +142,7 @@ export function formatSettlementDateTime(date: Date): string {
 }
 
 export function formatTableDateTime(date: Date): string {
-  return date.toLocaleString('zh-TW', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
+  return formatSettlementDate(date)
 }
 
 export function formatArchiveDateRange(start: Date | null, end: Date | null): string {
