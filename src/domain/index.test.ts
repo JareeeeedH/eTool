@@ -245,7 +245,6 @@ describe('USDT 成本池 @ 行為', () => {
   it('賣 VN 收 U：U 數量增加、池 @ 數字不變', () => {
     const opening: Balances = { twd: 0, usdt: 10_000, vn: 50_000_000 }
     const cost: UsdtInventoryCost = { twd: 32, vn: null }
-    const vnTwdRate = 850
     const before = computeInventoryCost(opening, cost, [])
     const after = computeInventoryCost(opening, cost, [
       vnSellUsdt('vn-sell', at(14), 5_000_000, 200),
