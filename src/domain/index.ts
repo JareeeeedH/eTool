@@ -27,12 +27,88 @@ import {
   floorTwd,
   formatArchiveDateRange,
   formatNumber,
-  formatRateDisplay,
   formatSettlementDate,
+  formatUsdtTradeRateDisplay,
   formatTwd,
   formatVnTradeRateDisplay,
+  roundUsdtCostRate,
+  roundVnPoolCostRate,
   roundVnTradeRate,
 } from '../utils/format'
+
+/**
+ * =============================================================================
+ * 每日交易核心域邏輯（成本池、均價、利潤）
+ * =============================================================================
+ *
+ * 本檔為「怎麼算」的單一真相來源。UI（App / components）應呼叫此處函式，
+ * 勿在畫面層重複實作成本或利潤公式，以免預覽與表格分叉（歷史上賣 U 曾因此出錯）。
+ *
+ * -----------------------------------------------------------------------------
+ * 名詞
+ * -----------------------------------------------------------------------------
+ * - 「池 @」：庫存加權成本均價（E 卡 = U 兌台幣成本；V 卡 = 1 NTD / 1 U 各能買多少 VN）
+ * - 「成交匯率」：單筆交易輸入的 rate，用於記錄與顯示；**利潤計算用池 @，不是成交匯率**
+ * - 「數量變」vs「@ 變」：許多操作只改數量與成本總額；@ 僅在買入加倉時重算（見下表）
+ *
+ * -----------------------------------------------------------------------------
+ * U 池（USDT 兌台幣成本 @）— 實作：applyUsdtInventoryTransaction
+ * -----------------------------------------------------------------------------
+ * | 操作              | U 數量 | U 池 @     | 說明 |
+ * |-------------------|--------|------------|------|
+ * | 台幣買 U          | ↑      | 重算加權   | twdCostTotal += 實付台幣 |
+ * | 賣 U              | ↓      | 不變       | 依賣出比例扣數量與 twdCostTotal |
+ * | 買 VN 花 U        | ↓      | 不變       | 同賣 U，按比例扣 |
+ * | 賣 VN 收 U        | ↑      | 不變       | 數量 += 收到 U；twdCostTotal += U×當下池@（數學上 @ 不變） |
+ *
+ * 台幣現金增減由 recalculateBalances / applyUsdtTransaction 處理，不列入 U 池 @。
+ *
+ * -----------------------------------------------------------------------------
+ * V 池（@台幣、@U）— 實作：computeVnTradeAnalytics 內 VN 池 walk
+ * -----------------------------------------------------------------------------
+ * | 操作              | VN 數量 | @台幣 / @U | 說明 |
+ * |-------------------|---------|------------|------|
+ * | 買 VN（付 T 或 U）| ↑       | 重算加權   | 兩腿成本分別累加（付 U 時 T 等值用當下 U 池 @ 換算） |
+ * | 賣 VN（收 T 或 U）| ↓       | 不變       | 依賣出比例扣 vnQty 與兩腿成本總額 |
+ *
+ * 賣 VN 收台幣：只動 V 池與台幣餘額，不 walk U 池。
+ * 期初僅有 @台幣時，可依 @台幣 × U 池 @ 推得 @U（createVnTradePoolState）。
+ *
+ * -----------------------------------------------------------------------------
+ * 利潤（一律台幣；顯示 formatProfit → trunc 整數）
+ * -----------------------------------------------------------------------------
+ * - 賣 U：利潤 = 收款台幣 − 賣出 E × **該筆賣出前** U 池 @（round 3 位）
+ * - 賣 VN 收 T：利潤 = 收款台幣 − VN ÷ **該筆賣出前** V@台幣
+ * - 賣 VN 收 U：利潤 = 收到 U × **該筆賣出前** U 池 @ − VN ÷ **該筆賣出前** V@台幣
+ *
+ * 單筆利潤：computeSellProfitById（U）、computeVnTradeAnalytics.sellProfitById（VN）
+ * 表單預覽：computeUsdtSellProfitPreview、computeVnSellProfitPreview（須與上列同一 walk）
+ * 編輯舊賣單預覽：只 walk **時間上排在該筆之前**的交易（transactionsForProfitPreview）
+ *
+ * -----------------------------------------------------------------------------
+ * 與「池 @」不同、勿混淆的顯示
+ * -----------------------------------------------------------------------------
+ * - 買 U 表 footer：當日買單加權 ΣT÷ΣE（calculateBuyDayAverageRate），≠ E 卡池 @
+ * - 買 VN 日均：computeVnTwdCostAverageRate 等，≠ V 卡池 @
+ * - 總資產 E 估值：floor(E × 池@)，可能與 twdCostTotal 差少量取整
+ *
+ * -----------------------------------------------------------------------------
+ * 精度
+ * -----------------------------------------------------------------------------
+ * - U 池 @、賣 U 利潤用 @：roundUsdtCostRate（四捨五入 3 位小數）
+ * - V 池 @：roundVnPoolCostRate（四捨五入 1 位小數）
+ * - 利潤顯示：formatTwd / floorTwd（截斷，不四捨五入）
+ *
+ * -----------------------------------------------------------------------------
+ * 異動本檔時請確認
+ * -----------------------------------------------------------------------------
+ * 1. 預覽、表格、日結是否仍呼叫同一套 walk（勿新增第二份 U 池更新邏輯）
+ * 2. 賣出是否仍為「比例扣減、@ 不變」；買入是否仍為加權重算 @
+ * 3. 賣 VN 收 U 是否仍按當下 U 池 @ 入帳（@ 數字不變、只增數量）
+ * 4. 編輯賣單預覽是否仍只 walk 該筆之前的交易
+ * 5. 建議以固定 fixture 手測或補單元測試後再改
+ * =============================================================================
+ */
 
 export function isExpenseTransaction(tx: Transaction): tx is ExpenseTransaction {
   return tx.category === 'expense'
@@ -173,7 +249,9 @@ export function createUsdtInventoryState(
   openingCost: UsdtInventoryCost,
 ): UsdtInventoryState {
   let usdtQty = openingBalances.usdt
-  let twdCostTotal = (openingCost.twd ?? 0) * usdtQty
+  const openingUnitTwd =
+    openingCost.twd !== null ? roundUsdtCostRate(openingCost.twd) : 0
+  let twdCostTotal = openingUnitTwd * usdtQty
   let vnCostTotal = (openingCost.vn ?? 0) * usdtQty
 
   if (usdtQty <= 0) {
@@ -189,11 +267,45 @@ export function usdtUnitCostTwd(
   openingCost: UsdtInventoryCost,
 ): number | null {
   if (state.usdtQty > 0 && state.twdCostTotal > 0) {
-    return state.twdCostTotal / state.usdtQty
+    return roundUsdtCostRate(state.twdCostTotal / state.usdtQty)
   }
-  return openingCost.twd
+  if (openingCost.twd !== null) {
+    return roundUsdtCostRate(openingCost.twd)
+  }
+  return null
 }
 
+function vnPoolTwdRate(vnQty: number, vnTwdCostTotal: number): number | null {
+  if (vnQty <= 0 || vnTwdCostTotal <= 0) return null
+  return roundVnPoolCostRate(vnQty / vnTwdCostTotal)
+}
+
+/** 賣出：利潤用四捨五入 @；成本池依賣出比例扣減（均價不變，買入才重算） */
+function applyUsdtSellToPool(
+  usdtQty: number,
+  twdCostTotal: number,
+  sellUsdt: number,
+): { usdtQty: number; twdCostTotal: number; unitCost: number | null; costBasis: number } {
+  if (usdtQty <= 0 || sellUsdt <= 0) {
+    return { usdtQty, twdCostTotal, unitCost: null, costBasis: 0 }
+  }
+  const unitCost = roundUsdtCostRate(twdCostTotal / usdtQty)
+  const costBasis = sellUsdt * unitCost
+  const sellRatio = Math.min(sellUsdt / usdtQty, 1)
+  const nextUsdtQty = usdtQty - sellUsdt
+  const nextTwdCostTotal = twdCostTotal * (1 - sellRatio)
+  return {
+    usdtQty: nextUsdtQty > 0 ? nextUsdtQty : 0,
+    twdCostTotal: nextUsdtQty > 0 ? nextTwdCostTotal : 0,
+    unitCost,
+    costBasis,
+  }
+}
+
+/**
+ * 依序更新 U 成本池（總覽 E 卡 @、賣 U 利潤、VN 花 U／收 U 皆走此函式）。
+ * 規則見本檔頂部「U 池」表；勿另寫第二份 walk。
+ */
 export function applyUsdtInventoryTransaction(
   state: UsdtInventoryState,
   tx: Transaction,
@@ -209,13 +321,16 @@ export function applyUsdtInventoryTransaction(
       if (state.usdtQty <= 0) return
 
       const sellRatio = Math.min(tx.usdtAmount / state.usdtQty, 1)
-      state.twdCostTotal *= 1 - sellRatio
+      const applied = applyUsdtSellToPool(
+        state.usdtQty,
+        state.twdCostTotal,
+        tx.usdtAmount,
+      )
+      state.usdtQty = applied.usdtQty
+      state.twdCostTotal = applied.twdCostTotal
       state.vnCostTotal *= 1 - sellRatio
-      state.usdtQty -= tx.usdtAmount
 
       if (state.usdtQty <= 0) {
-        state.usdtQty = 0
-        state.twdCostTotal = 0
         state.vnCostTotal = 0
       }
     }
@@ -238,10 +353,8 @@ export function applyUsdtInventoryTransaction(
       state.vnCostTotal = 0
     }
   } else {
-    const unitTwd =
-      state.usdtQty > 0
-        ? state.twdCostTotal / state.usdtQty
-        : openingCost.twd ?? 0
+    const unitTwd = usdtUnitCostTwd(state, openingCost)
+    if (unitTwd === null) return
     state.usdtQty += tx.usdtAmount
     state.twdCostTotal += tx.usdtAmount * unitTwd
   }
@@ -369,22 +482,28 @@ export function computeVnSellDayAverageRate(
   return totalProceedsTwd > 0 ? totalVn / totalProceedsTwd : null
 }
 
-export function computeVnTradeAnalytics(
+interface VnTradePoolState {
+  usdtState: UsdtInventoryState
+  vnQty: number
+  vnTwdCostTotal: number
+  vnUsdtCostTotal: number
+}
+
+function createVnTradePoolState(
   openingBalances: Balances,
   openingVnTwdRate: number | null,
   openingVnUsdtRate: number | null,
   openingUsdtCost: UsdtInventoryCost,
-  transactions: Transaction[],
-): VnTradeAnalytics {
+): VnTradePoolState {
   const usdtState = createUsdtInventoryState(openingBalances, openingUsdtCost)
   let vnQty = openingBalances.vn
   let vnTwdCostTotal =
     openingVnTwdRate !== null && openingVnTwdRate > 0 && vnQty > 0
-      ? vnQty / openingVnTwdRate
+      ? vnQty / roundVnPoolCostRate(openingVnTwdRate)
       : 0
   let vnUsdtCostTotal =
     openingVnUsdtRate !== null && openingVnUsdtRate > 0 && vnQty > 0
-      ? vnQty / openingVnUsdtRate
+      ? vnQty / roundVnPoolCostRate(openingVnUsdtRate)
       : 0
 
   if (
@@ -396,13 +515,219 @@ export function computeVnTradeAnalytics(
     openingUsdtCost.twd !== null &&
     openingUsdtCost.twd > 0
   ) {
-    vnUsdtCostTotal = vnQty / (openingVnTwdRate * openingUsdtCost.twd)
+    const vnTwdRate = roundVnPoolCostRate(openingVnTwdRate)
+    const usdtTwd = roundUsdtCostRate(openingUsdtCost.twd)
+    vnUsdtCostTotal = vnQty / (vnTwdRate * usdtTwd)
   }
 
   if (vnQty <= 0) {
     vnTwdCostTotal = 0
     vnUsdtCostTotal = 0
   }
+
+  return { usdtState, vnQty, vnTwdCostTotal, vnUsdtCostTotal }
+}
+
+function computeVnSellProfitAtPools(
+  pools: VnTradePoolState,
+  openingUsdtCost: UsdtInventoryCost,
+  vnAmount: number,
+  payCurrency: VnPayCurrency,
+  twdAmount: number,
+  usdtAmount: number,
+): SellProfitInfo {
+  const vnUnitTwdRate = vnPoolTwdRate(pools.vnQty, pools.vnTwdCostTotal)
+  const costBasis =
+    vnUnitTwdRate !== null && vnUnitTwdRate > 0 ? vnAmount / vnUnitTwdRate : 0
+  const usdtUnit = usdtUnitCostTwd(pools.usdtState, openingUsdtCost)
+  const proceeds =
+    payCurrency === 'twd'
+      ? twdAmount
+      : usdtUnit !== null
+        ? usdtAmount * usdtUnit
+        : 0
+
+  return {
+    unitCost: vnUnitTwdRate,
+    costBasis,
+    profit: proceeds - costBasis,
+  }
+}
+
+function applyVnTradeBuyToPools(
+  pools: VnTradePoolState,
+  tx: VnTradeTransaction,
+  openingUsdtCost: UsdtInventoryCost,
+): void {
+  if (tx.type !== 'buy') return
+
+  const usdtUnit = usdtUnitCostTwd(pools.usdtState, openingUsdtCost)
+  pools.vnQty += tx.vnAmount
+  if (tx.payCurrency === 'twd') {
+    pools.vnTwdCostTotal += tx.twdAmount
+    if (usdtUnit !== null && usdtUnit > 0) {
+      pools.vnUsdtCostTotal += tx.twdAmount / usdtUnit
+    }
+  } else if (usdtUnit !== null && usdtUnit > 0) {
+    pools.vnTwdCostTotal += tx.usdtAmount * usdtUnit
+    pools.vnUsdtCostTotal += tx.usdtAmount
+  }
+}
+
+function applyVnTradeSellPoolReduction(
+  pools: VnTradePoolState,
+  vnAmount: number,
+): void {
+  if (pools.vnQty <= 0) return
+
+  const sellRatio = Math.min(vnAmount / pools.vnQty, 1)
+  pools.vnTwdCostTotal *= 1 - sellRatio
+  pools.vnUsdtCostTotal *= 1 - sellRatio
+  pools.vnQty -= vnAmount
+
+  if (pools.vnQty <= 0) {
+    pools.vnQty = 0
+    pools.vnTwdCostTotal = 0
+    pools.vnUsdtCostTotal = 0
+  }
+}
+
+function walkTransactionsThroughVnPools(
+  pools: VnTradePoolState,
+  openingUsdtCost: UsdtInventoryCost,
+  transactions: Transaction[],
+): void {
+  const sorted = [...transactions].sort(
+    (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+  )
+
+  for (const tx of sorted) {
+    if (isVnTradeTransaction(tx)) {
+      if (tx.type === 'buy') {
+        applyVnTradeBuyToPools(pools, tx, openingUsdtCost)
+      } else {
+        applyVnTradeSellPoolReduction(pools, tx.vnAmount)
+      }
+    }
+
+    applyUsdtInventoryTransaction(pools.usdtState, tx, openingUsdtCost)
+  }
+}
+
+function sortTransactionsChronologically(transactions: Transaction[]): Transaction[] {
+  return [...transactions].sort(
+    (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+  )
+}
+
+/**
+ * 編輯既有賣單預覽：只 walk 該筆「時間上之前」的交易（不含該筆與之後）。
+ * 與 computeSellProfitById 在該筆賣出當下取 @ 一致。
+ */
+function transactionsForProfitPreview(
+  transactions: Transaction[],
+  excludeTransactionId?: string | null,
+): Transaction[] {
+  if (!excludeTransactionId) return transactions
+
+  const sorted = sortTransactionsChronologically(transactions)
+  const excludeIndex = sorted.findIndex((tx) => tx.id === excludeTransactionId)
+  if (excludeIndex < 0) return transactions
+
+  return sorted.slice(0, excludeIndex)
+}
+
+/** 賣 U 表單預覽利潤（與表格 computeSellProfitById 相同池子 walk） */
+export function computeUsdtSellProfitPreview(
+  openingBalances: Balances,
+  openingCost: UsdtInventoryCost,
+  transactions: Transaction[],
+  usdtAmount: number,
+  fiatAmount: number,
+  excludeTransactionId?: string | null,
+): SellProfitInfo | null {
+  if (usdtAmount <= 0 || fiatAmount <= 0) return null
+
+  const state = createUsdtInventoryState(openingBalances, openingCost)
+  const sorted = sortTransactionsChronologically(
+    transactionsForProfitPreview(transactions, excludeTransactionId),
+  )
+
+  for (const tx of sorted) {
+    applyUsdtInventoryTransaction(state, tx, openingCost)
+  }
+
+  const unitCost =
+    state.usdtQty > 0 && state.twdCostTotal > 0
+      ? roundUsdtCostRate(state.twdCostTotal / state.usdtQty)
+      : null
+  if (unitCost === null) return null
+
+  const costBasis = usdtAmount * unitCost
+  return {
+    unitCost,
+    costBasis,
+    profit: fiatAmount - costBasis,
+  }
+}
+
+/** 賣 VN 表單預覽利潤（與表格 computeVnTradeAnalytics 相同池子 walk） */
+export function computeVnSellProfitPreview(
+  openingBalances: Balances,
+  openingVnTwdRate: number | null,
+  openingVnUsdtRate: number | null,
+  openingUsdtCost: UsdtInventoryCost,
+  transactions: Transaction[],
+  vnAmount: number,
+  payCurrency: VnPayCurrency,
+  payAmount: number,
+  excludeTransactionId?: string | null,
+): SellProfitInfo | null {
+  if (vnAmount <= 0 || payAmount <= 0) return null
+
+  const pools = createVnTradePoolState(
+    openingBalances,
+    openingVnTwdRate,
+    openingVnUsdtRate,
+    openingUsdtCost,
+  )
+  walkTransactionsThroughVnPools(
+    pools,
+    openingUsdtCost,
+    transactionsForProfitPreview(transactions, excludeTransactionId),
+  )
+
+  const vnUnitTwdRate = vnPoolTwdRate(pools.vnQty, pools.vnTwdCostTotal)
+  if (vnUnitTwdRate === null || vnUnitTwdRate <= 0) return null
+
+  if (payCurrency === 'usdt') {
+    const usdtUnit = usdtUnitCostTwd(pools.usdtState, openingUsdtCost)
+    if (usdtUnit === null || usdtUnit <= 0) return null
+  }
+
+  return computeVnSellProfitAtPools(
+    pools,
+    openingUsdtCost,
+    vnAmount,
+    payCurrency,
+    payCurrency === 'twd' ? payAmount : 0,
+    payCurrency === 'usdt' ? payAmount : 0,
+  )
+}
+
+export function computeVnTradeAnalytics(
+  openingBalances: Balances,
+  openingVnTwdRate: number | null,
+  openingVnUsdtRate: number | null,
+  openingUsdtCost: UsdtInventoryCost,
+  transactions: Transaction[],
+): VnTradeAnalytics {
+  const pools = createVnTradePoolState(
+    openingBalances,
+    openingVnTwdRate,
+    openingVnUsdtRate,
+    openingUsdtCost,
+  )
 
   const buyImpliedTwdRateById = new Map<string, number>()
   const buyImpliedUsdtRateById = new Map<string, number>()
@@ -415,7 +740,7 @@ export function computeVnTradeAnalytics(
   for (const tx of sorted) {
     if (isVnTradeTransaction(tx)) {
       if (tx.type === 'buy') {
-        const usdtUnit = usdtUnitCostTwd(usdtState, openingUsdtCost)
+        const usdtUnit = usdtUnitCostTwd(pools.usdtState, openingUsdtCost)
         if (tx.payCurrency === 'twd') {
           buyImpliedTwdRateById.set(tx.id, tx.rate)
           if (usdtUnit !== null && usdtUnit > 0) {
@@ -426,63 +751,35 @@ export function computeVnTradeAnalytics(
           buyImpliedUsdtRateById.set(tx.id, tx.rate)
         }
 
-        vnQty += tx.vnAmount
-        if (tx.payCurrency === 'twd') {
-          vnTwdCostTotal += tx.twdAmount
-          if (usdtUnit !== null && usdtUnit > 0) {
-            vnUsdtCostTotal += tx.twdAmount / usdtUnit
-          }
-        } else if (usdtUnit !== null && usdtUnit > 0) {
-          vnTwdCostTotal += tx.usdtAmount * usdtUnit
-          vnUsdtCostTotal += tx.usdtAmount
-        }
+        applyVnTradeBuyToPools(pools, tx, openingUsdtCost)
       } else {
-        const vnUnitTwdRate =
-          vnQty > 0 && vnTwdCostTotal > 0 ? vnQty / vnTwdCostTotal : null
-        const costBasis =
-          vnUnitTwdRate !== null && vnUnitTwdRate > 0
-            ? tx.vnAmount / vnUnitTwdRate
-            : 0
-        const usdtUnit = usdtUnitCostTwd(usdtState, openingUsdtCost)
-        const proceeds =
-          tx.payCurrency === 'twd'
-            ? tx.twdAmount
-            : usdtUnit !== null
-              ? tx.usdtAmount * usdtUnit
-              : 0
-
-        sellProfitById.set(tx.id, {
-          unitCost: vnUnitTwdRate,
-          costBasis,
-          profit: proceeds - costBasis,
-        })
-
-        if (vnQty > 0) {
-          const sellRatio = Math.min(tx.vnAmount / vnQty, 1)
-          vnTwdCostTotal *= 1 - sellRatio
-          vnUsdtCostTotal *= 1 - sellRatio
-          vnQty -= tx.vnAmount
-
-          if (vnQty <= 0) {
-            vnQty = 0
-            vnTwdCostTotal = 0
-            vnUsdtCostTotal = 0
-          }
-        }
+        sellProfitById.set(
+          tx.id,
+          computeVnSellProfitAtPools(
+            pools,
+            openingUsdtCost,
+            tx.vnAmount,
+            tx.payCurrency,
+            tx.twdAmount,
+            tx.usdtAmount,
+          ),
+        )
+        applyVnTradeSellPoolReduction(pools, tx.vnAmount)
       }
     }
 
-    applyUsdtInventoryTransaction(usdtState, tx, openingUsdtCost)
+    applyUsdtInventoryTransaction(pools.usdtState, tx, openingUsdtCost)
   }
 
   return {
     buyImpliedTwdRateById,
     buyImpliedUsdtRateById,
     sellProfitById,
-    currentVnTwdRate:
-      vnQty > 0 && vnTwdCostTotal > 0 ? vnQty / vnTwdCostTotal : null,
+    currentVnTwdRate: vnPoolTwdRate(pools.vnQty, pools.vnTwdCostTotal),
     currentVnUsdtRate:
-      vnQty > 0 && vnUsdtCostTotal > 0 ? vnQty / vnUsdtCostTotal : null,
+      pools.vnQty > 0 && pools.vnUsdtCostTotal > 0
+        ? roundVnPoolCostRate(pools.vnQty / pools.vnUsdtCostTotal)
+        : null,
   }
 }
 
@@ -552,7 +849,7 @@ export function calculateAverageRate(
   if (totalUsdt <= 0) return null
 
   const totalFiat = filtered.reduce((sum, tx) => sum + tx.fiatAmount, 0)
-  return totalFiat / totalUsdt
+  return roundUsdtCostRate(totalFiat / totalUsdt)
 }
 
 /** 當日買入紀錄均價 */
@@ -567,7 +864,7 @@ export function calculateBuyDayAverageRate(
   if (totalUsdt <= 0) return null
 
   const totalFiat = filtered.reduce((sum, tx) => sum + tx.fiatAmount, 0)
-  return totalFiat / totalUsdt
+  return roundUsdtCostRate(totalFiat / totalUsdt)
 }
 
 /**
@@ -579,84 +876,35 @@ export function computeInventoryCost(
   openingCost: UsdtInventoryCost,
   transactions: Transaction[],
 ): UsdtInventoryCost {
-  let usdtQty = openingBalances.usdt
-  let twdCostTotal = (openingCost.twd ?? 0) * usdtQty
-  let vnCostTotal = (openingCost.vn ?? 0) * usdtQty
-
-  if (usdtQty <= 0) {
-    twdCostTotal = 0
-    vnCostTotal = 0
-  }
+  const state = createUsdtInventoryState(openingBalances, openingCost)
 
   const sorted = [...transactions].sort(
     (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
   )
 
   for (const tx of sorted) {
-    if (isUsdtTransaction(tx)) {
-      if (tx.type === 'buy') {
-        usdtQty += tx.usdtAmount
-        if (tx.fiatCurrency === 'twd') {
-          twdCostTotal += tx.fiatAmount
-        }
-      } else {
-        if (usdtQty <= 0) continue
-
-        const sellRatio = Math.min(tx.usdtAmount / usdtQty, 1)
-        twdCostTotal *= 1 - sellRatio
-        vnCostTotal *= 1 - sellRatio
-        usdtQty -= tx.usdtAmount
-
-        if (usdtQty <= 0) {
-          usdtQty = 0
-          twdCostTotal = 0
-          vnCostTotal = 0
-        }
-      }
-      continue
-    }
-
-    if (isVnTradeTransaction(tx)) {
-      if (tx.payCurrency !== 'usdt') continue
-
-      if (tx.type === 'buy') {
-      if (usdtQty <= 0) continue
-
-      const spendRatio = Math.min(tx.usdtAmount / usdtQty, 1)
-      twdCostTotal *= 1 - spendRatio
-      vnCostTotal *= 1 - spendRatio
-      usdtQty -= tx.usdtAmount
-
-      if (usdtQty <= 0) {
-        usdtQty = 0
-        twdCostTotal = 0
-        vnCostTotal = 0
-      }
-    } else {
-      const unitTwd = usdtQty > 0 ? twdCostTotal / usdtQty : openingCost.twd ?? 0
-      usdtQty += tx.usdtAmount
-      twdCostTotal += tx.usdtAmount * unitTwd
-      }
-      continue
-    }
+    applyUsdtInventoryTransaction(state, tx, openingCost)
   }
 
   return {
-    twd: usdtQty > 0 && twdCostTotal > 0 ? twdCostTotal / usdtQty : null,
-    vn: usdtQty > 0 && vnCostTotal > 0 ? vnCostTotal / usdtQty : null,
+    twd:
+      state.usdtQty > 0 && state.twdCostTotal > 0
+        ? roundUsdtCostRate(state.twdCostTotal / state.usdtQty)
+        : null,
+    vn:
+      state.usdtQty > 0 && state.vnCostTotal > 0
+        ? state.vnCostTotal / state.usdtQty
+        : null,
   }
 }
 
-/** 單筆賣出的成本與利潤（依整池加權均價） */
+/** 單筆賣 U 的成本與利潤（成本池 walk 與總覽 @ 一致） */
 export function computeSellProfitById(
   openingBalances: Balances,
   openingCost: UsdtInventoryCost,
-  transactions: UsdtTransaction[],
+  transactions: Transaction[],
 ): Map<string, SellProfitInfo> {
-  let usdtQty = openingBalances.usdt
-  let twdCostTotal = (openingCost.twd ?? 0) * usdtQty
-
-  if (usdtQty <= 0) twdCostTotal = 0
+  const state = createUsdtInventoryState(openingBalances, openingCost)
 
   const sorted = [...transactions].sort(
     (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
@@ -664,31 +912,20 @@ export function computeSellProfitById(
   const result = new Map<string, SellProfitInfo>()
 
   for (const tx of sorted) {
-    if (tx.type === 'buy') {
-      usdtQty += tx.usdtAmount
-      twdCostTotal += tx.fiatAmount
-      continue
+    if (isUsdtTransaction(tx) && tx.type === 'sell') {
+      const unitCost =
+        state.usdtQty > 0 && state.twdCostTotal > 0
+          ? roundUsdtCostRate(state.twdCostTotal / state.usdtQty)
+          : null
+      const costBasis = unitCost !== null ? tx.usdtAmount * unitCost : 0
+      result.set(tx.id, {
+        unitCost,
+        costBasis,
+        profit: tx.fiatAmount - costBasis,
+      })
     }
 
-    const unitCost =
-      usdtQty > 0 && twdCostTotal > 0 ? twdCostTotal / usdtQty : null
-    const costBasis = unitCost !== null ? tx.usdtAmount * unitCost : 0
-    result.set(tx.id, {
-      unitCost,
-      costBasis,
-      profit: tx.fiatAmount - costBasis,
-    })
-
-    if (usdtQty <= 0) continue
-
-    const sellRatio = Math.min(tx.usdtAmount / usdtQty, 1)
-    twdCostTotal *= 1 - sellRatio
-    usdtQty -= tx.usdtAmount
-
-    if (usdtQty <= 0) {
-      usdtQty = 0
-      twdCostTotal = 0
-    }
+    applyUsdtInventoryTransaction(state, tx, openingCost)
   }
 
   return result
@@ -697,10 +934,10 @@ export function computeSellProfitById(
 export function computeUsdtDayTotalProfit(
   openingBalances: Balances,
   openingCost: UsdtInventoryCost,
-  transactions: UsdtTransaction[],
+  transactions: Transaction[],
 ): number {
   const profitById = computeSellProfitById(openingBalances, openingCost, transactions)
-  return transactions
+  return filterUsdtTransactions(transactions)
     .filter((tx) => tx.type === 'sell')
     .reduce((sum, tx) => sum + (profitById.get(tx.id)?.profit ?? 0), 0)
 }
@@ -963,7 +1200,7 @@ export function buildDeleteConfirmLines(tx: Transaction): string[] {
     `類型：${typeLabel}（TWD）`,
     `USDT：${formatNumber(tx.usdtAmount)}`,
     `金額：${formatTwd(tx.fiatAmount)}`,
-    `匯率 (TWD/USDT)：${formatRateDisplay(tx.rate)}`,
+    `匯率 (TWD/USDT)：${formatUsdtTradeRateDisplay(tx.rate)}`,
   ]
 }
 
@@ -983,7 +1220,7 @@ export function buildTradeSettleConfirmSummary(
   const dayUsdtProfit = computeUsdtDayTotalProfit(
     openingBalances,
     openingUsdtCost,
-    usdtTxs,
+    transactions,
   )
   const dayVnProfit = computeVnDayTotalProfit(
     openingBalances,

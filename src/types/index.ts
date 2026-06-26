@@ -285,8 +285,11 @@ export interface TradeFormProps {
   buttonClass: string
   focusClass: string
   balances: Balances
-  /** 整池 USDT 加權成本（TWD/USDT）；買入顯示成本、賣出算利潤 */
-  inventoryUnitCost?: number | null
+  openingBalances: Balances
+  openingUsdtCost: UsdtInventoryCost
+  transactions: Transaction[]
+  /** 編輯既有賣單時：只 walk 該筆時間之前的交易，預覽 @ 與當時賣出一致 */
+  excludeTransactionId?: string | null
 }
 
 
@@ -311,7 +314,13 @@ export interface VnTradeFormProps {
   focusClass: string
   balances: Balances
   usdtInventoryCostTwd: number | null
-  vnInventoryTwdRate: number | null
+  openingBalances: Balances
+  openingVnTwdRate: number | null
+  openingVnUsdtRate: number | null
+  openingUsdtCost: UsdtInventoryCost
+  transactions: Transaction[]
+  /** 編輯既有賣 VN 單時：只 walk 該筆時間之前的交易 */
+  excludeTransactionId?: string | null
 }
 
 

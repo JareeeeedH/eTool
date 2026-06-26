@@ -59,18 +59,33 @@ export function formatVnTradeRateDisplay(value: number): string {
   return roundVnTradeRate(value).toFixed(1)
 }
 
+/** USDT 匯率（TWD/USDT）：四捨五入至小數第三位 */
+export function roundUsdtCostRate(value: number): number {
+  return Math.round(value * 1000) / 1000
+}
+
+/** USDT 成交匯率（TWD/USDT）顯示：四捨五入至小數第三位 */
+export function formatUsdtTradeRateDisplay(value: number): string {
+  return roundUsdtCostRate(value).toFixed(3)
+}
+
 /** USDT 成本均價（TWD/USDT）顯示：四捨五入至小數第三位 */
 export function formatUsdtCostRateDisplay(value: number): string {
-  return (Math.round(value * 1000) / 1000).toFixed(3)
+  return formatUsdtTradeRateDisplay(value)
 }
 
 export function formatVnNtdCostRate(rate: number): string {
   return `1 NTD = ${formatVnTradeRateDisplay(rate)} VN`
 }
 
+/** VN 池成本：四捨五入至小數第一位（1 NTD = ? VN） */
+export function roundVnPoolCostRate(value: number): number {
+  return Math.round(value * 10) / 10
+}
+
 /** VN 池成本 @ 顯示：四捨五入至小數第一位 */
 export function formatVnPoolCostRateDisplay(value: number): string {
-  return (Math.round(value * 10) / 10).toFixed(1)
+  return roundVnPoolCostRate(value).toFixed(1)
 }
 
 export function formatVnNtdCostRateCompact(rate: number): string {

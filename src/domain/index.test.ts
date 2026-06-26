@@ -1,0 +1,644 @@
+import { describe, expect, it } from 'vitest'
+import type {
+  Balances,
+  Transaction,
+  UsdtInventoryCost,
+  UsdtTransaction,
+  VnTradeTransaction,
+} from '../types'
+import { roundUsdtCostRate } from '../utils/format'
+import {
+  buildTradeSettleConfirmSummary,
+  computeInventoryCost,
+  computeSellProfitById,
+  computeUsdtDayTotalProfit,
+  computeUsdtSellProfitPreview,
+  computeVnDayTotalProfit,
+  computeVnSellProfitPreview,
+  computeVnTradeAnalytics,
+} from './index'
+
+const EMPTY_COST: UsdtInventoryCost = { twd: null, vn: null }
+
+function at(hour: number, minute = 0): Date {
+  const d = new Date('2026-06-20T00:00:00')
+  d.setHours(hour, minute, 0, 0)
+  return d
+}
+
+function usdtBuy(
+  id: string,
+  time: Date,
+  usdt: number,
+  fiat: number,
+): UsdtTransaction {
+  return {
+    id,
+    timestamp: time,
+    category: 'usdt',
+    type: 'buy',
+    fiatCurrency: 'twd',
+    usdtAmount: usdt,
+    fiatAmount: fiat,
+    rate: fiat / usdt,
+  }
+}
+
+function usdtSell(
+  id: string,
+  time: Date,
+  usdt: number,
+  fiat: number,
+): UsdtTransaction {
+  return {
+    id,
+    timestamp: time,
+    category: 'usdt',
+    type: 'sell',
+    fiatCurrency: 'twd',
+    usdtAmount: usdt,
+    fiatAmount: fiat,
+    rate: fiat / usdt,
+  }
+}
+
+function vnBuyTwd(
+  id: string,
+  time: Date,
+  vn: number,
+  twd: number,
+): VnTradeTransaction {
+  return {
+    id,
+    timestamp: time,
+    category: 'vn_trade',
+    type: 'buy',
+    payCurrency: 'twd',
+    vnAmount: vn,
+    twdAmount: twd,
+    usdtAmount: 0,
+    rate: vn / twd,
+  }
+}
+
+function vnBuyUsdt(
+  id: string,
+  time: Date,
+  vn: number,
+  usdt: number,
+): VnTradeTransaction {
+  return {
+    id,
+    timestamp: time,
+    category: 'vn_trade',
+    type: 'buy',
+    payCurrency: 'usdt',
+    vnAmount: vn,
+    twdAmount: 0,
+    usdtAmount: usdt,
+    rate: vn / usdt,
+  }
+}
+
+function vnSellTwd(
+  id: string,
+  time: Date,
+  vn: number,
+  twd: number,
+): VnTradeTransaction {
+  return {
+    id,
+    timestamp: time,
+    category: 'vn_trade',
+    type: 'sell',
+    payCurrency: 'twd',
+    vnAmount: vn,
+    twdAmount: twd,
+    usdtAmount: 0,
+    rate: vn / twd,
+  }
+}
+
+function vnSellUsdt(
+  id: string,
+  time: Date,
+  vn: number,
+  usdt: number,
+): VnTradeTransaction {
+  return {
+    id,
+    timestamp: time,
+    category: 'vn_trade',
+    type: 'sell',
+    payCurrency: 'usdt',
+    vnAmount: vn,
+    twdAmount: 0,
+    usdtAmount: usdt,
+    rate: vn / usdt,
+  }
+}
+
+function usdtSells(txs: Transaction[]): UsdtTransaction[] {
+  return txs.filter(
+    (tx): tx is UsdtTransaction => tx.category === 'usdt' && tx.type === 'sell',
+  )
+}
+
+function vnSells(txs: Transaction[]): VnTradeTransaction[] {
+  return txs.filter(
+    (tx): tx is VnTradeTransaction =>
+      tx.category === 'vn_trade' && tx.type === 'sell',
+  )
+}
+
+/** 每筆賣 U：編輯模式預覽（exclude 自己）應與表格利潤一致 */
+function expectUsdtSellPreviewMatchesTable(
+  opening: Balances,
+  cost: UsdtInventoryCost,
+  transactions: Transaction[],
+  sellId: string,
+) {
+  const tx = transactions.find((t) => t.id === sellId)
+  if (!tx || tx.category !== 'usdt' || tx.type !== 'sell') {
+    throw new Error(`missing usdt sell ${sellId}`)
+  }
+  const preview = computeUsdtSellProfitPreview(
+    opening,
+    cost,
+    transactions,
+    tx.usdtAmount,
+    tx.fiatAmount,
+    sellId,
+  )
+  const table = computeSellProfitById(opening, cost, transactions).get(sellId)
+  expect(preview?.unitCost).toBe(table?.unitCost)
+  expect(preview?.costBasis).toBe(table?.costBasis)
+  expect(preview?.profit).toBe(table?.profit)
+}
+
+function expectVnSellPreviewMatchesTable(
+  opening: Balances,
+  vnTwdRate: number | null,
+  vnUsdtRate: number | null,
+  cost: UsdtInventoryCost,
+  transactions: Transaction[],
+  sellId: string,
+) {
+  const tx = transactions.find((t) => t.id === sellId)
+  if (!tx || tx.category !== 'vn_trade' || tx.type !== 'sell') {
+    throw new Error(`missing vn sell ${sellId}`)
+  }
+  const pay = tx.payCurrency === 'twd' ? tx.twdAmount : tx.usdtAmount
+  const preview = computeVnSellProfitPreview(
+    opening,
+    vnTwdRate,
+    vnUsdtRate,
+    cost,
+    transactions,
+    tx.vnAmount,
+    tx.payCurrency,
+    pay,
+    sellId,
+  )
+  const table = computeVnTradeAnalytics(
+    opening,
+    vnTwdRate,
+    vnUsdtRate,
+    cost,
+    transactions,
+  ).sellProfitById.get(sellId)
+  expect(preview?.unitCost).toBe(table?.unitCost)
+  expect(preview?.costBasis).toBe(table?.costBasis)
+  expect(preview?.profit).toBe(table?.profit)
+}
+
+describe('USDT 成本池 @ 行為', () => {
+  it('連續賣 U：池 @ 不變，每筆利潤皆用同一 @', () => {
+    const opening: Balances = { twd: 0, usdt: 10_000, vn: 0 }
+    const cost: UsdtInventoryCost = { twd: 32, vn: null }
+    const transactions: Transaction[] = [
+      usdtSell('s1', at(10), 1_000, 32_500),
+      usdtSell('s2', at(11), 2_000, 64_400),
+      usdtSell('s3', at(12), 500, 16_200),
+    ]
+    const profits = computeSellProfitById(opening, cost, transactions)
+
+    for (const id of ['s1', 's2', 's3']) {
+      expect(profits.get(id)?.unitCost).toBe(32)
+    }
+    expect(profits.get('s1')?.profit).toBe(500)
+    expect(profits.get('s2')?.profit).toBe(400)
+    expect(profits.get('s3')?.profit).toBe(200)
+    expect(computeInventoryCost(opening, cost, transactions).twd).toBe(32)
+  })
+
+  it('台幣買 U 後：池 @ 加權重算', () => {
+    const opening: Balances = { twd: 0, usdt: 5_000, vn: 0 }
+    const cost: UsdtInventoryCost = { twd: 32, vn: null }
+    const transactions: Transaction[] = [
+      usdtBuy('buy', at(10), 10_000, 324_500),
+    ]
+    const expected = roundUsdtCostRate((5_000 * 32 + 324_500) / 15_000)
+    expect(computeInventoryCost(opening, cost, transactions).twd).toBe(expected)
+  })
+
+  it('賣 VN 收 U：U 數量增加、池 @ 數字不變', () => {
+    const opening: Balances = { twd: 0, usdt: 10_000, vn: 50_000_000 }
+    const cost: UsdtInventoryCost = { twd: 32, vn: null }
+    const vnTwdRate = 850
+    const before = computeInventoryCost(opening, cost, [])
+    const after = computeInventoryCost(opening, cost, [
+      vnSellUsdt('vn-sell', at(14), 5_000_000, 200),
+    ])
+
+    expect(before.twd).toBe(32)
+    expect(after.twd).toBe(32)
+  })
+
+  it('買 VN 花 U：U 數量減少、池 @ 數字不變', () => {
+    const opening: Balances = { twd: 0, usdt: 10_000, vn: 0 }
+    const cost: UsdtInventoryCost = { twd: 32, vn: null }
+    const before = computeInventoryCost(opening, cost, [])
+    const after = computeInventoryCost(opening, cost, [
+      vnBuyUsdt('vn-buy', at(11), 20_000_000, 1_000),
+    ])
+
+    expect(before.twd).toBe(32)
+    expect(after.twd).toBe(32)
+  })
+})
+
+describe('USDT 成本池與賣 U 利潤', () => {
+  const openingBalances: Balances = { twd: 0, usdt: 10_000, vn: 0 }
+  const openingCost: UsdtInventoryCost = { twd: 32, vn: null }
+
+  it('賣 U：利潤 = 收款 − 賣出量 × 賣出前池 @', () => {
+    const transactions: Transaction[] = [
+      usdtSell('sell-1', at(14), 1_000, 32_500),
+    ]
+    const info = computeSellProfitById(
+      openingBalances,
+      openingCost,
+      transactions,
+    ).get('sell-1')
+
+    expect(info?.unitCost).toBe(32)
+    expect(info?.costBasis).toBe(32_000)
+    expect(info?.profit).toBe(500)
+  })
+
+  it('賣 U 利潤 walk 須傳入完整 transactions（含 VN 花 U／收 U）', () => {
+    const balances: Balances = { twd: 0, usdt: 0, vn: 0 }
+    const cost: UsdtInventoryCost = { twd: 32, vn: null }
+    const buyU = usdtBuy('buy-u', at(9), 10_000, 323_960)
+    const vnSpend = vnBuyUsdt('vn-buy', at(10), 50_000_000, 2_000)
+    const vnReceive = vnSellUsdt('vn-sell', at(10, 30), 5_000_000, 180)
+    const sellU = usdtSell('sell-u', at(11), 5_000, 162_245)
+
+    const withSpend: Transaction[] = [buyU, vnSpend, sellU]
+    const withSpendAndReceive: Transaction[] = [buyU, vnSpend, vnReceive, sellU]
+
+    expectUsdtSellPreviewMatchesTable(balances, cost, withSpend, 'sell-u')
+    expectUsdtSellPreviewMatchesTable(
+      balances,
+      cost,
+      withSpendAndReceive,
+      'sell-u',
+    )
+
+    const profitSpend = computeSellProfitById(balances, cost, withSpend).get(
+      'sell-u',
+    )
+    const profitBoth = computeSellProfitById(
+      balances,
+      cost,
+      withSpendAndReceive,
+    ).get('sell-u')
+    expect(profitSpend?.unitCost).toBeDefined()
+    expect(profitBoth?.unitCost).toBeDefined()
+    expect(profitBoth?.profit).toBe(
+      162_245 - 5_000 * (profitBoth?.unitCost ?? 0),
+    )
+  })
+
+  it('賣 U 預覽與表格一致（新增賣單）', () => {
+    const opening: Balances = { twd: 0, usdt: 5_000, vn: 0 }
+    const cost: UsdtInventoryCost = { twd: 32, vn: null }
+    const prior: Transaction[] = [usdtBuy('buy', at(9), 5_000, 161_980)]
+
+    const preview = computeUsdtSellProfitPreview(
+      opening,
+      cost,
+      prior,
+      1_000,
+      32_449,
+    )
+    const table = computeSellProfitById(opening, cost, [
+      ...prior,
+      usdtSell('new-sell', at(10), 1_000, 32_449),
+    ]).get('new-sell')
+
+    expect(preview?.unitCost).toBe(table?.unitCost)
+    expect(preview?.profit).toBe(table?.profit)
+  })
+
+  it('編輯較早賣 U：預覽只用該筆之前交易，不用日末 @', () => {
+    const opening: Balances = { twd: 0, usdt: 10_000, vn: 0 }
+    const cost: UsdtInventoryCost = { twd: 32, vn: null }
+    const transactions: Transaction[] = [
+      usdtSell('sell-13', at(13), 1_000, 32_500),
+      usdtBuy('buy-15', at(15), 2_000, 65_000),
+      usdtSell('sell-17', at(17), 500, 16_300),
+    ]
+
+    const preview = computeUsdtSellProfitPreview(
+      opening,
+      cost,
+      transactions,
+      1_000,
+      32_500,
+      'sell-13',
+    )
+    const endPool = computeInventoryCost(opening, cost, transactions)
+    const table = computeSellProfitById(opening, cost, transactions).get('sell-13')
+
+    expect(preview?.unitCost).toBe(32)
+    expect(preview?.unitCost).toBe(table?.unitCost)
+    expect(preview?.profit).toBe(table?.profit)
+    expect(endPool.twd).not.toBe(32)
+  })
+
+  it('亂序傳入交易：依時間 walk，賣 U 利潤與排序無關', () => {
+    const opening: Balances = { twd: 0, usdt: 10_000, vn: 0 }
+    const cost: UsdtInventoryCost = { twd: 32, vn: null }
+    const chronological: Transaction[] = [
+      usdtSell('early', at(10), 1_000, 32_500),
+      usdtBuy('mid', at(12), 2_000, 65_000),
+      usdtSell('late', at(14), 500, 16_300),
+    ]
+    const shuffled = [chronological[2], chronological[0], chronological[1]]
+
+    const ordered = computeSellProfitById(opening, cost, chronological)
+    const messy = computeSellProfitById(opening, cost, shuffled)
+
+    expect(messy.get('early')).toEqual(ordered.get('early'))
+    expect(messy.get('late')).toEqual(ordered.get('late'))
+  })
+})
+
+describe('VN 池 @ 與賣出利潤', () => {
+  it('連續賣 VN：@台幣 不變', () => {
+    const opening: Balances = { twd: 0, usdt: 0, vn: 100_000_000 }
+    const vnTwdRate = 850
+    const before = computeVnTradeAnalytics(
+      opening,
+      vnTwdRate,
+      null,
+      EMPTY_COST,
+      [],
+    )
+    const after = computeVnTradeAnalytics(
+      opening,
+      vnTwdRate,
+      null,
+      EMPTY_COST,
+      [
+        vnSellTwd('v1', at(10), 10_000_000, 11_800_000),
+        vnSellTwd('v2', at(11), 5_000_000, 5_900_000),
+      ],
+    )
+
+    expect(before.currentVnTwdRate).toBe(850)
+    expect(after.currentVnTwdRate).toBe(850)
+  })
+
+  it('買 VN 付台幣後：@台幣 加權改變（低匯率買入會拉低池 @）', () => {
+    const opening: Balances = { twd: 0, usdt: 0, vn: 50_000_000 }
+    const vnTwdRate = 800
+    const before = computeVnTradeAnalytics(
+      opening,
+      vnTwdRate,
+      null,
+      EMPTY_COST,
+      [],
+    ).currentVnTwdRate
+    const after = computeVnTradeAnalytics(
+      opening,
+      vnTwdRate,
+      null,
+      EMPTY_COST,
+      [vnBuyTwd('buy', at(10), 40_000_000, 50_000_000)],
+    ).currentVnTwdRate
+
+    expect(before).toBe(800)
+    expect(after).not.toBe(800)
+    expect(after!).toBeLessThan(before!)
+  })
+
+  it('賣 VN 收台幣：利潤 = 收款 − VN ÷ V@台幣', () => {
+    const opening: Balances = { twd: 0, usdt: 0, vn: 100_000_000 }
+    const vnTwdRate = 850
+    const transactions: Transaction[] = [
+      vnSellTwd('vn-sell', at(14), 10_000_000, 11_800_000),
+    ]
+    const info = computeVnTradeAnalytics(
+      opening,
+      vnTwdRate,
+      null,
+      EMPTY_COST,
+      transactions,
+    ).sellProfitById.get('vn-sell')
+    const costBasis = 10_000_000 / vnTwdRate
+
+    expect(info?.costBasis).toBeCloseTo(costBasis, 5)
+    expect(info?.profit).toBeCloseTo(11_800_000 - costBasis, 5)
+    expectVnSellPreviewMatchesTable(
+      opening,
+      vnTwdRate,
+      null,
+      EMPTY_COST,
+      transactions,
+      'vn-sell',
+    )
+  })
+
+  it('賣 VN 收 U：利潤 = 收到U×U池@ − VN÷V@台幣', () => {
+    const opening: Balances = { twd: 0, usdt: 5_000, vn: 50_000_000 }
+    const cost: UsdtInventoryCost = { twd: 32.5, vn: null }
+    const vnTwdRate = 850
+    const transactions: Transaction[] = [
+      vnSellUsdt('vn-sell', at(14), 5_000_000, 200),
+    ]
+    const info = computeVnTradeAnalytics(
+      opening,
+      vnTwdRate,
+      null,
+      cost,
+      transactions,
+    ).sellProfitById.get('vn-sell')
+
+    const costBasis = 5_000_000 / vnTwdRate
+    const proceeds = 200 * 32.5
+    expect(info?.costBasis).toBeCloseTo(costBasis, 5)
+    expect(info?.profit).toBeCloseTo(proceeds - costBasis, 5)
+    expectVnSellPreviewMatchesTable(
+      opening,
+      vnTwdRate,
+      null,
+      cost,
+      transactions,
+      'vn-sell',
+    )
+  })
+
+  it('編輯較早賣 VN：預覽不用後續買 VN 之後的池子', () => {
+    const opening: Balances = { twd: 0, usdt: 0, vn: 80_000_000 }
+    const cost = EMPTY_COST
+    const vnTwdRate = 800
+    const transactions: Transaction[] = [
+      vnSellTwd('sell-early', at(13), 10_000_000, 12_500_000),
+      vnBuyTwd('buy-later', at(15), 30_000_000, 40_000_000),
+      vnSellTwd('sell-late', at(17), 5_000_000, 6_200_000),
+    ]
+
+    const preview = computeVnSellProfitPreview(
+      opening,
+      vnTwdRate,
+      null,
+      cost,
+      transactions,
+      10_000_000,
+      'twd',
+      12_500_000,
+      'sell-early',
+    )
+    const table = computeVnTradeAnalytics(
+      opening,
+      vnTwdRate,
+      null,
+      cost,
+      transactions,
+    ).sellProfitById.get('sell-early')
+    const endRate = computeVnTradeAnalytics(
+      opening,
+      vnTwdRate,
+      null,
+      cost,
+      transactions,
+    ).currentVnTwdRate
+
+    expect(preview?.unitCost).toBe(800)
+    expect(preview?.profit).toBe(table?.profit)
+    expect(endRate).not.toBe(800)
+  })
+})
+
+describe('完整營業日整合', () => {
+  const opening: Balances = { twd: 50_000_000, usdt: 5_000, vn: 120_000_000 }
+  const cost: UsdtInventoryCost = { twd: 32.449, vn: null }
+  const vnTwdRate = 852.4
+  const vnUsdtRate = 26_500
+
+  const fullDay: Transaction[] = [
+    usdtBuy('u-buy-1', at(9), 8_000, 259_168),
+    vnBuyUsdt('vn-buy-u', at(10), 30_000_000, 1_200),
+    usdtSell('u-sell-1', at(11), 2_000, 65_200),
+    vnSellTwd('vn-sell-t', at(13), 15_000_000, 17_800_000),
+    vnSellUsdt('vn-sell-u', at(14), 8_000_000, 310),
+    usdtBuy('u-buy-2', at(15), 3_000, 97_500),
+    usdtSell('u-sell-2', at(16), 1_500, 49_200),
+    vnBuyTwd('vn-buy-t', at(17), 25_000_000, 30_000_000),
+  ]
+
+  it('每一筆賣 U：預覽（編輯模式）= 表格', () => {
+    for (const sell of usdtSells(fullDay)) {
+      expectUsdtSellPreviewMatchesTable(opening, cost, fullDay, sell.id)
+    }
+  })
+
+  it('每一筆賣 VN：預覽（編輯模式）= 表格', () => {
+    for (const sell of vnSells(fullDay)) {
+      expectVnSellPreviewMatchesTable(
+        opening,
+        vnTwdRate,
+        vnUsdtRate,
+        cost,
+        fullDay,
+        sell.id,
+      )
+    }
+  })
+
+  it('日結毛利 = 各賣單利潤加總', () => {
+    const uMap = computeSellProfitById(opening, cost, fullDay)
+    const vMap = computeVnTradeAnalytics(
+      opening,
+      vnTwdRate,
+      vnUsdtRate,
+      cost,
+      fullDay,
+    ).sellProfitById
+
+    const uSum = usdtSells(fullDay).reduce(
+      (sum, tx) => sum + (uMap.get(tx.id)?.profit ?? 0),
+      0,
+    )
+    const vSum = vnSells(fullDay).reduce(
+      (sum, tx) => sum + (vMap.get(tx.id)?.profit ?? 0),
+      0,
+    )
+
+    expect(computeUsdtDayTotalProfit(opening, cost, fullDay)).toBe(uSum)
+    expect(
+      computeVnDayTotalProfit(
+        opening,
+        vnTwdRate,
+        vnUsdtRate,
+        cost,
+        fullDay,
+      ),
+    ).toBe(vSum)
+
+    const settle = buildTradeSettleConfirmSummary(
+      fullDay,
+      opening,
+      cost,
+      vnTwdRate,
+      vnUsdtRate,
+    )
+    expect(settle.dayUsdtProfit).toBe(uSum)
+    expect(settle.dayVnProfit).toBe(vSum)
+    expect(settle.dayTotalProfit).toBe(uSum + vSum)
+    expect(settle.tradeCount).toBe(fullDay.length)
+  })
+
+  it('各賣單利潤 = 收款（台幣）− 成本，且成本用賣出前池 @', () => {
+    const uMap = computeSellProfitById(opening, cost, fullDay)
+    for (const sell of usdtSells(fullDay)) {
+      const info = uMap.get(sell.id)
+      expect(info?.profit).toBe(sell.fiatAmount - (info?.costBasis ?? 0))
+      expect(info?.costBasis).toBe(sell.usdtAmount * (info?.unitCost ?? 0))
+    }
+
+    const vMap = computeVnTradeAnalytics(
+      opening,
+      vnTwdRate,
+      vnUsdtRate,
+      cost,
+      fullDay,
+    ).sellProfitById
+    for (const sell of vnSells(fullDay)) {
+      const info = vMap.get(sell.id)
+      expect(info?.costBasis).toBeCloseTo(
+        sell.vnAmount / (info?.unitCost ?? 1),
+        4,
+      )
+      if (sell.payCurrency === 'twd') {
+        expect(info?.profit).toBe(sell.twdAmount - (info?.costBasis ?? 0))
+      } else {
+        const proceeds = (info?.profit ?? 0) + (info?.costBasis ?? 0)
+        expect(proceeds).toBeGreaterThan(info?.costBasis ?? 0)
+      }
+    }
+  })
+})

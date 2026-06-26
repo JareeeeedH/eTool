@@ -407,8 +407,8 @@ function App() {
     [vnTradeTransactions],
   )
   const sellProfitById = useMemo(
-    () => computeSellProfitById(openingBalances, openingUsdtCost, usdtTransactions),
-    [openingBalances, openingUsdtCost, usdtTransactions],
+    () => computeSellProfitById(openingBalances, openingUsdtCost, transactions),
+    [openingBalances, openingUsdtCost, transactions],
   )
 
   const vnTradeAnalytics = useMemo(
@@ -1009,7 +1009,7 @@ function App() {
     const settledDayUsdtProfit = computeUsdtDayTotalProfit(
       openingBalances,
       openingUsdtCost,
-      usdtTransactions,
+      transactions,
     )
     const settledDayVnProfit = computeVnDayTotalProfit(
       openingBalances,
@@ -1512,7 +1512,9 @@ function App() {
                       buttonClass="bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-600/30"
                       focusClass="focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                       balances={balances}
-                      inventoryUnitCost={inventoryCost.twd}
+                      openingBalances={openingBalances}
+                      openingUsdtCost={openingUsdtCost}
+                      transactions={transactions}
                     />
                   </div>
                   <div className={recordCardClass('emerald')}>
@@ -1557,7 +1559,10 @@ function App() {
                       buttonClass="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600/30"
                       focusClass="focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20"
                       balances={balances}
-                      inventoryUnitCost={inventoryCost.twd}
+                      openingBalances={openingBalances}
+                      openingUsdtCost={openingUsdtCost}
+                      transactions={transactions}
+                      excludeTransactionId={isEditingSell ? editingId : null}
                     />
                   </div>
                   <div className={recordCardClass('rose')}>
@@ -1605,7 +1610,11 @@ function App() {
                       focusClass="focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
                       balances={balances}
                       usdtInventoryCostTwd={inventoryCost.twd}
-                      vnInventoryTwdRate={null}
+                      openingBalances={openingBalances}
+                      openingVnTwdRate={openingVnTwdRate}
+                      openingVnUsdtRate={openingVnUsdtRate}
+                      openingUsdtCost={openingUsdtCost}
+                      transactions={transactions}
                     />
                   </div>
                   <div className={recordCardClass('violet')}>
@@ -1652,7 +1661,12 @@ function App() {
                       focusClass="focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                       balances={balances}
                       usdtInventoryCostTwd={inventoryCost.twd}
-                      vnInventoryTwdRate={vnTradeAnalytics.currentVnTwdRate}
+                      openingBalances={openingBalances}
+                      openingVnTwdRate={openingVnTwdRate}
+                      openingVnUsdtRate={openingVnUsdtRate}
+                      openingUsdtCost={openingUsdtCost}
+                      transactions={transactions}
+                      excludeTransactionId={isEditingVnSell ? editingId : null}
                     />
                   </div>
                   <div className={recordCardClass('rose')}>

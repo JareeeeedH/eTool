@@ -63,7 +63,7 @@ import {
   formatNumber,
   formatProfit,
   formatProfitMarginPercent,
-  formatRateDisplay,
+  formatUsdtTradeRateDisplay,
   formatVnTradeRateDisplay,
   formatUsdtCostRateDisplay,
   formatSettlementDate,
@@ -81,6 +81,8 @@ import {
   calculateAverageRate,
   calculateBuyDayAverageRate,
   computePendingExpenseBreakdown,
+  computeUsdtSellProfitPreview,
+  computeVnSellProfitPreview,
   normalizeMonthlyCloseRecord,
   settlementHasSplitProfit,
   totalAssetsFromSettlement,
@@ -798,7 +800,7 @@ export function TransactionTableFooter({
           {showDayAverage ? (
             twdAvg !== null ? (
               <span className={`font-bold tabular-nums ${isBuy ? 'text-emerald-600' : 'text-rose-600'}`}>
-                @{formatRateDisplay(twdAvg)}
+                @{formatUsdtTradeRateDisplay(twdAvg)}
               </span>
             ) : (
               <span className="text-slate-400">—</span>
@@ -926,7 +928,7 @@ export function TransactionTable({
           {formatTwd(tx.fiatAmount)}
         </td>
         <td className={usdtNumCell('text-slate-600')}>
-          {formatRateDisplay(tx.rate)}
+          {formatUsdtTradeRateDisplay(tx.rate)}
         </td>
         {!isBuy && (
           <td
@@ -1036,7 +1038,10 @@ export function TradeForm({
   buttonClass,
   focusClass,
   balances,
-  inventoryUnitCost = null,
+  openingBalances,
+  openingUsdtCost,
+  transactions,
+  excludeTransactionId = null,
 }: TradeFormProps) {
   const prefix = type === 'buy' ? 'buy' : 'sell'
   const inputClass = `${TRADE_INPUT_CLASS} ${focusClass}`
@@ -1065,15 +1070,21 @@ export function TradeForm({
     } else {
       previewText = `−USDT ${formatNumber(usdtNum)} · +TWD ${formatTwd(fiatNum)}`
       previewWarn = usdtNum > balances.usdt
-      if (inventoryUnitCost !== null) {
-        const costBasis = usdtNum * inventoryUnitCost
-        const profit = fiatNum - costBasis
-        const marginPct = formatProfitMarginPercent(profit, costBasis)
+      const sellProfit = computeUsdtSellProfitPreview(
+        openingBalances,
+        openingUsdtCost,
+        transactions,
+        usdtNum,
+        fiatNum,
+        excludeTransactionId,
+      )
+      if (sellProfit !== null && sellProfit.unitCost !== null) {
+        const marginPct = formatProfitMarginPercent(sellProfit.profit, sellProfit.costBasis)
         profitPreview = {
-          text: `成本 ${formatTwd(costBasis)}（@${formatUsdtCostRateDisplay(inventoryUnitCost)}）· 利潤 ${formatProfit(profit)}${
+          text: `成本 ${formatTwd(sellProfit.costBasis)}（@${formatUsdtCostRateDisplay(sellProfit.unitCost)}）· 利潤 ${formatProfit(sellProfit.profit)}${
             marginPct ? `（${marginPct}）` : ''
           }`,
-          value: profit,
+          value: sellProfit.profit,
         }
       }
     }
@@ -1420,7 +1431,12 @@ export function VnTradeForm({
   focusClass,
   balances,
   usdtInventoryCostTwd,
-  vnInventoryTwdRate,
+  openingBalances,
+  openingVnTwdRate,
+  openingVnUsdtRate,
+  openingUsdtCost,
+  transactions,
+  excludeTransactionId = null,
 }: VnTradeFormProps) {
   const prefix = type === 'buy' ? 'vnBuy' : 'vnSell'
   const inputClass = `${TRADE_INPUT_CLASS} ${focusClass}`
@@ -1464,24 +1480,25 @@ export function VnTradeForm({
     } else {
       previewText = `−VN ${formatNumber(vnNum)} · +${payLabel} ${payDisplay}`
       previewWarn = vnNum > balances.vn
-      if (
-        vnInventoryTwdRate !== null &&
-        vnInventoryTwdRate > 0 &&
-        (payCurrency === 'twd' ||
-          (usdtInventoryCostTwd !== null && usdtInventoryCostTwd > 0))
-      ) {
-        const costBasis = vnNum / vnInventoryTwdRate
-        const proceeds =
-          payCurrency === 'twd'
-            ? payNum
-            : payNum * (usdtInventoryCostTwd ?? 0)
-        const profit = proceeds - costBasis
-        const marginPct = formatProfitMarginPercent(profit, costBasis)
+      const sellProfit = computeVnSellProfitPreview(
+        openingBalances,
+        openingVnTwdRate,
+        openingVnUsdtRate,
+        openingUsdtCost,
+        transactions,
+        vnNum,
+        payCurrency,
+        payNum,
+        excludeTransactionId,
+      )
+      if (sellProfit !== null) {
+        const proceeds = sellProfit.costBasis + sellProfit.profit
+        const marginPct = formatProfitMarginPercent(sellProfit.profit, sellProfit.costBasis)
         profitPreview = {
-          text: `花費 ${formatTwd(costBasis)} · 收款 ${formatTwd(proceeds)} · 利潤 ${formatProfit(profit)}${
+          text: `花費 ${formatTwd(sellProfit.costBasis)} · 收款 ${formatTwd(proceeds)} · 利潤 ${formatProfit(sellProfit.profit)}${
             marginPct ? `（${marginPct}）` : ''
           }`,
-          value: profit,
+          value: sellProfit.profit,
         }
       }
     }
