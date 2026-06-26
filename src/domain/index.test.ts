@@ -8,6 +8,7 @@ import type {
 } from '../types'
 import { roundUsdtCostRate } from '../utils/format'
 import {
+  buildMonthlyClose,
   buildTradeSettleConfirmSummary,
   computeInventoryCost,
   computeSellProfitById,
@@ -16,6 +17,7 @@ import {
   computeVnDayTotalProfit,
   computeVnSellProfitPreview,
   computeVnTradeAnalytics,
+  recalculateBalances,
 } from './index'
 
 const EMPTY_COST: UsdtInventoryCost = { twd: null, vn: null }
@@ -639,5 +641,90 @@ describe('完整營業日整合', () => {
         expect(proceeds).toBeGreaterThan(info?.costBasis ?? 0)
       }
     }
+  })
+})
+
+describe('營業開銷與月結', () => {
+  const opening: Balances = { twd: 1_000_000, usdt: 0, vn: 0 }
+  const cost: UsdtInventoryCost = { twd: 32, vn: null }
+
+  it('進行中開銷不影響餘額重算', () => {
+    const trades: Transaction[] = [
+      usdtBuy('b1', at(10), 100, 320_000),
+    ]
+    const withExpense: Transaction[] = [
+      ...trades,
+      {
+        id: 'e1',
+        timestamp: at(11),
+        category: 'expense',
+        expenseType: 'fuel',
+        amountTwd: 50_000,
+        note: '',
+      },
+    ]
+
+    const tradeOnly = recalculateBalances(trades, opening)
+    const withExpenseBal = recalculateBalances(withExpense, opening)
+
+    expect(withExpenseBal).toEqual(tradeOnly)
+    expect(withExpenseBal.twd).toBe(opening.twd - 320_000)
+  })
+
+  it('月結：實際總資產 = 庫存計價帳面 − 開銷', () => {
+    const close = buildMonthlyClose(
+      '6月份',
+      [
+        {
+          id: 's1',
+          settledAt: at(18),
+          dateLabel: '06/20',
+          twdBalance: 680_000,
+          usdtBalance: 100,
+          vnBalance: 0,
+          usdtInventoryAvgTwd: 32,
+          usdtInventoryAvgVn: null,
+          dayBuyAvgTwd: 32,
+          dayBuyAvgVn: null,
+          totalAssetsTwd: 1_000_000,
+          totalAssetsTwdCash: 680_000,
+          totalAssetsUsdtInTwd: 320_000,
+          totalAssetsVnInTwd: 0,
+          dayVnTwdRate: null,
+          dayVnUsdtRate: null,
+          totalAssetsComplete: true,
+          totalAssetsMissingNotes: '',
+          transactionCount: 1,
+          dayTotalProfit: 10_000,
+        },
+      ],
+      [
+        {
+          id: 'ex1',
+          settledAt: at(19),
+          dateLabel: '06/20 月結封存',
+          twdBalance: 680_000,
+          expenseCount: 1,
+          expenseTotal: 30_000,
+          items: [
+            {
+              expenseType: 'fuel',
+              amountTwd: 30_000,
+              note: '',
+              timestamp: at(12),
+            },
+          ],
+        },
+      ],
+      opening,
+      cost,
+      null,
+      null,
+      1_000_000,
+    )
+
+    expect(close.closingBookTotalAssets).toBe(1_000_000)
+    expect(close.closingTotalAssets).toBe(970_000)
+    expect(close.netProfit).toBe(10_000 - 30_000)
   })
 })

@@ -445,8 +445,16 @@ function App() {
         expenseTransactions,
         tradeTransactions.length,
         balances,
+        totalAssets.total,
       ),
-    [settlements, expenseSettlements, expenseTransactions, tradeTransactions.length, balances],
+    [
+      settlements,
+      expenseSettlements,
+      expenseTransactions,
+      tradeTransactions.length,
+      balances,
+      totalAssets.total,
+    ],
   )
 
   const selectedMonthlyClose = useMemo(
@@ -1303,11 +1311,14 @@ function App() {
     if (!label) return
 
     const snapshot = createSnapshot()
-    const hadPendingExpenses = expenseTransactions.length > 0
     const assembledExpenses = assembleExpenseSettlementsForMonthlyClose(
       expenseSettlements,
       expenseTransactions,
       balances,
+    )
+    const expenseTotal = assembledExpenses.reduce(
+      (sum, item) => sum + item.expenseTotal,
+      0,
     )
     const monthlyClose = buildMonthlyClose(
       label,
@@ -1323,9 +1334,14 @@ function App() {
     setMonthlyCloses((prev) => [monthlyClose, ...prev])
     setSettlements([])
     setExpenseSettlements([])
-    if (hadPendingExpenses) {
+    if (expenseTransactions.length > 0) {
       setTransactions((prev) => prev.filter((tx) => !isExpenseTransaction(tx)))
-      setOpeningBalances(balances)
+    }
+    if (expenseTotal > 0) {
+      setOpeningBalances({
+        ...balances,
+        twd: balances.twd - expenseTotal,
+      })
     }
     setSelectedMonthlyCloseId(monthlyClose.id)
     setMonthlyCloseModalOpen(false)
@@ -1724,7 +1740,6 @@ function App() {
                     error={expenseError}
                     isEditing={isEditingExpense}
                     disabled={isEditingAny && !isEditingExpense}
-                    twdBalance={balances.twd}
                     onExpenseTypeChange={setExpenseType}
                     onAmountChange={setExpenseAmount}
                     onNoteChange={setExpenseNote}

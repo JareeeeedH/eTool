@@ -75,7 +75,7 @@ import {
  * 期初僅有 @台幣時，可依 @台幣 × U 池 @ 推得 @U（createVnTradePoolState）。
  *
  * -----------------------------------------------------------------------------
- * 利潤（一律台幣；顯示 formatProfit → trunc 整數）
+ * 利潤（一律台幣；顯示 formatProfit → roundTwd 四捨五入整數）
  * -----------------------------------------------------------------------------
  * - 賣 U：利潤 = 收款台幣 − 賣出 E × **該筆賣出前** U 池 @（round 3 位）
  * - 賣 VN 收 T：利潤 = 收款台幣 − VN ÷ **該筆賣出前** V@台幣
@@ -97,7 +97,14 @@ import {
  * -----------------------------------------------------------------------------
  * - U 池 @、賣 U 利潤用 @：roundUsdtCostRate（四捨五入 3 位小數）
  * - V 池 @：roundVnPoolCostRate（四捨五入 1 位小數）
- * - 利潤顯示：formatTwd / floorTwd（截斷，不四捨五入）
+ * - 利潤顯示：formatProfit → roundTwd 四捨五入至整數台幣
+ *
+ * -----------------------------------------------------------------------------
+ * 營業開銷
+ * -----------------------------------------------------------------------------
+ * - 進行中開銷僅紀錄，不參與 recalculateBalances（不扣台幣餘額、不影響總資產）
+ * - 每日明細總覽、日結封存之庫存／總資產皆不含開銷
+ * - 月結時：毛利 − 開銷 = 淨利；實際總資產 = 庫存計價帳面 − 本期開銷；並自期初台幣扣開銷
  *
  * -----------------------------------------------------------------------------
  * 異動本檔時請確認
@@ -1054,6 +1061,7 @@ export function buildMonthlyClosePreview(
   pendingExpenses: ExpenseTransaction[],
   pendingTradeCount: number,
   balances: Balances,
+  totalAssets: number,
 ) {
   const assembledExpenses = assembleExpenseSettlementsForMonthlyClose(
     expenseSettlements,
@@ -1072,6 +1080,8 @@ export function buildMonthlyClosePreview(
     grossProfit,
     expenseTotal,
     netProfit: grossProfit - expenseTotal,
+    closingBookTotalAssets: totalAssets,
+    closingTotalAssets: totalAssets - expenseTotal,
     dateRangeLabel: formatArchiveDateRange(start, end),
     pendingTradeCount,
     pendingExpenseCount: pendingExpenses.length,
@@ -1079,26 +1089,29 @@ export function buildMonthlyClosePreview(
 }
 
 /**
- * 由本期庫存成本計價帳面與淨利反推期初帳面。
- * 期初 + 淨利 = 期末（帳面），避免用「首日結總資產 − 當日毛利」
- * （該算法會把日結前已扣的開銷誤算進期初，造成開銷在月報表雙重扣除）。
+ * 由本期庫存成本計價帳面與毛利反推期初帳面（開銷不計入帳面 walk，僅月結損益扣減）。
+ * 期初 + 毛利 = 期末帳面（未扣開銷）。
  */
 export function inferOpeningTotalAssets(
   closingBookTotal: number,
-  netProfit: number,
+  grossProfit: number,
 ): number {
-  return closingBookTotal - netProfit
+  return closingBookTotal - grossProfit
 }
 
 export function normalizeMonthlyCloseRecord(item: MonthlyClose): MonthlyClose & { openingTotalAssets: number } {
+  const hasExplicitBook = item.closingBookTotalAssets !== undefined
   const closingBookTotalAssets = item.closingBookTotalAssets ?? item.closingTotalAssets
-  const openingTotalAssets = closingBookTotalAssets - item.netProfit
+  const openingTotalAssets = closingBookTotalAssets - item.grossProfit
+  const closingTotalAssets = hasExplicitBook
+    ? item.closingBookTotalAssets! - item.expenseTotal
+    : item.closingTotalAssets
 
   return {
     ...item,
     openingTotalAssets,
     closingBookTotalAssets,
-    closingTotalAssets: openingTotalAssets + item.netProfit,
+    closingTotalAssets,
   }
 }
 
@@ -1131,7 +1144,9 @@ export function buildMonthlyClose(
   const vnProfit = archivedTrade.reduce((sum, item) => sum + (item.dayVnProfit ?? 0), 0)
   const expenseTotal = archivedExpense.reduce((sum, item) => sum + item.expenseTotal, 0)
   const netProfit = grossProfit - expenseTotal
-  const openingTotalAssets = inferOpeningTotalAssets(fallbackTotalAssets, netProfit)
+  const closingBookTotalAssets = fallbackTotalAssets
+  const closingTotalAssets = closingBookTotalAssets - expenseTotal
+  const openingTotalAssets = inferOpeningTotalAssets(closingBookTotalAssets, grossProfit)
 
   return {
     id: crypto.randomUUID(),
@@ -1150,8 +1165,8 @@ export function buildMonthlyClose(
     closingUsdtCost: { ...fallbackUsdtCost },
     closingVnTwdRate: fallbackVnTwdRate,
     closingVnUsdtRate: fallbackVnUsdtRate,
-    closingTotalAssets: openingTotalAssets + netProfit,
-    closingBookTotalAssets: fallbackTotalAssets,
+    closingTotalAssets,
+    closingBookTotalAssets,
     tradeSettlements: archivedTrade,
     expenseSettlements: archivedExpense,
   }
@@ -1299,7 +1314,7 @@ export function recalculateBalances(
   lastTradeSettledAt: Date | null = null,
 ): Balances {
   const applicable = filterBalanceAffectingTransactions(
-    transactions,
+    filterTradeTransactions(transactions),
     lastTradeSettledAt,
   )
   const sorted = [...applicable].sort(
@@ -1317,7 +1332,7 @@ export function validateTransactions(
   lastTradeSettledAt: Date | null = null,
 ): string | null {
   const applicable = filterBalanceAffectingTransactions(
-    transactions,
+    filterTradeTransactions(transactions),
     lastTradeSettledAt,
   )
   const sorted = [...applicable].sort(
@@ -1327,17 +1342,6 @@ export function validateTransactions(
   let balances = { ...openingBalances }
 
   for (const tx of sorted) {
-    if (isExpenseTransaction(tx)) {
-      if (tx.amountTwd <= 0) {
-        return '請輸入有效的正數金額'
-      }
-      if (tx.amountTwd > balances.twd) {
-        return '台幣庫存不足'
-      }
-      balances = applyExpenseTransaction(balances, tx)
-      continue
-    }
-
     if (isVnTradeTransaction(tx)) {
       const payAmount = vnTradePayAmount(tx)
       if (tx.vnAmount <= 0 || payAmount <= 0) {

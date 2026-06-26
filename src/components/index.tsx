@@ -1899,16 +1899,12 @@ export function ExpenseForm({
   error,
   isEditing,
   disabled,
-  twdBalance,
   onExpenseTypeChange,
   onAmountChange,
   onNoteChange,
   onSubmit,
   onCancel,
 }: ExpenseFormProps) {
-  const amountNum = parseFloat(amount)
-  const amountValid = !Number.isNaN(amountNum) && amountNum > 0
-  const insufficient = amountValid && amountNum > twdBalance
   const isQuickType = EXPENSE_QUICK_TYPES.includes(expenseType)
 
   return (
@@ -1993,9 +1989,6 @@ export function ExpenseForm({
           )}
         </div>
       </div>
-      {insufficient && (
-        <p className="mt-0.5 text-[10px] leading-tight text-rose-600">台幣餘額不足</p>
-      )}
       {error && <p className="mt-0.5 text-[10px] leading-tight text-rose-600">{error}</p>}
     </form>
   )
@@ -2575,6 +2568,15 @@ export function MonthlyCloseModal({
             {' · '}
             淨利 {formatProfit(preview.netProfit)}
           </p>
+          <p className="tabular-nums text-slate-600">
+            庫存計價總資產 {formatTwd(preview.closingBookTotalAssets)} TWD
+            {preview.expenseTotal > 0 && (
+              <>
+                {' · '}
+                扣開銷後 {formatTwd(preview.closingTotalAssets)} TWD
+              </>
+            )}
+          </p>
           {preview.pendingExpenseCount > 0 && (
             <p className="text-slate-600">
               含進行中開銷 {preview.pendingExpenseCount} 筆（將一併納入封存）
@@ -2777,12 +2779,13 @@ function MonthlyCloseExpandedBody({ monthlyClose }: { monthlyClose: MonthlyClose
           </p>
         )}
         <p className="mt-2 text-[10px] tabular-nums text-slate-600">
-          月底資產 {formatTwd(resolved.closingTotalAssets)} TWD
+          月底實際資產 {formatTwd(resolved.closingTotalAssets)} TWD
         </p>
-        {resolved.closingBookTotalAssets !== undefined &&
+        {resolved.expenseTotal > 0 &&
+          resolved.closingBookTotalAssets !== undefined &&
           resolved.closingBookTotalAssets !== resolved.closingTotalAssets && (
             <p className="mt-0.5 text-[9px] tabular-nums text-slate-400">
-              庫存成本計價帳面 {formatTwd(resolved.closingBookTotalAssets)} TWD
+              庫存計價帳面 {formatTwd(resolved.closingBookTotalAssets)} TWD（未扣開銷）
             </p>
           )}
       </div>

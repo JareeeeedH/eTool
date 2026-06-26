@@ -115,9 +115,9 @@ export interface MonthlyClose {
   closingUsdtCost: UsdtInventoryCost
   closingVnTwdRate: number | null
   closingVnUsdtRate: number | null
-  /** 期初＋淨利（與本期損益一致） */
+  /** 月結實際總資產（庫存計價帳面 − 本期開銷） */
   closingTotalAssets: number
-  /** 月結當下庫存成本計價帳面（USDT/VN 整池成本，可能與上式略有差異） */
+  /** 月結當下庫存成本計價帳面（未扣開銷） */
   closingBookTotalAssets?: number
   tradeSettlements: DailySettlement[]
   expenseSettlements: ExpenseSettlement[]
@@ -215,6 +215,8 @@ export interface MonthlyClosePreview {
   grossProfit: number
   expenseTotal: number
   netProfit: number
+  closingBookTotalAssets: number
+  closingTotalAssets: number
   dateRangeLabel: string
   pendingTradeCount: number
   pendingExpenseCount: number
@@ -353,7 +355,6 @@ export interface ExpenseFormProps {
   error: string
   isEditing: boolean
   disabled: boolean
-  twdBalance: number
   onExpenseTypeChange: (value: ExpenseType) => void
   onAmountChange: (value: string) => void
   onNoteChange: (value: string) => void

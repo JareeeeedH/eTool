@@ -36,6 +36,10 @@ export function floorTwd(value: number): number {
   return Math.trunc(value)
 }
 
+export function roundTwd(value: number): number {
+  return Math.round(value)
+}
+
 export function formatTwd(value: number): string {
   return floorTwd(value).toLocaleString('zh-TW', {
     maximumFractionDigits: 0,
@@ -101,8 +105,11 @@ export function formatVnUsdtCostRateCompact(rate: number): string {
 }
 
 export function formatProfit(value: number): string {
-  const prefix = value > 0 ? '+' : value < 0 ? '' : ''
-  return `${prefix}${formatTwd(value)}`
+  const rounded = roundTwd(value)
+  const prefix = rounded > 0 ? '+' : ''
+  return `${prefix}${rounded.toLocaleString('zh-TW', {
+    maximumFractionDigits: 0,
+  })}`
 }
 
 /** 利潤率（相對成本），四捨五入至小數第 2 位 */
