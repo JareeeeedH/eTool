@@ -9,6 +9,7 @@ import type {
   ExpenseTableProps,
   MonthlyClosesListProps,
   MonthlyCloseModalProps,
+  NotebookPanelProps,
   OpeningBalanceModalProps,
   SettlementsPanelProps,
   ExpenseSettlementsPanelProps,
@@ -2165,6 +2166,118 @@ export function ExpensePageSummary({ transactions }: ExpensePageSummaryProps) {
   )
 }
 
+export function NotebookPanel({
+  entries,
+  draft,
+  editingId,
+  error,
+  disabled = false,
+  onDraftChange,
+  onSubmit,
+  onCancelEdit,
+  onEdit,
+  onDelete,
+}: NotebookPanelProps) {
+  const sorted = useMemo(
+    () => [...entries].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()),
+    [entries],
+  )
+
+  return (
+    <div className="flex flex-col">
+      <div className="mb-0.5 hidden shrink-0 lg:block">
+        <h1 className="text-sm font-semibold text-slate-800">筆記本</h1>
+        <p className="mt-0.5 text-[10px] leading-tight text-slate-500">
+          自由記錄備忘，例如資本投入、合作備註等
+        </p>
+      </div>
+      <section className="mx-auto w-full max-w-2xl shrink-0 space-y-1.5">
+        <div
+          className={`rounded-lg border border-slate-200 border-l-4 border-l-sky-500 bg-white p-2 shadow-sm ${
+            editingId ? 'ring-1 ring-amber-100' : ''
+          }`}
+        >
+          <form onSubmit={onSubmit}>
+            <label className="block text-[11px] font-medium text-slate-600">
+              {editingId ? '編輯筆記' : '新增筆記'}
+            </label>
+            <textarea
+              value={draft}
+              disabled={disabled}
+              onChange={(e) => onDraftChange(e.target.value)}
+              rows={3}
+              placeholder="例：xxx 投入資本 150w"
+              className="mt-1 w-full resize-y rounded-md border border-slate-200 px-2 py-1.5 text-base leading-relaxed text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 disabled:bg-slate-50 sm:text-sm"
+            />
+            {error && (
+              <p className="mt-1 text-[11px] text-rose-600" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="mt-1.5 flex justify-end gap-1">
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={onCancelEdit}
+                  className="rounded px-2.5 py-0.5 text-xs text-slate-600 transition hover:bg-slate-100"
+                >
+                  取消
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={disabled}
+                className="rounded bg-sky-600 px-2.5 py-0.5 text-xs font-medium text-white transition hover:bg-sky-700 focus:ring-2 focus:ring-sky-600/30 disabled:opacity-50"
+              >
+                {editingId ? '儲存' : '新增'}
+              </button>
+            </div>
+          </form>
+        </div>
+        <div className="flex flex-col rounded-lg border border-slate-200 border-l-4 border-l-sky-500 bg-white p-1.5 shadow-sm">
+          <h2 className="mb-1 shrink-0 text-[11px] font-semibold leading-none text-sky-700">
+            紀錄
+            <span className="ml-1 font-normal text-slate-500">{entries.length} 則</span>
+          </h2>
+          {sorted.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-400">尚無筆記</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {sorted.map((entry, index) => (
+                <li
+                  key={entry.id}
+                  className={`group flex gap-2 py-2 ${
+                    editingId === entry.id ? 'bg-amber-50/60' : ''
+                  }`}
+                >
+                  <span className="w-5 shrink-0 pt-0.5 text-center text-[10px] tabular-nums text-slate-400">
+                    {sorted.length - index}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800">
+                      {entry.text}
+                    </p>
+                    <p className="mt-0.5 text-[10px] tabular-nums text-slate-400">
+                      {formatSettlementDateTime(entry.updatedAt)}
+                    </p>
+                  </div>
+                  <div className="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                    <RowActionButtons
+                      compact
+                      onEdit={() => onEdit(entry)}
+                      onDelete={() => onDelete(entry.id)}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
+
 export function ExpenseTable({
   transactions,
   editingId,
@@ -3089,6 +3202,15 @@ export function AppNav({
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a4.5 4.5 0 0 0 4.5 4.5h10.5a4.5 4.5 0 0 0 4.5-4.5v-9a4.5 4.5 0 0 0-4.5-4.5H6.75a4.5 4.5 0 0 0-4.5 4.5v9Z" />
           <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 9h7.5M8.25 12.75h4.5" />
+        </svg>
+      ),
+    },
+    {
+      tab: 'notes',
+      label: '筆記本',
+      icon: (_active) => (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 18H15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 15 4.5h-4.5A2.25 2.25 0 0 0 8.25 6.75v11.25A2.25 2.25 0 0 0 10.5 20.25Z" />
         </svg>
       ),
     },

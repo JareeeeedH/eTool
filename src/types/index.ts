@@ -9,7 +9,7 @@ export type DailyMobileTradePane = 'buy_u' | 'sell_u' | 'buy_vn' | 'sell_vn'
 export type FiatCurrency = 'twd' | 'vn'
 export type VnPayCurrency = 'twd' | 'usdt'
 export type ExpenseType = 'rent' | 'fuel' | 'parking' | 'meal' | 'telecom' | 'misc' | 'other'
-export type PageTab = 'daily' | 'expenses' | 'settlements' | 'monthly'
+export type PageTab = 'daily' | 'expenses' | 'settlements' | 'monthly' | 'notes'
 export type AccentColor = 'emerald' | 'rose' | 'violet' | 'orange'
 
 export interface UsdtTransaction {
@@ -222,6 +222,13 @@ export interface MonthlyClosePreview {
   pendingExpenseCount: number
 }
 
+export interface NotebookEntry {
+  id: string
+  createdAt: Date
+  updatedAt: Date
+  text: string
+}
+
 export interface AppSnapshot {
   transactions: Transaction[]
   openingBalances: Balances
@@ -234,6 +241,20 @@ export interface AppSnapshot {
   selectedMonthlyCloseId: string | null
   activeTab: PageTab
   dailyWorkTab: DailyWorkTab
+  notes: NotebookEntry[]
+}
+
+export interface NotebookPanelProps {
+  entries: NotebookEntry[]
+  draft: string
+  editingId: string | null
+  error: string
+  disabled?: boolean
+  onDraftChange: (value: string) => void
+  onSubmit: (e: FormEvent) => void
+  onCancelEdit: () => void
+  onEdit: (entry: NotebookEntry) => void
+  onDelete: (id: string) => void
 }
 
 export interface DailyBalanceStripProps {

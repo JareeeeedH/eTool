@@ -16,6 +16,7 @@ import type {
   ExpenseTransaction,
   ExpenseType,
   MonthlyClose,
+  NotebookEntry,
   OpeningBalanceForm,
   PageTab,
   Transaction,
@@ -89,6 +90,7 @@ import {
   MobileNavMenuIcon,
   MonthlyCloseModal,
   MonthlyClosesList,
+  NotebookPanel,
   OpeningBalanceModal,
   SettlementsPanel,
   TradeForm,
@@ -99,7 +101,7 @@ import {
   useTransactionVisibleRows,
 } from './components'
 
-const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'expenses'>, string> = {
+const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'expenses' | 'notes'>, string> = {
   settlements: '每日結算',
   monthly: '月結',
 }
@@ -140,6 +142,10 @@ function App() {
   const [monthlyCloseModalOpen, setMonthlyCloseModalOpen] = useState(false)
   const [monthlyPeriodLabel, setMonthlyPeriodLabel] = useState('')
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [notes, setNotes] = useState<NotebookEntry[]>([])
+  const [noteDraft, setNoteDraft] = useState('')
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [noteError, setNoteError] = useState('')
 
   const [buyUsdtAmount, setBuyUsdtAmount] = useState('')
   const [buyFiatAmount, setBuyFiatAmount] = useState('')
@@ -218,6 +224,7 @@ function App() {
         setExpenseSettlements(data.expenseSettlements ?? [])
         setMonthlyCloses((data.monthlyCloses ?? []).map((item) => normalizeMonthlyClose(item)))
         setTransactions(normalizeLoadedTransactions(data.transactions))
+        setNotes(data.notes ?? [])
         setOpeningBalanceForm(
           openingBalanceToForm(
             data.openingBalances,
@@ -287,6 +294,7 @@ function App() {
       settlements,
       expenseSettlements,
       monthlyCloses,
+      notes,
     }
 
     const timer = window.setTimeout(() => {
@@ -304,6 +312,7 @@ function App() {
     settlements,
     expenseSettlements,
     monthlyCloses,
+    notes,
   ])
 
   const lastTradeSettledAt = useMemo(
@@ -363,6 +372,7 @@ function App() {
     selectedMonthlyCloseId,
     activeTab,
     dailyWorkTab,
+    notes,
   })
 
   const restoreSnapshot = (snapshot: AppSnapshot) => {
@@ -379,11 +389,15 @@ function App() {
     const restoredWorkTab = snapshot.dailyWorkTab ?? 'usdt'
     setDailyWorkTab(restoredWorkTab)
     setMobileTradePane(restoredWorkTab === 'vn' ? 'buy_vn' : 'buy_u')
+    setNotes(snapshot.notes ?? [])
     setMonthlyCloseModalOpen(false)
     setMonthlyPeriodLabel('')
   }
 
   const handleSelectTab = (tab: PageTab) => {
+    if (tab !== 'notes' && editingNoteId) {
+      resetNoteForm()
+    }
     if (tab === 'monthly') {
       setSelectedMonthlyCloseId(null)
     }
@@ -557,6 +571,73 @@ function App() {
       setEditingId(null)
       setEditingCategory(null)
     }
+  }
+
+  const resetNoteForm = () => {
+    setNoteDraft('')
+    setNoteError('')
+    setEditingNoteId(null)
+  }
+
+  const handleNoteSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    setNoteError('')
+
+    const text = noteDraft.trim()
+    if (!text) {
+      setNoteError('請輸入內容')
+      return
+    }
+
+    const now = new Date()
+    if (editingNoteId) {
+      setNotes((prev) =>
+        prev.map((entry) =>
+          entry.id === editingNoteId ? { ...entry, text, updatedAt: now } : entry,
+        ),
+      )
+      resetNoteForm()
+      return
+    }
+
+    setNotes((prev) => [
+      {
+        id: crypto.randomUUID(),
+        createdAt: now,
+        updatedAt: now,
+        text,
+      },
+      ...prev,
+    ])
+    resetNoteForm()
+  }
+
+  const handleEditNote = (entry: NotebookEntry) => {
+    if (editingCategory !== null) {
+      cancelEditing()
+    }
+    setEditingNoteId(entry.id)
+    setNoteDraft(entry.text)
+    setNoteError('')
+  }
+
+  const handleDeleteNote = (id: string) => {
+    const entry = notes.find((item) => item.id === id)
+    if (!entry) return
+
+    setConfirmDialog({
+      title: '確定刪除此筆記？',
+      lines: [entry.text],
+      confirmLabel: '刪除',
+      variant: 'danger',
+      onConfirm: () => {
+        setConfirmDialog(null)
+        setNotes((prev) => prev.filter((item) => item.id !== id))
+        if (editingNoteId === id) {
+          resetNoteForm()
+        }
+      },
+    })
   }
 
   const updateVnBuyForm = (field: 'vn' | 'pay' | 'rate', value: string) => {
@@ -873,6 +954,7 @@ function App() {
   }
 
   const handleEdit = (tx: UsdtTransaction) => {
+    resetNoteForm()
     setActiveTab('daily')
     setDailyWorkTab('usdt')
     setMobileTradePane(tx.type === 'buy' ? 'buy_u' : 'sell_u')
@@ -895,6 +977,7 @@ function App() {
   }
 
   const handleEditVn = (tx: VnTradeTransaction) => {
+    resetNoteForm()
     const normalized = normalizeVnTradeTransaction(tx)
     setActiveTab('daily')
     setDailyWorkTab('vn')
@@ -920,6 +1003,7 @@ function App() {
   }
 
   const handleEditExpense = (tx: ExpenseTransaction) => {
+    resetNoteForm()
     setActiveTab('expenses')
     setEditingId(tx.id)
     setEditingCategory('expense')
@@ -975,6 +1059,14 @@ function App() {
     else if (editingCategory === 'expense') resetExpenseForm()
   }
 
+  const isEditingBuy = editingCategory === 'buy'
+  const isEditingSell = editingCategory === 'sell'
+  const isEditingVnBuy = editingCategory === 'vn_buy'
+  const isEditingVnSell = editingCategory === 'vn_sell'
+  const isEditingExpense = editingCategory === 'expense'
+  const isEditingNote = editingNoteId !== null
+  const isEditingAny = editingCategory !== null || isEditingNote
+
   const editingBannerLabel =
     editingCategory === 'buy'
       ? '正在編輯收E'
@@ -986,14 +1078,9 @@ function App() {
             ? '正在編輯賣出 VN'
             : editingCategory === 'expense'
               ? '正在編輯開銷'
+              : isEditingNote
+                ? '正在編輯筆記'
               : null
-
-  const isEditingBuy = editingCategory === 'buy'
-  const isEditingSell = editingCategory === 'sell'
-  const isEditingVnBuy = editingCategory === 'vn_buy'
-  const isEditingVnSell = editingCategory === 'vn_sell'
-  const isEditingExpense = editingCategory === 'expense'
-  const isEditingAny = editingCategory !== null
 
   const executeTradeSettle = () => {
     const snapshot = createSnapshot()
@@ -1460,7 +1547,7 @@ function App() {
             >
               {mobileNavOpen ? <MobileNavCloseIcon /> : <MobileNavMenuIcon />}
             </button>
-            {activeTab !== 'daily' && activeTab !== 'expenses' && (
+            {activeTab !== 'daily' && activeTab !== 'expenses' && activeTab !== 'notes' && (
               <p className="min-w-0 flex-1 text-xs font-medium text-slate-800">
                 {activeTab === 'monthly' && selectedMonthlyClose
                   ? selectedMonthlyClose.periodLabel
@@ -1761,6 +1848,24 @@ function App() {
                   <ExpensePageSummary transactions={expenseTransactions} />
                 </div>
               </section>
+            </div>
+          ) : activeTab === 'notes' ? (
+            <div className="flex flex-col">
+              {editingBannerLabel && (
+                <EditingBanner label={editingBannerLabel} onCancel={resetNoteForm} />
+              )}
+              <NotebookPanel
+                entries={notes}
+                draft={noteDraft}
+                editingId={editingNoteId}
+                error={noteError}
+                disabled={isEditingAny && !isEditingNote}
+                onDraftChange={setNoteDraft}
+                onSubmit={handleNoteSubmit}
+                onCancelEdit={resetNoteForm}
+                onEdit={handleEditNote}
+                onDelete={handleDeleteNote}
+              />
             </div>
           ) : activeTab === 'settlements' ? (
             <>

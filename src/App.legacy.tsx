@@ -202,6 +202,7 @@ type PageTab =
   | 'expenses'
   | 'settlements'
   | 'monthly'
+  | 'notes'
 
 const INITIAL_TWD = 5_000_000
 const INITIAL_USDT = 0
