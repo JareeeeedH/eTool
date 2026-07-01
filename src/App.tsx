@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { createNoteAsync, deleteNoteAsync, loadNotesAsync, updateNoteAsync } from './api/notes'
 import {
   loadPersistedAppStateAsync,
   savePersistedAppStateAsync,
@@ -201,43 +202,51 @@ function App() {
   useEffect(() => {
     let cancelled = false
 
-    void loadPersistedAppStateAsync().then((result) => {
-      if (cancelled) return
+    void Promise.all([loadPersistedAppStateAsync(), loadNotesAsync()]).then(
+      ([stateResult, notesResult]) => {
+        if (cancelled) return
 
-      if (!result.ok) {
-        setLoadError(result.error)
+        if (!stateResult.ok) {
+          setLoadError(stateResult.error)
+          setReady(true)
+          return
+        }
+
+        const data = stateResult.state
+        if (data) {
+          persistedRef.current = data
+          setActiveTab(data.activeTab)
+          setDailyWorkTab(data.dailyWorkTab ?? 'usdt')
+          setMobileTradePane(data.dailyWorkTab === 'vn' ? 'buy_vn' : 'buy_u')
+          setOpeningBalances({ ...data.openingBalances })
+          setOpeningUsdtCost({ ...data.openingUsdtCost })
+          setOpeningVnTwdRate(data.openingVnTwdRate ?? null)
+          setOpeningVnUsdtRate(data.openingVnUsdtRate ?? null)
+          setSettlements(data.settlements.map(normalizeLoadedSettlement))
+          setExpenseSettlements(data.expenseSettlements ?? [])
+          setMonthlyCloses((data.monthlyCloses ?? []).map((item) => normalizeMonthlyClose(item)))
+          setTransactions(normalizeLoadedTransactions(data.transactions))
+          setOpeningBalanceForm(
+            openingBalanceToForm(
+              data.openingBalances,
+              data.openingUsdtCost,
+              data.openingVnTwdRate ?? null,
+              data.openingVnUsdtRate ?? null,
+            ),
+          )
+        }
+
+        if (notesResult.ok) {
+          setNotes(notesResult.notes)
+        } else {
+          console.error('[notes] load failed:', notesResult.error)
+          setNotes([])
+        }
+
+        persistReadyRef.current = true
         setReady(true)
-        return
-      }
-
-      const data = result.state
-      if (data) {
-        persistedRef.current = data
-        setActiveTab(data.activeTab)
-        setDailyWorkTab(data.dailyWorkTab ?? 'usdt')
-        setMobileTradePane(data.dailyWorkTab === 'vn' ? 'buy_vn' : 'buy_u')
-        setOpeningBalances({ ...data.openingBalances })
-        setOpeningUsdtCost({ ...data.openingUsdtCost })
-        setOpeningVnTwdRate(data.openingVnTwdRate ?? null)
-        setOpeningVnUsdtRate(data.openingVnUsdtRate ?? null)
-        setSettlements(data.settlements.map(normalizeLoadedSettlement))
-        setExpenseSettlements(data.expenseSettlements ?? [])
-        setMonthlyCloses((data.monthlyCloses ?? []).map((item) => normalizeMonthlyClose(item)))
-        setTransactions(normalizeLoadedTransactions(data.transactions))
-        setNotes(data.notes ?? [])
-        setOpeningBalanceForm(
-          openingBalanceToForm(
-            data.openingBalances,
-            data.openingUsdtCost,
-            data.openingVnTwdRate ?? null,
-            data.openingVnUsdtRate ?? null,
-          ),
-        )
-      }
-
-      persistReadyRef.current = true
-      setReady(true)
-    })
+      },
+    )
 
     return () => {
       cancelled = true
@@ -294,7 +303,6 @@ function App() {
       settlements,
       expenseSettlements,
       monthlyCloses,
-      notes,
     }
 
     const timer = window.setTimeout(() => {
@@ -312,7 +320,6 @@ function App() {
     settlements,
     expenseSettlements,
     monthlyCloses,
-    notes,
   ])
 
   const lastTradeSettledAt = useMemo(
@@ -579,7 +586,7 @@ function App() {
     setEditingNoteId(null)
   }
 
-  const handleNoteSubmit = (e: FormEvent) => {
+  const handleNoteSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setNoteError('')
 
@@ -589,26 +596,25 @@ function App() {
       return
     }
 
-    const now = new Date()
     if (editingNoteId) {
+      const result = await updateNoteAsync(editingNoteId, text)
+      if (!result.ok) {
+        setNoteError(result.error)
+        return
+      }
       setNotes((prev) =>
-        prev.map((entry) =>
-          entry.id === editingNoteId ? { ...entry, text, updatedAt: now } : entry,
-        ),
+        prev.map((entry) => (entry.id === result.note.id ? result.note : entry)),
       )
       resetNoteForm()
       return
     }
 
-    setNotes((prev) => [
-      {
-        id: crypto.randomUUID(),
-        createdAt: now,
-        updatedAt: now,
-        text,
-      },
-      ...prev,
-    ])
+    const result = await createNoteAsync(text)
+    if (!result.ok) {
+      setNoteError(result.error)
+      return
+    }
+    setNotes((prev) => [result.note, ...prev])
     resetNoteForm()
   }
 
@@ -631,11 +637,18 @@ function App() {
       confirmLabel: '刪除',
       variant: 'danger',
       onConfirm: () => {
-        setConfirmDialog(null)
-        setNotes((prev) => prev.filter((item) => item.id !== id))
-        if (editingNoteId === id) {
-          resetNoteForm()
-        }
+        void (async () => {
+          const result = await deleteNoteAsync(id)
+          setConfirmDialog(null)
+          if (!result.ok) {
+            setNoteError(result.error)
+            return
+          }
+          setNotes((prev) => prev.filter((item) => item.id !== id))
+          if (editingNoteId === id) {
+            resetNoteForm()
+          }
+        })()
       },
     })
   }

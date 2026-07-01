@@ -151,13 +151,6 @@ interface MonthlyClose {
   expenseSettlements: ExpenseSettlement[]
 }
 
-interface NotebookEntry {
-  id: string
-  createdAt: Date
-  updatedAt: Date
-  text: string
-}
-
 export interface PersistedAppState {
   activeTab: PageTab
   dailyWorkTab?: DailyWorkTab
@@ -171,7 +164,6 @@ export interface PersistedAppState {
   settlements: DailySettlement[]
   expenseSettlements?: ExpenseSettlement[]
   monthlyCloses?: MonthlyClose[]
-  notes?: NotebookEntry[]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -472,21 +464,6 @@ function parseMonthlyClose(value: unknown): MonthlyClose | null {
   }
 }
 
-function parseNotebookEntry(value: unknown): NotebookEntry | null {
-  if (!isRecord(value)) return null
-  const id = typeof value.id === 'string' ? value.id : ''
-  const text = typeof value.text === 'string' ? value.text.trim() : ''
-  if (!id || !text) return null
-
-  const createdAt = new Date(String(value.createdAt))
-  if (Number.isNaN(createdAt.getTime())) return null
-
-  const updatedAtRaw = value.updatedAt !== undefined ? new Date(String(value.updatedAt)) : createdAt
-  const updatedAt = Number.isNaN(updatedAtRaw.getTime()) ? createdAt : updatedAtRaw
-
-  return { id, createdAt, updatedAt, text }
-}
-
 function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
   if (!isRecord(parsed)) return null
   if ('version' in parsed && parsed.version !== STORAGE_VERSION) return null
@@ -533,12 +510,6 @@ function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
               : 'daily'
   const dailyWorkTab: DailyWorkTab = parsed.dailyWorkTab === 'vn' ? 'vn' : 'usdt'
 
-  const notes = Array.isArray(parsed.notes)
-    ? parsed.notes
-        .map(parseNotebookEntry)
-        .filter((item): item is NotebookEntry => item !== null)
-    : []
-
   return {
     activeTab,
     dailyWorkTab,
@@ -550,7 +521,6 @@ function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
     settlements,
     expenseSettlements,
     monthlyCloses,
-    notes,
   }
 }
 
