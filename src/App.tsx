@@ -73,7 +73,13 @@ import {
   validateTransactions,
   vnTradePayAmount,
 } from './domain'
-import { formatSettlementDateTime } from './utils/format'
+import {
+  dateInputValueFromDate,
+  formatSettlementDateTime,
+  isValidDateInputValue,
+  timestampFromDateInput,
+  todayDateInputValue,
+} from './utils/format'
 import { formCardClass, recordCardClass } from './utils/uiClasses'
 import {
   AppNav,
@@ -151,23 +157,27 @@ function App() {
   const [buyUsdtAmount, setBuyUsdtAmount] = useState('')
   const [buyFiatAmount, setBuyFiatAmount] = useState('')
   const [buyRate, setBuyRate] = useState('')
+  const [buyTradeDate, setBuyTradeDate] = useState(todayDateInputValue)
   const [buyError, setBuyError] = useState('')
 
   const [sellUsdtAmount, setSellUsdtAmount] = useState('')
   const [sellFiatAmount, setSellFiatAmount] = useState('')
   const [sellRate, setSellRate] = useState('')
+  const [sellTradeDate, setSellTradeDate] = useState(todayDateInputValue)
   const [sellError, setSellError] = useState('')
 
   const [vnBuyVnAmount, setVnBuyVnAmount] = useState('')
   const [vnBuyPayAmount, setVnBuyPayAmount] = useState('')
   const [vnBuyPayCurrency, setVnBuyPayCurrency] = useState<VnPayCurrency>('usdt')
   const [vnBuyRate, setVnBuyRate] = useState('')
+  const [vnBuyTradeDate, setVnBuyTradeDate] = useState(todayDateInputValue)
   const [vnBuyError, setVnBuyError] = useState('')
 
   const [vnSellVnAmount, setVnSellVnAmount] = useState('')
   const [vnSellPayAmount, setVnSellPayAmount] = useState('')
   const [vnSellPayCurrency, setVnSellPayCurrency] = useState<VnPayCurrency>('twd')
   const [vnSellRate, setVnSellRate] = useState('')
+  const [vnSellTradeDate, setVnSellTradeDate] = useState(todayDateInputValue)
   const [vnSellError, setVnSellError] = useState('')
 
   const [expenseType, setExpenseType] = useState<ExpenseType>('fuel')
@@ -487,6 +497,7 @@ function App() {
     setBuyUsdtAmount('')
     setBuyFiatAmount('')
     setBuyRate('')
+    setBuyTradeDate(todayDateInputValue())
     setBuyError('')
     if (editingCategory === 'buy') {
       setEditingId(null)
@@ -498,6 +509,7 @@ function App() {
     setSellUsdtAmount('')
     setSellFiatAmount('')
     setSellRate('')
+    setSellTradeDate(todayDateInputValue())
     setSellError('')
     if (editingCategory === 'sell') {
       setEditingId(null)
@@ -536,6 +548,7 @@ function App() {
     setVnBuyPayAmount('')
     setVnBuyPayCurrency('usdt')
     setVnBuyRate('')
+    setVnBuyTradeDate(todayDateInputValue())
     setVnBuyError('')
     if (editingCategory === 'vn_buy') {
       setEditingId(null)
@@ -548,6 +561,7 @@ function App() {
     setVnSellPayAmount('')
     setVnSellPayCurrency('twd')
     setVnSellRate('')
+    setVnSellTradeDate(todayDateInputValue())
     setVnSellError('')
     if (editingCategory === 'vn_sell') {
       setEditingId(null)
@@ -766,6 +780,12 @@ function App() {
 
     const isEditing = editingId !== null && editingCategory === type
 
+    const tradeDate = isBuy ? buyTradeDate : sellTradeDate
+    if (!isValidDateInputValue(tradeDate)) {
+      setError('請選擇有效日期')
+      return
+    }
+
     const resolved = resolveUsdtTradeFields(usdtStr, fiatStr, rateStr)
     if (!resolved.ok) {
       setError(resolved.error)
@@ -782,7 +802,7 @@ function App() {
         variant: 'primary',
         onConfirm: () => {
           setConfirmDialog(null)
-          const newId = commitUsdtTrade(type, usdt, fiat, rate, isEditing)
+          const newId = commitUsdtTrade(type, usdt, fiat, rate, isEditing, tradeDate)
           if (newId) {
             flashNewTransaction(newId)
           }
@@ -791,7 +811,7 @@ function App() {
       return
     }
 
-    const newId = commitUsdtTrade(type, usdt, fiat, rate, isEditing)
+    const newId = commitUsdtTrade(type, usdt, fiat, rate, isEditing, tradeDate)
     if (newId) {
       flashNewTransaction(newId)
     }
@@ -803,6 +823,7 @@ function App() {
     fiat: number,
     rate: number,
     isEditing: boolean,
+    tradeDate: string,
   ): string | null => {
     const isBuy = type === 'buy'
     const setError = isBuy ? setBuyError : setSellError
@@ -812,13 +833,21 @@ function App() {
       if (isEditing) {
         return list.map((tx) =>
           tx.id === editingId && isUsdtTransaction(tx)
-            ? { ...tx, type, fiatCurrency: 'twd' as const, usdtAmount: usdt, fiatAmount: fiat, rate }
+            ? {
+                ...tx,
+                type,
+                fiatCurrency: 'twd' as const,
+                usdtAmount: usdt,
+                fiatAmount: fiat,
+                rate,
+                timestamp: timestampFromDateInput(tradeDate, tx.timestamp),
+              }
             : tx,
         )
       }
       const newTransaction: UsdtTransaction = {
         id: newId,
-        timestamp: new Date(),
+        timestamp: timestampFromDateInput(tradeDate),
         category: 'usdt',
         type,
         fiatCurrency: 'twd',
@@ -869,6 +898,12 @@ function App() {
     const editCategory = isBuy ? 'vn_buy' : 'vn_sell'
     const isEditing = editingId !== null && editingCategory === editCategory
 
+    const tradeDate = isBuy ? vnBuyTradeDate : vnSellTradeDate
+    if (!isValidDateInputValue(tradeDate)) {
+      setError('請選擇有效日期')
+      return
+    }
+
     const resolved = resolveVnTradeFields(vnStr, payStr, rateStr)
     if (!resolved.ok) {
       setError(resolved.error)
@@ -889,7 +924,7 @@ function App() {
         variant: 'primary',
         onConfirm: () => {
           setConfirmDialog(null)
-          const newId = commitVnTrade(type, payCurrency, vn, pay, rate, isEditing)
+          const newId = commitVnTrade(type, payCurrency, vn, pay, rate, isEditing, tradeDate)
           if (newId) {
             flashNewTransaction(newId)
           }
@@ -898,7 +933,7 @@ function App() {
       return
     }
 
-    const newId = commitVnTrade(type, payCurrency, vn, pay, rate, isEditing)
+    const newId = commitVnTrade(type, payCurrency, vn, pay, rate, isEditing, tradeDate)
     if (newId) {
       flashNewTransaction(newId)
     }
@@ -911,6 +946,7 @@ function App() {
     pay: number,
     rate: number,
     isEditing: boolean,
+    tradeDate: string,
   ): string | null => {
     const isBuy = type === 'buy'
     const setError = isBuy ? setVnBuyError : setVnSellError
@@ -928,13 +964,14 @@ function App() {
                 twdAmount: payCurrency === 'twd' ? pay : 0,
                 usdtAmount: payCurrency === 'usdt' ? pay : 0,
                 rate,
+                timestamp: timestampFromDateInput(tradeDate, tx.timestamp),
               }
             : tx,
         )
       }
       const newTransaction: VnTradeTransaction = {
         id: newId,
-        timestamp: new Date(),
+        timestamp: timestampFromDateInput(tradeDate),
         category: 'vn_trade',
         type,
         payCurrency,
@@ -982,10 +1019,12 @@ function App() {
       setBuyUsdtAmount(String(tx.usdtAmount))
       setBuyFiatAmount(String(tx.fiatAmount))
       setBuyRate(formatRateCalc(tx.rate))
+      setBuyTradeDate(dateInputValueFromDate(tx.timestamp))
     } else {
       setSellUsdtAmount(String(tx.usdtAmount))
       setSellFiatAmount(String(tx.fiatAmount))
       setSellRate(formatRateCalc(tx.rate))
+      setSellTradeDate(dateInputValueFromDate(tx.timestamp))
     }
   }
 
@@ -1007,11 +1046,13 @@ function App() {
       setVnBuyVnAmount(String(normalized.vnAmount))
       setVnBuyPayAmount(String(vnTradePayAmount(normalized)))
       setVnBuyRate(formatVnRateCalc(normalized.rate))
+      setVnBuyTradeDate(dateInputValueFromDate(normalized.timestamp))
     } else {
       setVnSellPayCurrency(normalized.payCurrency)
       setVnSellVnAmount(String(normalized.vnAmount))
       setVnSellPayAmount(String(vnTradePayAmount(normalized)))
       setVnSellRate(formatVnRateCalc(normalized.rate))
+      setVnSellTradeDate(dateInputValueFromDate(normalized.timestamp))
     }
   }
 
@@ -1082,9 +1123,9 @@ function App() {
 
   const editingBannerLabel =
     editingCategory === 'buy'
-      ? '正在編輯收E'
+      ? '正在編輯收P'
       : editingCategory === 'sell'
-        ? '正在編輯出E'
+        ? '正在編輯出P'
         : editingCategory === 'vn_buy'
           ? '正在編輯買入 VN'
           : editingCategory === 'vn_sell'
@@ -1612,15 +1653,17 @@ function App() {
                   <div className={formCardClass('emerald', isEditingBuy)}>
                     <TradeForm
                       type="buy"
-                      title="收E"
-                      editTitle="編輯收E"
+                      title="收P"
+                      editTitle="編輯收P"
                       usdt={buyUsdtAmount}
                       fiat={buyFiatAmount}
                       rate={buyRate}
+                      tradeDate={buyTradeDate}
                       error={buyError}
                       isEditing={isEditingBuy}
                       disabled={isEditingAny && !isEditingBuy}
                       onFieldChange={updateBuyForm}
+                      onTradeDateChange={setBuyTradeDate}
                       onSubmit={(e) => handleSubmit('buy', e)}
                       onCancel={resetBuyForm}
                       onClear={clearBuyForm}
@@ -1634,7 +1677,7 @@ function App() {
                     />
                   </div>
                   <div className={recordCardClass('emerald')}>
-                    <h2 className="mb-1 shrink-0 text-[11px] font-semibold leading-none text-emerald-700">
+                    <h2 className="mb-1 hidden shrink-0 text-[11px] font-semibold leading-none text-emerald-700 sm:block">
                       買入紀錄
                     </h2>
                     <TransactionTable
@@ -1659,15 +1702,17 @@ function App() {
                   <div className={formCardClass('rose', isEditingSell)}>
                     <TradeForm
                       type="sell"
-                      title="出E"
-                      editTitle="編輯出E"
+                      title="出P"
+                      editTitle="編輯出P"
                       usdt={sellUsdtAmount}
                       fiat={sellFiatAmount}
                       rate={sellRate}
+                      tradeDate={sellTradeDate}
                       error={sellError}
                       isEditing={isEditingSell}
                       disabled={isEditingAny && !isEditingSell}
                       onFieldChange={updateSellForm}
+                      onTradeDateChange={setSellTradeDate}
                       onSubmit={(e) => handleSubmit('sell', e)}
                       onCancel={resetSellForm}
                       onClear={clearSellForm}
@@ -1682,7 +1727,7 @@ function App() {
                     />
                   </div>
                   <div className={recordCardClass('rose')}>
-                    <h2 className="mb-1 shrink-0 text-[11px] font-semibold leading-none text-rose-700">
+                    <h2 className="mb-1 hidden shrink-0 text-[11px] font-semibold leading-none text-rose-700 sm:block">
                       賣出紀錄
                     </h2>
                     <TransactionTable
@@ -1714,10 +1759,12 @@ function App() {
                       vn={vnBuyVnAmount}
                       pay={vnBuyPayAmount}
                       rate={vnBuyRate}
+                      tradeDate={vnBuyTradeDate}
                       error={vnBuyError}
                       isEditing={isEditingVnBuy}
                       disabled={isEditingAny && !isEditingVnBuy}
                       onFieldChange={updateVnBuyForm}
+                      onTradeDateChange={setVnBuyTradeDate}
                       onSubmit={(e) => handleVnSubmit('buy', e)}
                       onCancel={resetVnBuyForm}
                       onClear={clearVnBuyForm}
@@ -1734,7 +1781,7 @@ function App() {
                     />
                   </div>
                   <div className={recordCardClass('violet')}>
-                    <h2 className="mb-1 shrink-0 text-xs font-semibold leading-none text-violet-700">
+                    <h2 className="mb-1 hidden shrink-0 text-xs font-semibold leading-none text-violet-700 sm:block">
                       買入紀錄
                     </h2>
                     <VnTradeTable
@@ -1765,10 +1812,12 @@ function App() {
                       vn={vnSellVnAmount}
                       pay={vnSellPayAmount}
                       rate={vnSellRate}
+                      tradeDate={vnSellTradeDate}
                       error={vnSellError}
                       isEditing={isEditingVnSell}
                       disabled={isEditingAny && !isEditingVnSell}
                       onFieldChange={updateVnSellForm}
+                      onTradeDateChange={setVnSellTradeDate}
                       onSubmit={(e) => handleVnSubmit('sell', e)}
                       onCancel={resetVnSellForm}
                       onClear={clearVnSellForm}
@@ -1786,7 +1835,7 @@ function App() {
                     />
                   </div>
                   <div className={recordCardClass('rose')}>
-                    <h2 className="mb-1 shrink-0 text-xs font-semibold leading-none text-amber-700">
+                    <h2 className="mb-1 hidden shrink-0 text-xs font-semibold leading-none text-amber-700 sm:block">
                       賣出紀錄
                     </h2>
                     <VnTradeTable

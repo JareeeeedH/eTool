@@ -297,10 +297,12 @@ export interface TradeFormProps {
   usdt: string
   fiat: string
   rate: string
+  tradeDate: string
   error: string
   isEditing: boolean
   disabled: boolean
   onFieldChange: (field: 'usdt' | 'fiat' | 'rate', value: string) => void
+  onTradeDateChange: (value: string) => void
   onSubmit: (e: FormEvent) => void
   onCancel: () => void
   onClear: () => void
@@ -325,10 +327,12 @@ export interface VnTradeFormProps {
   vn: string
   pay: string
   rate: string
+  tradeDate: string
   error: string
   isEditing: boolean
   disabled: boolean
   onFieldChange: (field: 'vn' | 'pay' | 'rate', value: string) => void
+  onTradeDateChange: (value: string) => void
   onSubmit: (e: FormEvent) => void
   onCancel: () => void
   onClear: () => void

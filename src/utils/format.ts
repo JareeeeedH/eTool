@@ -11,8 +11,8 @@ export function formatNumber(value: number): string {
   })
 }
 
-export function assetCode(currency: 'twd' | 'usdt'): 'T' | 'E' {
-  return currency === 'usdt' ? 'E' : 'T'
+export function assetCode(currency: 'twd' | 'usdt'): 'T' | 'P' {
+  return currency === 'usdt' ? 'P' : 'T'
 }
 
 /** 大數字緊湊顯示（如 VN 庫存）：億 / 萬 */
@@ -43,6 +43,28 @@ export function roundTwd(value: number): number {
 export function formatTwd(value: number): string {
   return floorTwd(value).toLocaleString('zh-TW', {
     maximumFractionDigits: 0,
+  })
+}
+
+/** T 欄縮寫（總覽／交易明細）：以萬為單位，四捨五入至小數第二位 */
+export function roundTwdTableCompact(value: number): number {
+  return Math.round((value / 10_000) * 100) / 100
+}
+
+export function formatTwdTableCompact(value: number): string {
+  return roundTwdTableCompact(value).toFixed(2)
+}
+
+/** VN 欄縮寫（總覽／交易明細）：以億為單位，四捨五入至小數第四位 */
+export function roundVnTableCompact(value: number): number {
+  return Math.round((value / 100_000_000) * 10_000) / 10_000
+}
+
+export function formatVnTableCompact(value: number): string {
+  const rounded = roundVnTableCompact(value)
+  return rounded.toLocaleString('zh-TW', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
   })
 }
 
@@ -143,6 +165,46 @@ export function formatSettlementDateTime(date: Date): string {
 
 export function formatTableDateTime(date: Date): string {
   return formatSettlementDate(date)
+}
+
+/** 交易明細日期：英文月/日（如 Jul 2） */
+export function formatTransactionTableDate(date: Date): string {
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+/** HTML date input（YYYY-MM-DD），本地時區 */
+export function todayDateInputValue(): string {
+  return dateInputValueFromDate(new Date())
+}
+
+export function dateInputValueFromDate(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+export function isValidDateInputValue(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  return dateInputValueFromDate(timestampFromDateInput(value)) === value
+}
+
+/** 將 date input 與既有時間（或現在）合併為 timestamp */
+export function timestampFromDateInput(dateStr: string, timeSource: Date = new Date()): Date {
+  const [y, m, d] = dateStr.split('-').map((part) => Number(part))
+  if (!y || !m || !d) return new Date(timeSource)
+  return new Date(
+    y,
+    m - 1,
+    d,
+    timeSource.getHours(),
+    timeSource.getMinutes(),
+    timeSource.getSeconds(),
+    timeSource.getMilliseconds(),
+  )
 }
 
 export function formatArchiveDateRange(start: Date | null, end: Date | null): string {
