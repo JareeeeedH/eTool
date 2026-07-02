@@ -33,6 +33,9 @@ import {
   EXPENSE_TABLE_CLASS,
   EXPENSE_TYPE_OPTIONS,
   EMPTY_DATA_LABEL,
+  TRADE_FORM_META_CELL_CLASS,
+  TRADE_FORM_ACTIONS_CLASS,
+  TRADE_FORM_SUBMIT_CLASS,
   TRADE_FORM_GRID_CLASS,
   TRADE_INPUT_CLASS,
   TRADE_PANE_CODE,
@@ -74,6 +77,7 @@ import {
   formatSettlementDate,
   formatSettlementDateTime,
   formatTableDateTime,
+  formatTradeMetaDateDisplay,
   formatTransactionTableDate,
   formatTwd,
   formatTwdTableCompact,
@@ -220,7 +224,7 @@ function TradeSettleConfirmBody({ summary }: { summary: TradeSettleConfirmSummar
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-slate-500">USDT</span>
                 <span className={`font-medium ${profitColorClass(summary.dayUsdtProfit)}`}>
-                  {formatProfit(summary.dayUsdtProfit)} TWD
+                  {formatProfit(summary.dayUsdtProfit)}
                 </span>
               </div>
             )}
@@ -228,14 +232,14 @@ function TradeSettleConfirmBody({ summary }: { summary: TradeSettleConfirmSummar
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-slate-500">VN</span>
                 <span className={`font-medium ${profitColorClass(summary.dayVnProfit)}`}>
-                  {formatProfit(summary.dayVnProfit)} TWD
+                  {formatProfit(summary.dayVnProfit)}
                 </span>
               </div>
             )}
             <div className="flex items-baseline justify-between gap-3 border-t border-slate-100 pt-2">
               <span className="font-medium text-slate-700">合計</span>
               <span className={`text-base font-bold ${profitColorClass(summary.dayTotalProfit)}`}>
-                {formatProfit(summary.dayTotalProfit)} TWD
+                {formatProfit(summary.dayTotalProfit)}
               </span>
             </div>
           </div>
@@ -297,7 +301,7 @@ export function SettlementDayProfit({
     <div className={`${textClass} tabular-nums`}>
       {showSplit ? (
         <>
-          <p className={profitColorClass(usdtProfit!)}>U {formatProfit(usdtProfit!)}</p>
+          <p className={profitColorClass(usdtProfit!)}>P {formatProfit(usdtProfit!)}</p>
           <p className={profitColorClass(vnProfit!)}>VN {formatProfit(vnProfit!)}</p>
           <p className={`font-semibold ${profitColorClass(totalProfit)}`}>
             毛利 {formatProfit(totalProfit)}
@@ -360,9 +364,13 @@ const TOTAL_ASSETS_CARD_CLASS =
 export function TotalAssetsColumn({
   assets,
   dense = false,
+  titleLabel = '帳面總資產',
+  showCurrencySuffix = true,
 }: {
   assets: TotalAssetsTwd
   dense?: boolean
+  titleLabel?: string
+  showCurrencySuffix?: boolean
 }) {
   const cardClass = dense ? TOTAL_ASSETS_DENSE_CARD_CLASS : TOTAL_ASSETS_CARD_CLASS
   const labelClass = 'text-[10px] font-medium text-slate-500'
@@ -377,8 +385,10 @@ export function TotalAssetsColumn({
     <div className={cardClass}>
       {!dense && (
         <p className={labelClass}>
-          帳面總資產
-          <span className="ml-0.5 font-normal text-slate-400">TWD</span>
+          {titleLabel}
+          {showCurrencySuffix && (
+            <span className="ml-0.5 font-normal text-slate-400">TWD</span>
+          )}
           {!assets.isComplete && (
             <span className="ml-1 rounded bg-amber-100 px-1 py-px text-[8px] font-medium text-amber-700 sm:text-[9px]">
               部分
@@ -644,14 +654,38 @@ export function TransactionTableColGroup({
   isBuy: boolean
   mobileRowIndex?: boolean
 }) {
+  if (mobileRowIndex) {
+    if (isBuy) {
+      return (
+        <colgroup>
+          <col style={{ width: '13%' }} />
+          <col style={{ width: '24%' }} />
+          <col style={{ width: '24%' }} />
+          <col style={{ width: '22%' }} />
+          <col style={{ width: '17%' }} />
+        </colgroup>
+      )
+    }
+    return (
+      <colgroup>
+        <col style={{ width: '11%' }} />
+        <col style={{ width: '21%' }} />
+        <col style={{ width: '21%' }} />
+        <col style={{ width: '17%' }} />
+        <col style={{ width: '15%' }} />
+        <col style={{ width: '15%' }} />
+      </colgroup>
+    )
+  }
+
   return (
     <colgroup>
-      <col style={{ width: mobileRowIndex ? '3.25rem' : '4.25rem' }} />
-      <col style={{ width: mobileRowIndex ? (isBuy ? '27%' : '23%') : isBuy ? '24%' : '20%' }} />
-      <col style={{ width: mobileRowIndex ? (isBuy ? '33%' : '27%') : isBuy ? '30%' : '24%' }} />
-      <col style={{ width: mobileRowIndex ? (isBuy ? '19%' : '14%') : isBuy ? '18%' : '13%' }} />
-      {!isBuy && <col style={{ width: mobileRowIndex ? '15%' : '16%' }} />}
-      <col style={{ width: mobileRowIndex ? '2.5rem' : '3.25rem' }} />
+      <col style={{ width: '4.25rem' }} />
+      <col style={{ width: isBuy ? '24%' : '20%' }} />
+      <col style={{ width: isBuy ? '30%' : '24%' }} />
+      <col style={{ width: isBuy ? '18%' : '13%' }} />
+      {!isBuy && <col style={{ width: '16%' }} />}
+      <col style={{ width: '3.25rem' }} />
     </colgroup>
   )
 }
@@ -664,31 +698,25 @@ export function VnTradeTableColGroup({
   mobileRowIndex?: boolean
 }) {
   if (mobileRowIndex) {
-    const indexCol = '3.25rem'
-    const vnCol = '3.5rem'
-    const coinCol = '1.25rem'
-    const actionCol = '2.5rem'
     if (isBuy) {
       return (
         <colgroup>
-          <col style={{ width: indexCol }} />
-          <col style={{ width: vnCol }} />
-          <col style={{ width: coinCol }} />
-          <col style={{ width: '28%' }} />
-          <col style={{ width: '24%' }} />
-          <col style={{ width: actionCol }} />
+          <col style={{ width: '13%' }} />
+          <col style={{ width: '22%' }} />
+          <col style={{ width: '27%' }} />
+          <col style={{ width: '21%' }} />
+          <col style={{ width: '17%' }} />
         </colgroup>
       )
     }
     return (
       <colgroup>
-        <col style={{ width: indexCol }} />
-        <col style={{ width: vnCol }} />
-        <col style={{ width: coinCol }} />
-        <col style={{ width: '24%' }} />
+        <col style={{ width: '12%' }} />
+        <col style={{ width: '17%' }} />
+        <col style={{ width: '21%' }} />
+        <col style={{ width: '14%' }} />
         <col style={{ width: '20%' }} />
-        <col style={{ width: '18%' }} />
-        <col style={{ width: actionCol }} />
+        <col style={{ width: '2.5rem' }} />
       </colgroup>
     )
   }
@@ -739,7 +767,7 @@ export function TransactionTableHeader({
         <th className={numCell('font-medium text-slate-500')}>T</th>
         <th className={numCell('font-medium text-slate-500')}>R</th>
         {!isBuy && (
-          <th className={numCell('px-0.5 font-medium text-slate-500')}>PF</th>
+          <th className={numCell('font-medium text-slate-500')}>PF</th>
         )}
         <th
           className={
@@ -1037,7 +1065,7 @@ export function TransactionTable({
   )
 }
 
-function TradeDateInput({
+function TradeMetaDateInput({
   id,
   value,
   onChange,
@@ -1051,7 +1079,13 @@ function TradeDateInput({
   className?: string
 }) {
   return (
-    <label className={`block min-w-0 ${className}`}>
+    <label className={`relative block min-w-0 ${className}`}>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 left-1.5 flex items-center text-xs tabular-nums text-slate-700"
+      >
+        {formatTradeMetaDateDisplay(value)}
+      </span>
       <input
         id={id}
         type="date"
@@ -1059,9 +1093,69 @@ function TradeDateInput({
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         aria-label="交易日期"
-        className="w-full max-w-[9.5rem] rounded border border-slate-300 px-1.5 py-0.5 text-base tabular-nums text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-300/40 disabled:bg-slate-50 sm:text-xs"
+        className="w-[4.85rem] max-w-full rounded border border-slate-300 py-1 pl-1.5 pr-0.5 text-xs tabular-nums text-transparent outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-300/40 disabled:bg-slate-50 sm:w-full sm:max-w-[9.5rem] sm:py-0.5 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
       />
     </label>
+  )
+}
+
+function TradeFormMetaCell({
+  dateId,
+  tradeDate,
+  onTradeDateChange,
+  disabled,
+  isEditing,
+  onClear,
+  onCancel,
+  buttonClass,
+}: {
+  dateId: string
+  tradeDate: string
+  onTradeDateChange: (value: string) => void
+  disabled?: boolean
+  isEditing: boolean
+  onClear: () => void
+  onCancel: () => void
+  buttonClass: string
+}) {
+  return (
+    <div className={TRADE_FORM_META_CELL_CLASS}>
+      <TradeMetaDateInput
+        id={dateId}
+        value={tradeDate}
+        onChange={onTradeDateChange}
+        disabled={disabled}
+        className="shrink-0 sm:min-w-0 sm:flex-1"
+      />
+      {!isEditing && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onClear}
+          className={TRADE_FORM_ACTIONS_CLASS}
+          aria-label="Cancel"
+        >
+          C
+        </button>
+      )}
+      <button
+        type="submit"
+        disabled={disabled}
+        aria-label="Add"
+        className={`${TRADE_FORM_SUBMIT_CLASS} ${
+          isEditing
+            ? 'bg-amber-600 hover:bg-amber-700 focus:ring-amber-600/30'
+            : buttonClass
+        }`}
+      >
+        {isEditing ? '儲存' : 'A'}
+      </button>
+      {isEditing && (
+        <button type="button" onClick={onCancel} className={TRADE_FORM_ACTIONS_CLASS}>
+          取消
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -1146,16 +1240,8 @@ export function TradeForm({
       </h2>
 
       <form onSubmit={onSubmit}>
-        <div className="mb-1 flex justify-end sm:justify-start">
-          <TradeDateInput
-            id={`${prefix}Date`}
-            value={tradeDate}
-            onChange={onTradeDateChange}
-            disabled={disabled}
-          />
-        </div>
         <div className={TRADE_FORM_GRID_CLASS}>
-          <label className="order-1 col-start-1 row-start-1 block min-w-0 sm:flex-1">
+          <label className="col-start-1 row-start-1 block min-w-0 sm:order-1 sm:flex-1">
             <input
               id={`${prefix}Usdt`}
               type="number"
@@ -1170,23 +1256,8 @@ export function TradeForm({
               className={`w-full py-0.5 ${inputClass}`}
             />
           </label>
-          <label className="order-2 col-start-2 row-start-1 block min-w-0 sm:order-3 sm:flex-1">
-            <input
-              id={`${prefix}Fiat`}
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="any"
-              value={fiat}
-              onChange={(e) => onFieldChange('fiat', e.target.value)}
-              disabled={disabled}
-              placeholder="T"
-              aria-label="TWD"
-              className={`w-full py-0.5 ${inputClass}`}
-            />
-          </label>
           <label
-            className={`order-3 col-start-1 row-start-2 ${TRADE_RATE_FIELD_CLASS} sm:order-2`}
+            className={`col-start-2 row-start-1 ${TRADE_RATE_FIELD_CLASS} sm:order-2`}
           >
             <input
               id={`${prefix}Rate`}
@@ -1202,37 +1273,32 @@ export function TradeForm({
               className={`w-full py-0.5 ${rateInputClass}`}
             />
           </label>
-          <div className="order-4 col-start-2 row-start-2 flex shrink-0 justify-end gap-1 sm:order-4">
-            {!isEditing && (
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={onClear}
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            )}
-            <button
-              type="submit"
+          <label className="col-start-1 row-start-2 block min-w-0 sm:order-3 sm:flex-1">
+            <input
+              id={`${prefix}Fiat`}
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="any"
+              value={fiat}
+              onChange={(e) => onFieldChange('fiat', e.target.value)}
               disabled={disabled}
-              className={`rounded px-3 py-1 text-xs font-medium text-white transition focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-                isEditing
-                  ? 'bg-amber-600 hover:bg-amber-700 focus:ring-amber-600/30'
-                  : buttonClass
-              }`}
-            >
-              {isEditing ? '儲存' : 'Add'}
-            </button>
-            {isEditing && (
-              <button
-                type="button"
-                onClick={onCancel}
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-              >
-                取消
-              </button>
-            )}
+              placeholder="T"
+              aria-label="TWD"
+              className={`w-full py-0.5 ${inputClass}`}
+            />
+          </label>
+          <div className="col-start-2 row-start-2 sm:order-4">
+            <TradeFormMetaCell
+              dateId={`${prefix}Date`}
+              tradeDate={tradeDate}
+              onTradeDateChange={onTradeDateChange}
+              disabled={disabled}
+              isEditing={isEditing}
+              onClear={onClear}
+              onCancel={onCancel}
+              buttonClass={buttonClass}
+            />
           </div>
         </div>
 
@@ -1439,19 +1505,25 @@ function vnRateUnitSuffix(payCurrency: VnPayCurrency): string {
   return payCurrency === 'usdt' ? '/P' : '/T'
 }
 
-function vnMobileRateCell(rate: number, payCurrency: VnPayCurrency) {
+function vnMobileRateCell(rate: number, payCurrency: VnPayCurrency, showSuffix = true) {
+  if (!showSuffix) {
+    return (
+      <span className="tabular-nums text-[12px] text-slate-600">
+        {formatVnTradeRateDisplay(rate)}
+      </span>
+    )
+  }
+
   const unitClass =
     payCurrency === 'usdt' ? 'text-sky-600' : 'text-emerald-600'
 
   return (
-    <div className="flex flex-col items-end leading-tight">
-      <span className="tabular-nums text-[12px] text-slate-600">
-        {formatVnTradeRateDisplay(rate)}
-      </span>
-      <span className={`text-[10px] font-semibold ${unitClass}`}>
+    <span className="inline-flex items-baseline justify-end gap-px tabular-nums leading-tight">
+      <span className="text-[12px] text-slate-600">{formatVnTradeRateDisplay(rate)}</span>
+      <span className={`text-[9px] font-semibold ${unitClass}`}>
         {vnRateUnitSuffix(payCurrency)}
       </span>
-    </div>
+    </span>
   )
 }
 
@@ -1605,29 +1677,23 @@ export function VnTradeForm({
 
   return (
     <>
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-1.5">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <h2 className={`hidden text-sm font-semibold sm:block ${accentClass}`}>
-            {isEditing ? editTitle : title}
-          </h2>
-          <TradeDateInput
-            id={`${prefix}Date`}
-            value={tradeDate}
-            onChange={onTradeDateChange}
+      <div className="mb-1.5 flex items-center justify-end gap-1.5 sm:mb-1 sm:justify-between">
+        <h2 className={`hidden text-sm font-semibold sm:block ${accentClass}`}>
+          {isEditing ? editTitle : title}
+        </h2>
+        <div className="justify-self-end sm:justify-self-auto">
+          <VnPayCurrencyToggle
+            value={payCurrency}
+            onChange={onPayCurrencyChange}
             disabled={disabled}
+            buySide={type === 'buy'}
           />
         </div>
-        <VnPayCurrencyToggle
-          value={payCurrency}
-          onChange={onPayCurrencyChange}
-          disabled={disabled}
-          buySide={type === 'buy'}
-        />
       </div>
 
       <form onSubmit={onSubmit}>
         <div className={TRADE_FORM_GRID_CLASS}>
-          <label className="order-1 col-span-2 row-start-1 block min-w-0 sm:col-span-1 sm:flex-1">
+          <label className="col-start-1 row-start-1 block min-w-0 sm:order-1 sm:flex-1">
             <input
               id={`${prefix}Vn`}
               type="number"
@@ -1642,23 +1708,8 @@ export function VnTradeForm({
               className={`w-full py-0.5 ${inputClass}`}
             />
           </label>
-          <label className="order-2 col-start-2 row-start-2 block min-w-0 sm:order-3 sm:col-auto sm:row-auto sm:flex-1">
-            <input
-              id={`${prefix}Pay`}
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="any"
-              value={pay}
-              onChange={(e) => onFieldChange('pay', e.target.value)}
-              disabled={disabled}
-              placeholder={payLabel}
-              aria-label={payLabel}
-              className={`w-full py-0.5 ${inputClass}`}
-            />
-          </label>
           <label
-            className={`order-3 col-start-1 row-start-2 ${TRADE_RATE_FIELD_CLASS} sm:order-2`}
+            className={`col-start-2 row-start-1 ${TRADE_RATE_FIELD_CLASS} sm:order-2`}
           >
             <input
               id={`${prefix}Rate`}
@@ -1674,37 +1725,32 @@ export function VnTradeForm({
               className={`w-full py-0.5 ${rateInputClass}`}
             />
           </label>
-          <div className="order-4 col-span-2 row-start-3 flex shrink-0 justify-end gap-1 sm:col-span-1 sm:row-start-auto sm:order-4">
-            {!isEditing && (
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={onClear}
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            )}
-            <button
-              type="submit"
+          <label className="col-start-1 row-start-2 block min-w-0 sm:order-3 sm:flex-1">
+            <input
+              id={`${prefix}Pay`}
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="any"
+              value={pay}
+              onChange={(e) => onFieldChange('pay', e.target.value)}
               disabled={disabled}
-              className={`rounded px-3 py-1 text-xs font-medium text-white transition focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-                isEditing
-                  ? 'bg-amber-600 hover:bg-amber-700 focus:ring-amber-600/30'
-                  : buttonClass
-              }`}
-            >
-              {isEditing ? '儲存' : 'Add'}
-            </button>
-            {isEditing && (
-              <button
-                type="button"
-                onClick={onCancel}
-                className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-              >
-                取消
-              </button>
-            )}
+              placeholder={payLabel}
+              aria-label={payLabel}
+              className={`w-full py-0.5 ${inputClass}`}
+            />
+          </label>
+          <div className="col-start-2 row-start-2 sm:order-4">
+            <TradeFormMetaCell
+              dateId={`${prefix}Date`}
+              tradeDate={tradeDate}
+              onTradeDateChange={onTradeDateChange}
+              disabled={disabled}
+              isEditing={isEditing}
+              onClear={onClear}
+              onCancel={onCancel}
+              buttonClass={buttonClass}
+            />
           </div>
         </div>
 
@@ -1764,7 +1810,7 @@ export function VnTradeTable({
   const tableClass = mobileRowIndex
     ? VN_TRANSACTION_TABLE_MOBILE_CLASS
     : VN_TRANSACTION_TABLE_CLASS
-  const columnCount = isBuy ? 6 : 7
+  const columnCount = mobileRowIndex ? (isBuy ? 5 : 6) : isBuy ? 6 : 7
   const rateHeader = 'R'
   const vnIndexCell = (extra = '') =>
     mobileRowIndex
@@ -1818,6 +1864,9 @@ export function VnTradeTable({
     <VnTradeTableColGroup isBuy={isBuy} mobileRowIndex={mobileRowIndex} />
   )
 
+  const vnMobileHeaderNum = (extra = '') =>
+    `${VN_MOBILE_NUM_CELL_CLASS} font-medium text-slate-500 text-center ${extra}`
+
   const vnTableHeader = (
     <thead>
       <tr
@@ -1829,17 +1878,51 @@ export function VnTradeTable({
         <th className={vnIndexCell('font-medium text-slate-500')}>
           Date
         </th>
-        <th className={vnAmountCell('whitespace-nowrap font-medium text-right')}>VN</th>
-        <th className={vnCoinCell('whitespace-nowrap text-center font-medium')}>幣</th>
-        <th className={vnNumCell('whitespace-nowrap font-medium')}>金額</th>
-        <th className={vnNumCell('whitespace-nowrap font-medium')}>{rateHeader}</th>
-        {!isBuy && (
-          <th className={vnNumCell('whitespace-nowrap font-medium')}>PF</th>
+        <th
+          className={vnAmountCell(
+            mobileRowIndex
+              ? 'whitespace-nowrap font-medium text-center'
+              : 'whitespace-nowrap font-medium text-right',
+          )}
+        >
+          VN
+        </th>
+        {!mobileRowIndex && (
+          <th className={vnCoinCell('whitespace-nowrap text-center font-medium')}>幣</th>
         )}
         <th
           className={
             mobileRowIndex
-              ? `${VN_MOBILE_ACTION_CELL_CLASS} font-medium`
+              ? vnMobileHeaderNum('whitespace-nowrap')
+              : vnNumCell('whitespace-nowrap font-medium')
+          }
+        >
+          {mobileRowIndex ? 'Pay' : '金額'}
+        </th>
+        <th
+          className={
+            mobileRowIndex
+              ? vnMobileHeaderNum('whitespace-nowrap')
+              : vnNumCell('whitespace-nowrap font-medium')
+          }
+        >
+          {rateHeader}
+        </th>
+        {!isBuy && (
+          <th
+            className={
+              mobileRowIndex
+                ? vnMobileHeaderNum('whitespace-nowrap')
+                : vnNumCell('whitespace-nowrap font-medium')
+            }
+          >
+            PF
+          </th>
+        )}
+        <th
+          className={
+            mobileRowIndex
+              ? `${VN_MOBILE_ACTION_CELL_CLASS} font-medium text-slate-500`
               : `${TRANSACTION_CELL_CLASS} whitespace-nowrap text-right font-medium`
           }
         >
@@ -1870,38 +1953,62 @@ export function VnTradeTable({
           )}
         </td>
         <td className={vnAmountCell('font-medium text-amber-700')}>
-          <span className="block min-w-0 whitespace-nowrap" title={formatNumber(totalVn)}>
-            {formatVnTableCompact(totalVn)}
-          </span>
-        </td>
-        <td className={vnCoinCell()}>
-          {transactions.length > 0 ? (
-            <div
-              className={`flex items-center justify-center ${
-                mobileRowIndex ? 'flex-col gap-0.5' : 'gap-1'
-              }`}
-            >
-              {usdtRowCount > 0 && (
-                <span className="inline-flex items-center gap-0.5">
-                  <VnPayCurrencyBadge currency="usdt" size="xs" />
-                  <span className="text-[11px] font-medium tabular-nums text-sky-700">
-                    {usdtRowCount}
+          <div
+            className={`flex min-w-0 items-center ${
+              mobileRowIndex ? 'justify-end gap-0.5' : 'justify-end'
+            }`}
+          >
+            <span className="block min-w-0 whitespace-nowrap" title={formatNumber(totalVn)}>
+              {formatVnTableCompact(totalVn)}
+            </span>
+            {mobileRowIndex && isBuy && transactions.length > 0 && (
+              <div className="flex shrink-0 flex-col items-center gap-0.5">
+                {usdtRowCount > 0 && (
+                  <span className="inline-flex items-center gap-px">
+                    <VnPayCurrencyBadge currency="usdt" size="xs" />
+                    <span className="text-[9px] font-medium tabular-nums text-sky-700">
+                      {usdtRowCount}
+                    </span>
                   </span>
-                </span>
-              )}
-              {twdRowCount > 0 && (
-                <span className="inline-flex items-center gap-0.5">
-                  <VnPayCurrencyBadge currency="twd" size="xs" />
-                  <span className="text-[11px] font-medium tabular-nums text-emerald-700">
-                    {twdRowCount}
+                )}
+                {twdRowCount > 0 && (
+                  <span className="inline-flex items-center gap-px">
+                    <VnPayCurrencyBadge currency="twd" size="xs" />
+                    <span className="text-[9px] font-medium tabular-nums text-emerald-700">
+                      {twdRowCount}
+                    </span>
                   </span>
-                </span>
-              )}
-            </div>
-          ) : (
-            <span className="text-slate-400">—</span>
-          )}
+                )}
+              </div>
+            )}
+          </div>
         </td>
+        {!mobileRowIndex && (
+          <td className={vnCoinCell()}>
+            {transactions.length > 0 ? (
+              <div className="flex items-center justify-center gap-1">
+                {usdtRowCount > 0 && (
+                  <span className="inline-flex items-center gap-0.5">
+                    <VnPayCurrencyBadge currency="usdt" size="xs" />
+                    <span className="text-[11px] font-medium tabular-nums text-sky-700">
+                      {usdtRowCount}
+                    </span>
+                  </span>
+                )}
+                {twdRowCount > 0 && (
+                  <span className="inline-flex items-center gap-0.5">
+                    <VnPayCurrencyBadge currency="twd" size="xs" />
+                    <span className="text-[11px] font-medium tabular-nums text-emerald-700">
+                      {twdRowCount}
+                    </span>
+                  </span>
+                )}
+              </div>
+            ) : (
+              <span className="text-slate-400">—</span>
+            )}
+          </td>
+        )}
         <td className={vnNumCell('text-slate-400')}>—</td>
         <td className={vnNumCell('text-slate-400')}>—</td>
         {!isBuy && (
@@ -1937,9 +2044,11 @@ export function VnTradeTable({
             {formatVnTableCompact(tx.vnAmount)}
           </span>
         </td>
-        <td className={vnCoinCell()}>
-          <VnPayCurrencyBadge currency={tx.payCurrency} size="xs" />
-        </td>
+        {!mobileRowIndex && (
+          <td className={vnCoinCell()}>
+            <VnPayCurrencyBadge currency={tx.payCurrency} size="xs" />
+          </td>
+        )}
         <td
           className={vnNumCell(
             tx.payCurrency === 'usdt'
@@ -1947,22 +2056,40 @@ export function VnTradeTable({
               : 'font-medium text-emerald-700',
           )}
         >
-          <span
-            className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
-            title={
-              tx.payCurrency === 'usdt'
+          {mobileRowIndex ? (
+            <div className="flex min-w-0 items-center justify-end gap-0.5">
+              <span
+                className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
+                title={
+                  tx.payCurrency === 'usdt'
+                    ? formatNumber(tx.usdtAmount)
+                    : formatTwd(tx.twdAmount)
+                }
+              >
+                {tx.payCurrency === 'usdt'
+                  ? formatNumber(tx.usdtAmount)
+                  : formatTwdTableCompact(tx.twdAmount)}
+              </span>
+              <VnPayCurrencyBadge currency={tx.payCurrency} size="xs" />
+            </div>
+          ) : (
+            <span
+              className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
+              title={
+                tx.payCurrency === 'usdt'
+                  ? formatNumber(tx.usdtAmount)
+                  : formatTwd(tx.twdAmount)
+              }
+            >
+              {tx.payCurrency === 'usdt'
                 ? formatNumber(tx.usdtAmount)
-                : formatTwd(tx.twdAmount)
-            }
-          >
-            {tx.payCurrency === 'usdt'
-              ? formatNumber(tx.usdtAmount)
-              : formatTwdTableCompact(tx.twdAmount)}
-          </span>
+                : formatTwdTableCompact(tx.twdAmount)}
+            </span>
+          )}
         </td>
         <td className={vnNumCell()}>
           {mobileRowIndex ? (
-            vnMobileRateCell(tx.rate, tx.payCurrency)
+            vnMobileRateCell(tx.rate, tx.payCurrency, false)
           ) : (
             <>
               <span className="tabular-nums text-slate-600">
@@ -1981,16 +2108,16 @@ export function VnTradeTable({
         {!isBuy && (
           <td
             className={vnNumCell(
-              profitInfo !== undefined
-                ? profitColorClass(profitInfo.profit)
-                : 'text-slate-400',
+              `text-[11px] font-semibold ${
+                profitInfo !== undefined
+                  ? profitColorClass(profitInfo.profit)
+                  : 'text-slate-400'
+              }`,
             )}
           >
-            <span className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-              {profitInfo?.unitCost !== null && profitInfo !== undefined
-                ? formatProfit(profitInfo.profit)
-                : '—'}
-            </span>
+            {profitInfo?.unitCost !== null && profitInfo !== undefined
+              ? formatProfit(profitInfo.profit)
+              : '—'}
           </td>
         )}
         <td className={mobileRowIndex ? VN_MOBILE_ACTION_CELL_CLASS : TRANSACTION_ACTION_CELL_CLASS}>
@@ -2042,7 +2169,7 @@ export function VnTradeTable({
 
   return (
     <div className={scrollOuterClass}>
-      <div className={mobileRowIndex ? 'max-w-full shrink-0 pr-1.5' : undefined}>
+      <div className={mobileRowIndex ? 'max-w-full shrink-0' : undefined}>
         <table className={tableClass}>
           {vnColGroup}
           {vnTableHeader}
@@ -2073,7 +2200,7 @@ export function VnTradeTable({
           />
         )}
       </div>
-      <div className={mobileRowIndex ? 'max-w-full shrink-0 pr-1.5' : undefined}>
+      <div className={mobileRowIndex ? 'max-w-full shrink-0' : undefined}>
         <table className={tableClass}>
           {vnColGroup}
           {vnTableFooter}
@@ -2211,7 +2338,7 @@ export function NotebookPanel({
   onDelete,
 }: NotebookPanelProps) {
   const sorted = useMemo(
-    () => [...entries].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()),
+    () => [...entries].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
     [entries],
   )
 
@@ -2238,7 +2365,6 @@ export function NotebookPanel({
               disabled={disabled}
               onChange={(e) => onDraftChange(e.target.value)}
               rows={3}
-              placeholder="例：xxx 投入資本 150w"
               className="mt-1 w-full resize-y rounded-md border border-slate-200 px-2 py-1.5 text-base leading-relaxed text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 disabled:bg-slate-50 sm:text-sm"
             />
             {error && (
@@ -2288,9 +2414,6 @@ export function NotebookPanel({
                   <div className="min-w-0 flex-1">
                     <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800">
                       {entry.text}
-                    </p>
-                    <p className="mt-0.5 text-[10px] tabular-nums text-slate-400">
-                      {formatSettlementDateTime(entry.updatedAt)}
                     </p>
                   </div>
                   <div className="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
@@ -2436,13 +2559,13 @@ export function SettlementRecordBody({
       }`}
     >
       <div className={SETTLEMENT_METRIC_CLASS}>
-        <p className="text-[10px] font-medium text-slate-500">TWD</p>
+        <p className="text-[10px] font-medium text-slate-500">T</p>
         <p className="mt-0.5 text-sm font-bold tabular-nums text-emerald-600">
           {formatTwd(twdBalance)}
         </p>
       </div>
       <div className={SETTLEMENT_METRIC_CLASS}>
-        <p className="text-[10px] font-medium text-slate-500">USDT</p>
+        <p className="text-[10px] font-medium text-slate-500">P</p>
         <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1 gap-y-0">
           <p className="text-sm font-bold tabular-nums text-sky-600">
             {formatNumber(usdtBalance)}
@@ -2494,7 +2617,7 @@ export function SettlementRecordBody({
         </div>
       )}
       <div className="col-span-2 min-w-0 lg:col-span-1 [&>div]:h-full">
-        <TotalAssetsColumn assets={displayAssets} />
+        <TotalAssetsColumn assets={displayAssets} titleLabel="TOTAL" showCurrencySuffix={false} />
       </div>
     </div>
   )
@@ -2619,13 +2742,13 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                   : 'text-slate-500'
             }`}
           >
-            {formatProfit(cumulativeTotalProfit)} TWD
+            {formatProfit(cumulativeTotalProfit)}
           </p>
         </div>
         {showCumulativeSplit && (
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0 text-[10px] tabular-nums">
             <span className={profitColorClass(cumulativeUsdtProfit)}>
-              U 累計 {formatProfit(cumulativeUsdtProfit)}
+              P 累計 {formatProfit(cumulativeUsdtProfit)}
             </span>
             <span className={profitColorClass(cumulativeVnProfit)}>
               VN 累計 {formatProfit(cumulativeVnProfit)}
@@ -3211,7 +3334,7 @@ export function AppNav({
   }[] = [
     {
       tab: 'daily',
-      label: 'details',
+      label: 'TRANS',
       icon: (_active) => (
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
@@ -3220,7 +3343,7 @@ export function AppNav({
     },
     {
       tab: 'settlements',
-      label: 'DS',
+      label: 'SET.',
       icon: (_active) => (
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
@@ -3229,7 +3352,7 @@ export function AppNav({
     },
     {
       tab: 'expenses',
-      label: 'EXPENSE',
+      label: 'EXP',
       icon: (_active) => (
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a4.5 4.5 0 0 0 4.5 4.5h10.5a4.5 4.5 0 0 0 4.5-4.5v-9a4.5 4.5 0 0 0-4.5-4.5H6.75a4.5 4.5 0 0 0-4.5 4.5v9Z" />

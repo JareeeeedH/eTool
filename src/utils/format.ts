@@ -192,6 +192,13 @@ export function isValidDateInputValue(value: string): boolean {
   return dateInputValueFromDate(timestampFromDateInput(value)) === value
 }
 
+/** 表單第四格日期顯示：26/07/03 */
+export function formatTradeMetaDateDisplay(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return value
+  return `${match[1].slice(-2)}/${match[2]}/${match[3]}`
+}
+
 /** 將 date input 與既有時間（或現在）合併為 timestamp */
 export function timestampFromDateInput(dateStr: string, timeSource: Date = new Date()): Date {
   const [y, m, d] = dateStr.split('-').map((part) => Number(part))

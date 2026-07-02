@@ -5510,8 +5510,7 @@ function App() {
               mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
             }`}
           >
-            <div className="flex items-center justify-between border-b border-slate-200 px-2.5 py-2">
-              <p className="text-sm font-semibold text-slate-800">選單</p>
+            <div className="flex items-center justify-end border-b border-slate-200 px-2.5 py-2">
               <button
                 type="button"
                 aria-label="關閉選單"

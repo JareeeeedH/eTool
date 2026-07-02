@@ -109,7 +109,7 @@ import {
 } from './components'
 
 const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'expenses' | 'notes'>, string> = {
-  settlements: 'DS',
+  settlements: 'SET.',
   monthly: 'MONTH',
 }
 
@@ -1565,11 +1565,7 @@ function App() {
               mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
             }`}
           >
-            <div className="flex items-center justify-between border-b border-slate-200/70 bg-white/90 px-4 py-3 backdrop-blur-sm">
-              <div>
-                <p className="text-[10px] font-medium tracking-wide text-slate-400">MENU</p>
-                <p className="text-sm font-semibold text-slate-800">選單</p>
-              </div>
+            <div className="flex items-center justify-end border-b border-slate-200/70 bg-white/90 px-4 py-3 backdrop-blur-sm">
               <button
                 type="button"
                 aria-label="關閉選單"

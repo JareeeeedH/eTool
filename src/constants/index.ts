@@ -34,9 +34,20 @@ export const EXPENSE_INPUT_CLASS =
 export const TRADE_INPUT_CLASS =
   'w-full rounded border border-slate-300 px-1.5 py-1 text-base tabular-nums placeholder:text-slate-400 sm:text-xs outline-none transition disabled:bg-slate-50'
 
-/** 買賣表單：手機兩行格線、桌面單行 flex */
+/** 買賣表單：手機 2×2（P/R/T + 日期按鈕格）；右欄略寬以容納日期 */
 export const TRADE_FORM_GRID_CLASS =
-  'grid grid-cols-2 gap-1 sm:flex sm:items-center sm:gap-1'
+  'grid grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] grid-rows-2 gap-1.5 sm:flex sm:grid-cols-none sm:items-center sm:gap-1'
+
+/** 第四格：日期 + Cancel / Add 同一行併排 */
+export const TRADE_FORM_META_CELL_CLASS =
+  'flex min-h-0 min-w-0 items-center gap-0.5 sm:gap-1 sm:shrink-0'
+
+/** 買賣表單按鈕（第四格內與日期併排） */
+export const TRADE_FORM_ACTIONS_CLASS =
+  'min-w-[2.35rem] max-sm:min-h-[2.125rem] max-sm:flex-1 shrink-0 rounded border border-slate-300 bg-white px-3 py-1.5 text-center text-[10px] leading-tight text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:min-w-0 sm:min-h-0 sm:flex-none sm:px-2 sm:py-1 sm:text-xs'
+
+export const TRADE_FORM_SUBMIT_CLASS =
+  'min-w-[2.35rem] max-sm:min-h-[2.125rem] max-sm:flex-1 shrink-0 rounded px-3 py-1.5 text-center text-[10px] font-medium leading-tight text-white transition focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:min-h-0 sm:flex-none sm:px-3 sm:py-1 sm:text-xs'
 
 /** 買賣表單匯率欄容器：桌面版略寬 */
 export const TRADE_RATE_FIELD_CLASS = 'block min-w-0 sm:w-[7rem] sm:shrink-0'
@@ -87,18 +98,18 @@ export const TRANSACTION_INDEX_CELL_CLASS =
   'align-middle w-0 whitespace-nowrap p-0 pl-0 pr-px text-center text-[10px] tabular-nums leading-none'
 /** 交易明細手機版日期欄 */
 export const TRANSACTION_MOBILE_DATE_CELL_CLASS =
-  'align-middle w-[3.25rem] min-w-[3.25rem] max-w-[3.25rem] shrink-0 whitespace-nowrap px-0 pr-0.5 text-left text-[10px] tabular-nums leading-tight text-slate-500'
+  'align-middle whitespace-nowrap px-0 pr-px text-left text-[11px] tabular-nums leading-tight text-slate-500'
 /** VN 手機表：日期欄 */
 export const VN_MOBILE_INDEX_CELL_CLASS = TRANSACTION_MOBILE_DATE_CELL_CLASS
 export const VN_MOBILE_CELL_CLASS = 'align-middle px-0.5 text-[13px] leading-none'
 export const VN_MOBILE_VN_CELL_CLASS =
-  'align-middle w-[3.5rem] min-w-[3.5rem] max-w-[3.5rem] shrink-0 pl-0 pr-1 text-right tabular-nums leading-tight text-[12px]'
+  'align-middle min-w-0 pl-0 pr-px text-right tabular-nums leading-tight text-[12px]'
 export const VN_MOBILE_COIN_CELL_CLASS =
-  'align-middle w-[1.25rem] min-w-[1.25rem] max-w-[1.25rem] shrink-0 px-0 text-center text-[12px] leading-none'
+  'align-middle shrink-0 px-0 text-center text-[12px] leading-none'
 export const VN_MOBILE_NUM_CELL_CLASS =
   'align-middle min-w-0 px-0.5 text-right tabular-nums leading-tight text-[12px]'
 export const VN_MOBILE_ACTION_CELL_CLASS =
-  'align-middle w-[2.5rem] min-w-[2.5rem] shrink-0 whitespace-nowrap p-0 text-right leading-none'
+  'align-middle whitespace-nowrap px-0.5 text-right leading-none'
 export const TRANSACTION_NUM_CELL_CLASS =
   'align-middle px-1 text-right tabular-nums leading-none'
 export const TRANSACTION_ACTION_CELL_CLASS =
