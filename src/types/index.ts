@@ -8,7 +8,7 @@ export type DailyWorkTab = 'usdt' | 'vn'
 export type DailyMobileTradePane = 'buy_u' | 'sell_u' | 'buy_vn' | 'sell_vn'
 export type FiatCurrency = 'twd' | 'vn'
 export type VnPayCurrency = 'twd' | 'usdt'
-export type ExpenseType = 'rent' | 'fuel' | 'parking' | 'meal' | 'telecom' | 'misc' | 'other'
+export type ExpenseType = 'fuel' | 'parking' | 'meal' | 'traffic' | 'other'
 export type PageTab = 'daily' | 'expenses' | 'settlements' | 'monthly' | 'notes'
 export type AccentColor = 'emerald' | 'rose' | 'violet' | 'orange'
 

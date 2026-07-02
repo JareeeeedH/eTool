@@ -27,15 +27,15 @@ import type {
   TotalAssetsTwd,
   UsdtTransaction,
   VnPayCurrency,
-  ExpenseType,
 } from '../types'
 import {
   EXPENSE_INPUT_CLASS,
-  EXPENSE_QUICK_TYPES,
   EXPENSE_TABLE_CLASS,
   EXPENSE_TYPE_OPTIONS,
+  EMPTY_DATA_LABEL,
   TRADE_FORM_GRID_CLASS,
   TRADE_INPUT_CLASS,
+  TRADE_PANE_CODE,
   TRADE_RATE_INPUT_CLASS,
   TRADE_RATE_FIELD_CLASS,
   TRANSACTION_CELL_CLASS,
@@ -862,7 +862,7 @@ export function TransactionTable({
   onEdit,
   onDelete,
   accent,
-  sideLabel,
+  sideLabel: _sideLabel,
   showDayAverage = false,
   sellProfitById,
   visibleRows = 8,
@@ -978,7 +978,7 @@ export function TransactionTable({
   const emptyBody = (
     <tr style={TRANSACTION_DATA_ROW_STYLE}>
       <td colSpan={emptyColSpan} className={`${TRANSACTION_CELL_CLASS} py-8 text-center`}>
-        <p className="text-sm text-slate-400">尚無{sideLabel}紀錄</p>
+        <p className="text-sm text-slate-400">{EMPTY_DATA_LABEL}</p>
       </td>
     </tr>
   )
@@ -1336,33 +1336,28 @@ export function DailyWorkTabBar({
 
 const MOBILE_TRADE_PANES: {
   id: DailyMobileTradePane
-  code: string
   activeClass: string
   idleClass: string
 }[] = [
   {
     id: 'buy_u',
-    code: 'IE',
     activeClass:
       'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-600/25',
     idleClass: 'text-emerald-800/70 hover:bg-white/70 hover:text-emerald-900',
   },
   {
     id: 'sell_u',
-    code: 'OE',
     activeClass: 'bg-rose-600 text-white shadow-sm ring-1 ring-rose-600/25',
     idleClass: 'text-rose-800/70 hover:bg-white/70 hover:text-rose-900',
   },
   {
     id: 'buy_vn',
-    code: 'IV',
     activeClass:
       'bg-violet-600 text-white shadow-sm ring-1 ring-violet-600/25',
     idleClass: 'text-violet-800/70 hover:bg-white/70 hover:text-violet-900',
   },
   {
     id: 'sell_vn',
-    code: 'OV',
     activeClass: 'bg-amber-600 text-white shadow-sm ring-1 ring-amber-600/25',
     idleClass: 'text-amber-900/70 hover:bg-white/70 hover:text-amber-950',
   },
@@ -1399,7 +1394,7 @@ export function DailyMobileTradeTabBar({
               }`}
             >
               <span className="block text-[13px] font-bold leading-none tracking-tight">
-                {pane.code}
+                {TRADE_PANE_CODE[pane.id]}
               </span>
             </button>
           )
@@ -1757,7 +1752,7 @@ export function VnTradeTable({
   onEdit,
   onDelete,
   accent,
-  sideLabel,
+  sideLabel: _sideLabel,
   sellProfitById,
   visibleRows = 8,
   bodyScrollRef,
@@ -2032,7 +2027,7 @@ export function VnTradeTable({
                   colSpan={columnCount}
                   className={`${TRANSACTION_CELL_CLASS} py-8 text-center`}
                 >
-                  <p className="text-sm text-slate-400">尚無{sideLabel}紀錄</p>
+                  <p className="text-sm text-slate-400">{EMPTY_DATA_LABEL}</p>
                 </td>
               </tr>
             ) : (
@@ -2101,49 +2096,28 @@ export function ExpenseForm({
   onSubmit,
   onCancel,
 }: ExpenseFormProps) {
-  const isQuickType = EXPENSE_QUICK_TYPES.includes(expenseType)
-
   return (
     <form onSubmit={onSubmit}>
       <div className="mb-1 flex flex-wrap items-center gap-0.5">
-        {EXPENSE_QUICK_TYPES.map((type) => (
-            <button
-              key={type}
-              type="button"
-              disabled={disabled}
-              onClick={() => onExpenseTypeChange(type)}
-              className={`rounded-full px-2 py-px text-[10px] font-medium transition disabled:opacity-50 ${
-                expenseType === type
-                  ? 'bg-orange-600 text-white shadow-sm'
-                  : 'border border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:text-orange-700'
-              }`}
-            >
-              {expenseTypeLabel(type)}
-            </button>
-          ))}
-          <select
-            value={isQuickType ? '' : expenseType}
+        {EXPENSE_TYPE_OPTIONS.map((item) => (
+          <button
+            key={item.value}
+            type="button"
             disabled={disabled}
-            onChange={(e) => {
-              if (e.target.value) {
-                onExpenseTypeChange(e.target.value as ExpenseType)
-              }
-            }}
-            className="rounded-full border border-slate-200 bg-white px-1.5 py-px text-base text-slate-600 outline-none transition focus:border-orange-500 disabled:bg-slate-50 sm:text-[10px]"
+            onClick={() => onExpenseTypeChange(item.value)}
+            className={`rounded-full px-2 py-px text-[10px] font-medium transition disabled:opacity-50 ${
+              expenseType === item.value
+                ? 'bg-orange-600 text-white shadow-sm'
+                : 'border border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:text-orange-700'
+            }`}
           >
-            <option value="">更多</option>
-            {EXPENSE_TYPE_OPTIONS.filter(
-              (item) => !EXPENSE_QUICK_TYPES.includes(item.value),
-            ).map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </select>
+            {item.label}
+          </button>
+        ))}
       </div>
       <div className="flex items-center gap-1">
         <label className="flex min-w-0 flex-[1.1] items-center gap-1 text-[11px] text-slate-600">
-          <span className="shrink-0">金額</span>
+          <span className="shrink-0">AMOUNT</span>
           <input
             type="number"
             inputMode="numeric"
@@ -2157,7 +2131,7 @@ export function ExpenseForm({
           />
         </label>
         <label className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-slate-600">
-          <span className="shrink-0">備註</span>
+          <span className="shrink-0">NOTE</span>
           <input
             type="text"
             value={note}
@@ -2298,7 +2272,7 @@ export function NotebookPanel({
             <span className="ml-1 font-normal text-slate-500">{entries.length} 則</span>
           </h2>
           {sorted.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-400">尚無筆記</p>
+            <p className="py-6 text-center text-sm text-slate-400">{EMPTY_DATA_LABEL}</p>
           ) : (
             <ul className="divide-y divide-slate-100">
               {sorted.map((entry, index) => (
@@ -2389,11 +2363,11 @@ export function ExpenseTable({
         className="border-b border-slate-200 text-[11px] text-slate-500"
         style={{ height: `${TRANSACTION_HEAD_REM}rem` }}
       >
-        <th className={`w-[3.25rem] ${TRANSACTION_CELL_CLASS} font-medium`}>日期</th>
-        <th className={`w-14 ${TRANSACTION_CELL_CLASS} font-medium`}>類別</th>
-        <th className={`w-[4.5rem] ${TRANSACTION_CELL_CLASS} text-right font-medium`}>金額</th>
-        <th className={`${TRANSACTION_CELL_CLASS} font-medium`}>備註</th>
-        <th className={`w-12 ${TRANSACTION_CELL_CLASS} text-right font-medium`}>操作</th>
+        <th className={`w-[3.25rem] ${TRANSACTION_CELL_CLASS} font-medium`}>DATE</th>
+        <th className={`w-14 ${TRANSACTION_CELL_CLASS} font-medium`}>CATEGORY</th>
+        <th className={`w-[4.5rem] ${TRANSACTION_CELL_CLASS} text-right font-medium`}>AMOUNT</th>
+        <th className={`${TRANSACTION_CELL_CLASS} font-medium`}>NOTE</th>
+        <th className={`w-12 ${TRANSACTION_CELL_CLASS} text-right font-medium`} />
       </tr>
     </thead>
   )
@@ -2404,7 +2378,7 @@ export function ExpenseTable({
         colSpan={5}
         className={`${TRANSACTION_CELL_CLASS} py-8 text-center`}
       >
-        <p className="text-sm text-slate-400">尚無開銷紀錄</p>
+        <p className="text-sm text-slate-400">{EMPTY_DATA_LABEL}</p>
       </td>
     </tr>
   )
@@ -2567,7 +2541,7 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
   if (settlements.length === 0) {
     return (
       <p className="rounded-lg border border-slate-200 bg-white py-8 text-center text-xs text-slate-400 shadow-sm">
-        尚無結算紀錄
+        {EMPTY_DATA_LABEL}
       </p>
     )
   }
@@ -3148,7 +3122,7 @@ export function MonthlyClosesList({
 
       {closes.length === 0 ? (
         <p className="rounded-lg border border-slate-200 bg-white py-8 text-center text-xs text-slate-400 shadow-sm">
-          尚無月結紀錄
+          {EMPTY_DATA_LABEL}
         </p>
       ) : (
         closes.map((item) => {
@@ -3237,7 +3211,7 @@ export function AppNav({
   }[] = [
     {
       tab: 'daily',
-      label: '每日明細',
+      label: 'details',
       icon: (_active) => (
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
@@ -3246,7 +3220,7 @@ export function AppNav({
     },
     {
       tab: 'settlements',
-      label: '每日結算',
+      label: 'DS',
       icon: (_active) => (
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
@@ -3255,7 +3229,7 @@ export function AppNav({
     },
     {
       tab: 'expenses',
-      label: '營業開銷',
+      label: 'EXPENSE',
       icon: (_active) => (
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a4.5 4.5 0 0 0 4.5 4.5h10.5a4.5 4.5 0 0 0 4.5-4.5v-9a4.5 4.5 0 0 0-4.5-4.5H6.75a4.5 4.5 0 0 0-4.5 4.5v9Z" />
@@ -3265,7 +3239,7 @@ export function AppNav({
     },
     {
       tab: 'notes',
-      label: '筆記本',
+      label: 'NOTE',
       icon: (_active) => (
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 18H15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 15 4.5h-4.5A2.25 2.25 0 0 0 8.25 6.75v11.25A2.25 2.25 0 0 0 10.5 20.25Z" />
@@ -3274,7 +3248,7 @@ export function AppNav({
     },
     {
       tab: 'monthly',
-      label: '月結',
+      label: 'MONTH',
       icon: (_active) => (
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />

@@ -1,16 +1,32 @@
-import type { Balances, ExpenseType } from '../types'
+import type { Balances, DailyMobileTradePane, ExpenseType } from '../types'
+
+/** 四格交易簡稱（手機 tab / 電腦表單標題共用） */
+export const TRADE_PANE_CODE: Record<DailyMobileTradePane, string> = {
+  buy_u: 'IE',
+  sell_u: 'OE',
+  buy_vn: 'IV',
+  sell_vn: 'OV',
+}
+
+export function tradePaneEditLabel(pane: DailyMobileTradePane): string {
+  return `編輯 ${TRADE_PANE_CODE[pane]}`
+}
+
+export function tradePaneEditingBannerLabel(pane: DailyMobileTradePane): string {
+  return `正在編輯 ${TRADE_PANE_CODE[pane]}`
+}
 
 export const EXPENSE_TYPE_OPTIONS: { value: ExpenseType; label: string }[] = [
-  { value: 'rent', label: '車租' },
-  { value: 'fuel', label: '油資' },
-  { value: 'parking', label: '停車' },
-  { value: 'meal', label: '餐費' },
-  { value: 'telecom', label: '通訊' },
-  { value: 'misc', label: '雜支' },
-  { value: 'other', label: '其他' },
+  { value: 'fuel', label: 'OIL' },
+  { value: 'parking', label: 'PARK' },
+  { value: 'meal', label: 'FOOD' },
+  { value: 'traffic', label: 'Traffic' },
+  { value: 'other', label: 'OTHER' },
 ]
 
 export const EXPENSE_QUICK_TYPES: ExpenseType[] = ['fuel', 'parking', 'meal']
+
+export const EMPTY_DATA_LABEL = 'no data'
 
 export const EXPENSE_INPUT_CLASS =
   'w-full rounded border border-slate-300 px-1.5 py-0.5 text-base sm:text-xs outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50'
@@ -44,12 +60,10 @@ export const EMPTY_USDT_COST = { twd: null, vn: null } as const
 export const RATE_DEVIATION_LIMIT_RATIO = 0.05
 
 export const EMPTY_EXPENSE_BY_CATEGORY: Record<ExpenseType, number> = {
-  rent: 0,
   fuel: 0,
   parking: 0,
   meal: 0,
-  telecom: 0,
-  misc: 0,
+  traffic: 0,
   other: 0,
 }
 

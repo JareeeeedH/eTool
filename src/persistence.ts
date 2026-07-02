@@ -35,7 +35,7 @@ type DailyWorkTab = 'usdt' | 'vn'
 type FiatCurrency = 'twd' | 'vn'
 type TransactionType = 'buy' | 'sell'
 type VnPayCurrency = 'twd' | 'usdt'
-type ExpenseType = 'rent' | 'fuel' | 'parking' | 'meal' | 'telecom' | 'misc' | 'other'
+type ExpenseType = 'fuel' | 'parking' | 'meal' | 'traffic' | 'other'
 
 interface Balances {
   twd: number
@@ -186,16 +186,13 @@ function parseVnPayCurrency(value: unknown): VnPayCurrency {
 }
 
 function parseExpenseType(value: unknown): ExpenseType {
-  const allowed: ExpenseType[] = [
-    'rent',
-    'fuel',
-    'parking',
-    'meal',
-    'telecom',
-    'misc',
-    'other',
-  ]
-  return allowed.includes(value as ExpenseType) ? (value as ExpenseType) : 'other'
+  if (value === 'fuel' || value === 'parking' || value === 'meal' || value === 'traffic') {
+    return value
+  }
+  if (value === 'other' || value === 'rent' || value === 'telecom' || value === 'misc') {
+    return 'other'
+  }
+  return 'other'
 }
 
 function parseVnTradeRecord(
@@ -396,18 +393,22 @@ function parseOptionalDate(value: unknown): Date | null {
 
 function parseExpenseByCategory(value: unknown): Record<ExpenseType, number> {
   const defaults: Record<ExpenseType, number> = {
-    rent: 0,
     fuel: 0,
     parking: 0,
     meal: 0,
-    telecom: 0,
-    misc: 0,
+    traffic: 0,
     other: 0,
   }
   if (!isRecord(value)) return defaults
-  for (const key of Object.keys(defaults) as ExpenseType[]) {
-    defaults[key] = parseNumber(value[key])
-  }
+  defaults.fuel = parseNumber(value.fuel)
+  defaults.parking = parseNumber(value.parking)
+  defaults.meal = parseNumber(value.meal)
+  defaults.traffic = parseNumber(value.traffic)
+  defaults.other =
+    parseNumber(value.other) +
+    parseNumber(value.rent) +
+    parseNumber(value.telecom) +
+    parseNumber(value.misc)
   return defaults
 }
 

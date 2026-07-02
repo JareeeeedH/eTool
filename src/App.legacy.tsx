@@ -7,16 +7,14 @@ type DailyWorkTab = 'usdt' | 'vn'
 type FiatCurrency = 'twd' | 'vn'
 type VnPayCurrency = 'twd' | 'usdt'
 
-type ExpenseType = 'rent' | 'fuel' | 'parking' | 'meal' | 'telecom' | 'misc' | 'other'
+type ExpenseType = 'fuel' | 'parking' | 'meal' | 'traffic' | 'other'
 
 const EXPENSE_TYPE_OPTIONS: { value: ExpenseType; label: string }[] = [
-  { value: 'rent', label: '車租' },
-  { value: 'fuel', label: '油資' },
-  { value: 'parking', label: '停車' },
-  { value: 'meal', label: '餐費' },
-  { value: 'telecom', label: '通訊' },
-  { value: 'misc', label: '雜支' },
-  { value: 'other', label: '其他' },
+  { value: 'fuel', label: 'OIL' },
+  { value: 'parking', label: 'PARK' },
+  { value: 'meal', label: 'FOOD' },
+  { value: 'traffic', label: 'Traffic' },
+  { value: 'other', label: 'OTHER' },
 ]
 
 const EXPENSE_QUICK_TYPES: ExpenseType[] = ['fuel', 'parking', 'meal']
@@ -1206,12 +1204,10 @@ function assembleExpenseSettlementsForMonthlyClose(
 }
 
 const EMPTY_EXPENSE_BY_CATEGORY: Record<ExpenseType, number> = {
-  rent: 0,
   fuel: 0,
   parking: 0,
   meal: 0,
-  telecom: 0,
-  misc: 0,
+  traffic: 0,
   other: 0,
 }
 

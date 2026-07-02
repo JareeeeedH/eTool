@@ -27,7 +27,7 @@ import type {
   VnPayCurrency,
   VnTradeTransaction,
 } from './types'
-import { EMPTY_USDT_COST, INITIAL_BALANCES } from './constants'
+import { EMPTY_USDT_COST, INITIAL_BALANCES, TRADE_PANE_CODE, tradePaneEditLabel, tradePaneEditingBannerLabel } from './constants'
 import {
   formatRateCalc,
   formatVnRateCalc,
@@ -109,8 +109,8 @@ import {
 } from './components'
 
 const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'expenses' | 'notes'>, string> = {
-  settlements: '每日結算',
-  monthly: '月結',
+  settlements: 'DS',
+  monthly: 'MONTH',
 }
 
 function dailyTradePaneClass(
@@ -1123,13 +1123,13 @@ function App() {
 
   const editingBannerLabel =
     editingCategory === 'buy'
-      ? '正在編輯收P'
+      ? tradePaneEditingBannerLabel('buy_u')
       : editingCategory === 'sell'
-        ? '正在編輯出P'
+        ? tradePaneEditingBannerLabel('sell_u')
         : editingCategory === 'vn_buy'
-          ? '正在編輯買入 VN'
+          ? tradePaneEditingBannerLabel('buy_vn')
           : editingCategory === 'vn_sell'
-            ? '正在編輯賣出 VN'
+            ? tradePaneEditingBannerLabel('sell_vn')
             : editingCategory === 'expense'
               ? '正在編輯開銷'
               : isEditingNote
@@ -1653,8 +1653,8 @@ function App() {
                   <div className={formCardClass('emerald', isEditingBuy)}>
                     <TradeForm
                       type="buy"
-                      title="收P"
-                      editTitle="編輯收P"
+                      title={TRADE_PANE_CODE.buy_u}
+                      editTitle={tradePaneEditLabel('buy_u')}
                       usdt={buyUsdtAmount}
                       fiat={buyFiatAmount}
                       rate={buyRate}
@@ -1702,8 +1702,8 @@ function App() {
                   <div className={formCardClass('rose', isEditingSell)}>
                     <TradeForm
                       type="sell"
-                      title="出P"
-                      editTitle="編輯出P"
+                      title={TRADE_PANE_CODE.sell_u}
+                      editTitle={tradePaneEditLabel('sell_u')}
                       usdt={sellUsdtAmount}
                       fiat={sellFiatAmount}
                       rate={sellRate}
@@ -1752,8 +1752,8 @@ function App() {
                   <div className={formCardClass('violet', isEditingVnBuy)}>
                     <VnTradeForm
                       type="buy"
-                      title="買入 VN"
-                      editTitle="編輯買入 VN"
+                      title={TRADE_PANE_CODE.buy_vn}
+                      editTitle={tradePaneEditLabel('buy_vn')}
                       payCurrency={vnBuyPayCurrency}
                       onPayCurrencyChange={setVnBuyPayCurrency}
                       vn={vnBuyVnAmount}
@@ -1805,8 +1805,8 @@ function App() {
                   <div className={formCardClass('rose', isEditingVnSell)}>
                     <VnTradeForm
                       type="sell"
-                      title="賣出 VN"
-                      editTitle="編輯賣出 VN"
+                      title={TRADE_PANE_CODE.sell_vn}
+                      editTitle={tradePaneEditLabel('sell_vn')}
                       payCurrency={vnSellPayCurrency}
                       onPayCurrencyChange={setVnSellPayCurrency}
                       vn={vnSellVnAmount}
@@ -1898,7 +1898,7 @@ function App() {
                 </div>
                 <div className={`${recordCardClass('orange')} flex flex-col`}>
                   <h2 className="mb-1 shrink-0 text-[11px] font-semibold leading-none text-orange-700">
-                    開銷紀錄
+                    EXPENSE
                   </h2>
                   <ExpenseTable
                     transactions={expenseTransactions}
