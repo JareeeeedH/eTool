@@ -564,7 +564,13 @@ export async function savePersistedAppStateAsync(state: PersistedAppState): Prom
       body: JSON.stringify(state),
     })
     if (!res.ok) {
-      console.error('[persistence] PUT /api/state failed:', res.status)
+      let detail = ''
+      try {
+        detail = await res.text()
+      } catch {
+        // ignore
+      }
+      console.error('[persistence] PUT /api/state failed:', res.status, detail)
       return false
     }
     return true

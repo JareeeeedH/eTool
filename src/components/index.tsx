@@ -390,7 +390,7 @@ export function TotalAssetsColumn({
         className={`${valueClass}${dense ? ' flex flex-wrap items-center justify-center gap-1' : ''}`}
         title={formatTwd(assets.total)}
       >
-        {formatTwd(assets.total)}
+        {formatTwdTableCompact(assets.total)}
         {dense && !assets.isComplete && (
           <span className="rounded bg-amber-100 px-1 py-px text-[8px] font-medium text-amber-700">
             部分
@@ -2146,7 +2146,7 @@ export function ExpenseForm({
             disabled={disabled}
             className="rounded bg-orange-600 px-2.5 py-0.5 text-xs font-medium text-white transition hover:bg-orange-700 focus:ring-2 focus:ring-orange-600/30 disabled:opacity-50"
           >
-            {isEditing ? '儲存' : '新增'}
+            {isEditing ? '儲存' : 'Add'}
           </button>
           {isEditing && (
             <button
@@ -2261,7 +2261,7 @@ export function NotebookPanel({
                 disabled={disabled}
                 className="rounded bg-sky-600 px-2.5 py-0.5 text-xs font-medium text-white transition hover:bg-sky-700 focus:ring-2 focus:ring-sky-600/30 disabled:opacity-50"
               >
-                {editingId ? '儲存' : '新增'}
+                {editingId ? '儲存' : 'Add'}
               </button>
             </div>
           </form>
