@@ -101,7 +101,7 @@ export function formatUsdtCostRateDisplay(value: number): string {
 }
 
 export function formatVnNtdCostRate(rate: number): string {
-  return `1 NTD = ${formatVnTradeRateDisplay(rate)} VN`
+  return `1 T = ${formatVnTradeRateDisplay(rate)} VN`
 }
 
 /** VN 池成本：四捨五入至小數第一位（1 NTD = ? VN） */
@@ -119,7 +119,7 @@ export function formatVnNtdCostRateCompact(rate: number): string {
 }
 
 export function formatVnUsdtCostRate(rate: number): string {
-  return `1 U = ${formatVnTradeRateDisplay(rate)} VN`
+  return `1 P = ${formatVnTradeRateDisplay(rate)} VN`
 }
 
 export function formatVnUsdtCostRateCompact(rate: number): string {
@@ -127,11 +127,15 @@ export function formatVnUsdtCostRateCompact(rate: number): string {
 }
 
 export function formatProfit(value: number): string {
-  const rounded = roundTwd(value)
-  const prefix = rounded > 0 ? '+' : ''
-  return `${prefix}${rounded.toLocaleString('zh-TW', {
-    maximumFractionDigits: 0,
-  })}`
+  const rounded = roundTwdTableCompact(value)
+  if (rounded === 0) return '0'
+  const prefix = rounded > 0 ? '+' : '−'
+  return `${prefix}${Math.abs(rounded).toFixed(2)}`
+}
+
+/** @deprecated 與 formatProfit 相同（萬位縮寫，四捨五入至小數第二位） */
+export function formatProfitCompact(value: number): string {
+  return formatProfit(value)
 }
 
 /** 利潤率（相對成本），四捨五入至小數第 2 位 */
@@ -160,7 +164,7 @@ export function formatSettlementDateTime(date: Date): string {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-  })} 結算`
+  })}`
 }
 
 export function formatTableDateTime(date: Date): string {

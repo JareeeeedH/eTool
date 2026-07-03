@@ -70,6 +70,7 @@ import {
   assetCode,
   formatNumber,
   formatProfit,
+  formatProfitCompact,
   formatProfitMarginPercent,
   formatUsdtTradeRateDisplay,
   formatVnTradeRateDisplay,
@@ -1206,10 +1207,10 @@ export function TradeForm({
 
   if (usdtValid && fiatValid) {
     if (type === 'buy') {
-      previewText = `−TWD ${formatTwd(fiatNum)} · +USDT ${formatNumber(usdtNum)}`
+      previewText = `−T ${formatTwdTableCompact(fiatNum)} · +P ${formatNumber(usdtNum)}`
       previewWarn = fiatNum > balances.twd
     } else {
-      previewText = `−USDT ${formatNumber(usdtNum)} · +TWD ${formatTwd(fiatNum)}`
+      previewText = `−P ${formatNumber(usdtNum)} · +T ${formatTwdTableCompact(fiatNum)}`
       previewWarn = usdtNum > balances.usdt
       const sellProfit = computeUsdtSellProfitPreview(
         openingBalances,
@@ -1222,7 +1223,7 @@ export function TradeForm({
       if (sellProfit !== null && sellProfit.unitCost !== null) {
         const marginPct = formatProfitMarginPercent(sellProfit.profit, sellProfit.costBasis)
         profitPreview = {
-          text: `成本 ${formatTwd(sellProfit.costBasis)}（@${formatUsdtCostRateDisplay(sellProfit.unitCost)}）· PF ${formatProfit(sellProfit.profit)}${
+          text: `PF ${formatProfitCompact(sellProfit.profit)}${
             marginPct ? `（${marginPct}）` : ''
           }`,
           value: sellProfit.profit,
@@ -1550,7 +1551,7 @@ export function VnPayCurrencyToggle({
           : 'text-slate-600 hover:text-sky-700'
       }`}
     >
-      {buySide ? 'P 買' : '換 P'}
+      {buySide ? 'OE' : 'IE'}
     </button>
   )
   const twdButton = (
@@ -1565,7 +1566,7 @@ export function VnPayCurrencyToggle({
           : 'text-slate-600 hover:text-emerald-700'
       }`}
     >
-      {buySide ? 'T 買' : '換 T'}
+      {buySide ? 'OT' : 'IT'}
     </button>
   )
 
@@ -1599,7 +1600,6 @@ export function VnTradeForm({
   buttonClass,
   focusClass,
   balances,
-  usdtInventoryCostTwd,
   openingBalances,
   openingVnTwdRate,
   openingVnUsdtRate,
@@ -1632,22 +1632,13 @@ export function VnTradeForm({
   let profitPreview: { text: string; value: number } | null = null
   if (vnValid && payValid) {
     const payDisplay =
-      payCurrency === 'usdt' ? formatNumber(payNum) : formatTwd(payNum)
+      payCurrency === 'usdt' ? formatNumber(payNum) : formatTwdTableCompact(payNum)
     if (type === 'buy') {
-      previewText = `−${payLabel} ${payDisplay} · +VN ${formatNumber(vnNum)}`
+      previewText = `−${payLabel} ${payDisplay} · +VN ${formatVnTableCompact(vnNum)}`
       previewWarn =
         payCurrency === 'twd' ? payNum > balances.twd : payNum > balances.usdt
-      if (payCurrency === 'usdt' && usdtInventoryCostTwd !== null && usdtInventoryCostTwd > 0) {
-        const impliedVnTwd = vnNum / (payNum * usdtInventoryCostTwd)
-        previewText += ` · ${formatVnNtdCostRate(impliedVnTwd)}`
-        previewText += ` · ${formatVnUsdtCostRate(vnNum / payNum)}`
-      } else if (payCurrency === 'twd' && usdtInventoryCostTwd !== null && usdtInventoryCostTwd > 0) {
-        const impliedVnTwd = vnNum / payNum
-        previewText += ` · ${formatVnNtdCostRate(impliedVnTwd)}`
-        previewText += ` · ${formatVnUsdtCostRate(impliedVnTwd * usdtInventoryCostTwd)}`
-      }
     } else {
-      previewText = `−VN ${formatNumber(vnNum)} · +${payLabel} ${payDisplay}`
+      previewText = `−VN ${formatVnTableCompact(vnNum)} · +${payLabel} ${payDisplay}`
       previewWarn = vnNum > balances.vn
       const sellProfit = computeVnSellProfitPreview(
         openingBalances,
@@ -1661,10 +1652,9 @@ export function VnTradeForm({
         excludeTransactionId,
       )
       if (sellProfit !== null) {
-        const proceeds = sellProfit.costBasis + sellProfit.profit
         const marginPct = formatProfitMarginPercent(sellProfit.profit, sellProfit.costBasis)
         profitPreview = {
-          text: `花費 ${formatTwd(sellProfit.costBasis)} · 收款 ${formatTwd(proceeds)} · PF ${formatProfit(sellProfit.profit)}${
+          text: `PF ${formatProfitCompact(sellProfit.profit)}${
             marginPct ? `（${marginPct}）` : ''
           }`,
           value: sellProfit.profit,
@@ -2560,8 +2550,11 @@ export function SettlementRecordBody({
     >
       <div className={SETTLEMENT_METRIC_CLASS}>
         <p className="text-[10px] font-medium text-slate-500">T</p>
-        <p className="mt-0.5 text-sm font-bold tabular-nums text-emerald-600">
-          {formatTwd(twdBalance)}
+        <p
+          className="mt-0.5 text-sm font-bold tabular-nums text-emerald-600"
+          title={formatTwd(twdBalance)}
+        >
+          {formatTwdTableCompact(twdBalance)}
         </p>
       </div>
       <div className={SETTLEMENT_METRIC_CLASS}>
@@ -2577,15 +2570,21 @@ export function SettlementRecordBody({
           )}
         </div>
         {usdtBalance > 0 && displayAssets.usdtInTwd !== null && (
-          <p className="mt-0.5 text-[10px] tabular-nums text-sky-600/80">
-            估值 {formatTwd(displayAssets.usdtInTwd)}
+          <p
+            className="mt-0.5 text-[10px] tabular-nums text-sky-600/80"
+            title={formatTwd(displayAssets.usdtInTwd)}
+          >
+            估值 {formatTwdTableCompact(displayAssets.usdtInTwd)}
           </p>
         )}
       </div>
       <div className={SETTLEMENT_METRIC_CLASS}>
         <p className="text-[10px] font-medium text-slate-500">VN</p>
-        <p className="mt-0.5 text-sm font-bold tabular-nums text-amber-600">
-          {formatNumber(vnBalance)}
+        <p
+          className="mt-0.5 text-sm font-bold tabular-nums text-amber-600"
+          title={formatNumber(vnBalance)}
+        >
+          {formatVnTableCompact(vnBalance)}
         </p>
         {vnBalance > 0 && (vnPoolRate !== null || vnUsdtPoolRate !== null) && (
           <div className="mt-0.5 flex items-center gap-1.5 text-[10px] tabular-nums text-slate-400">
@@ -2598,8 +2597,11 @@ export function SettlementRecordBody({
           </div>
         )}
         {vnBalance > 0 && displayAssets.vnInTwd !== null && (
-          <p className="mt-0.5 text-[10px] tabular-nums text-amber-600/80">
-            估值 {formatTwd(displayAssets.vnInTwd)}
+          <p
+            className="mt-0.5 text-[10px] tabular-nums text-amber-600/80"
+            title={formatTwd(displayAssets.vnInTwd)}
+          >
+            估值 {formatTwdTableCompact(displayAssets.vnInTwd)}
           </p>
         )}
       </div>
@@ -2730,7 +2732,7 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
           <p className="text-xs font-medium text-indigo-900">
             累計總PF
             <span className="ml-1.5 text-[10px] font-normal text-indigo-700/70">
-              共 {settlements.length} 次結算
+              共 {settlements.length} 次
             </span>
           </p>
           <p

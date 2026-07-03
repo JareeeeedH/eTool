@@ -1927,12 +1927,10 @@ function App() {
             </div>
           ) : activeTab === 'settlements' ? (
             <>
-              <h1 className="mb-2 shrink-0 text-sm font-semibold text-slate-800">每日結算</h1>
               <SettlementsPanel settlements={settlements} />
             </>
           ) : (
             <>
-              <h1 className="mb-2 shrink-0 text-sm font-semibold text-slate-800">月結</h1>
               <MonthlyClosesList
                 closes={monthlyCloses}
                 expandedId={selectedMonthlyCloseId}
