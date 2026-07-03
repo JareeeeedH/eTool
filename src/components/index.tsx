@@ -83,9 +83,7 @@ import {
   formatTwd,
   formatTwdTableCompact,
   formatVnTableCompact,
-  formatVnNtdCostRate,
   formatVnNtdCostRateCompact,
-  formatVnUsdtCostRate,
   formatVnUsdtCostRateCompact,
   profitColorClass,
 } from '../utils/format'
