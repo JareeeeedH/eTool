@@ -1,5 +1,17 @@
-import type { FormValues, UsdtTradeField, VnTradeField, VnTradeFormValues } from '../types'
-import { roundVnTradeRate } from './format'
+import type {
+  FormValues,
+  UsdtTradeField,
+  VnPayCurrency,
+  VnTradeField,
+  VnTradeFormValues,
+} from '../types'
+import {
+  formatTwdCompactInput,
+  formatVnCompactInput,
+  parseTwdTableCompactInput,
+  parseVnTableCompactInput,
+  roundVnTradeRate,
+} from './format'
 
 export function calculateRate(fiatAmount: number, usdtAmount: number): number {
   if (usdtAmount <= 0) return 0
@@ -13,7 +25,7 @@ export function parsePositive(value: string): number | null {
 }
 
 export function formatFiatInput(value: number): string {
-  return String(Math.round(value))
+  return formatTwdCompactInput(value)
 }
 
 export function formatVnRateCalc(value: number): string {
@@ -24,7 +36,6 @@ export function formatRateCalc(value: number): string {
   return String(value)
 }
 
-
 export function formatUsdtInput(value: number): string {
   return (Math.round(value * 100) / 100).toString()
 }
@@ -32,7 +43,7 @@ export function formatUsdtInput(value: number): string {
 function countFilledUsdtFields(usdtStr: string, fiatStr: string, rateStr: string): UsdtTradeField[] {
   const filled: UsdtTradeField[] = []
   if (parsePositive(usdtStr)) filled.push('usdt')
-  if (parsePositive(fiatStr)) filled.push('fiat')
+  if (parseTwdTableCompactInput(fiatStr)) filled.push('fiat')
   if (parsePositive(rateStr)) filled.push('rate')
   return filled
 }
@@ -64,7 +75,7 @@ export function resolveUsdtTradeFields(
   }
 
   const usdt = parsePositive(usdtStr)!
-  const fiat = parsePositive(fiatStr)
+  const fiat = parseTwdTableCompactInput(fiatStr)
   const rate = parsePositive(rateStr)
 
   if (filled.includes('usdt') && filled.includes('rate')) {
@@ -121,7 +132,7 @@ export function syncFormFields(
   }
 
   const usdt = parsePositive(next.usdt)
-  const fiat = parsePositive(next.fiat)
+  const fiat = parseTwdTableCompactInput(next.fiat)
   const rate = parsePositive(next.rate)
 
   switch (field) {
@@ -155,6 +166,7 @@ export function syncVnTradeFormFields(
   field: 'vn' | 'pay' | 'rate',
   value: string,
   current: VnTradeFormValues,
+  payCurrency: VnPayCurrency = 'twd',
 ): VnTradeFormValues {
   const next: VnTradeFormValues = {
     vn: field === 'vn' ? value : current.vn,
@@ -162,28 +174,34 @@ export function syncVnTradeFormFields(
     rate: field === 'rate' ? value : current.rate,
   }
 
-  const vn = parsePositive(next.vn)
-  const pay = parsePositive(next.pay)
+  const vn = parseVnTableCompactInput(next.vn)
+  const pay =
+    payCurrency === 'twd'
+      ? parseTwdTableCompactInput(next.pay)
+      : parsePositive(next.pay)
   const rate = parsePositive(next.rate)
+
+  const formatPay = (amount: number) =>
+    payCurrency === 'twd' ? formatTwdCompactInput(amount) : formatUsdtInput(amount)
 
   switch (field) {
     case 'vn':
       if (vn && rate) {
-        next.pay = formatFiatInput(vn / rate)
+        next.pay = formatPay(vn / rate)
       } else if (vn && pay) {
         next.rate = formatVnRateCalc(vn / pay)
       }
       break
     case 'rate':
       if (pay && rate) {
-        next.vn = formatFiatInput(pay * rate)
+        next.vn = formatVnCompactInput(pay * rate)
       } else if (rate && vn) {
-        next.pay = formatFiatInput(vn / rate)
+        next.pay = formatPay(vn / rate)
       }
       break
     case 'pay':
       if (pay && rate) {
-        next.vn = formatFiatInput(pay * rate)
+        next.vn = formatVnCompactInput(pay * rate)
       } else if (pay && vn) {
         next.rate = formatVnRateCalc(vn / pay)
       }
@@ -193,10 +211,19 @@ export function syncVnTradeFormFields(
   return next
 }
 
-function countFilledVnFields(vnStr: string, payStr: string, rateStr: string): VnTradeField[] {
+function parseVnPayInput(payStr: string, payCurrency: VnPayCurrency): number | null {
+  return payCurrency === 'twd' ? parseTwdTableCompactInput(payStr) : parsePositive(payStr)
+}
+
+function countFilledVnFields(
+  vnStr: string,
+  payStr: string,
+  rateStr: string,
+  payCurrency: VnPayCurrency,
+): VnTradeField[] {
   const filled: VnTradeField[] = []
-  if (parsePositive(vnStr)) filled.push('vn')
-  if (parsePositive(payStr)) filled.push('pay')
+  if (parseVnTableCompactInput(vnStr)) filled.push('vn')
+  if (parseVnPayInput(payStr, payCurrency)) filled.push('pay')
   if (parsePositive(rateStr)) filled.push('rate')
   return filled
 }
@@ -217,8 +244,9 @@ export function resolveVnTradeFields(
   vnStr: string,
   payStr: string,
   rateStr: string,
+  payCurrency: VnPayCurrency = 'twd',
 ): ResolvedVnTrade {
-  const filled = countFilledVnFields(vnStr, payStr, rateStr)
+  const filled = countFilledVnFields(vnStr, payStr, rateStr, payCurrency)
 
   if (filled.length < 2) {
     return { ok: false, error: '請輸入兩項，第三項將自動計算' }
@@ -227,8 +255,8 @@ export function resolveVnTradeFields(
     return { ok: false, error: '請只填兩項，第三項會自動計算' }
   }
 
-  const vn = parsePositive(vnStr)
-  const pay = parsePositive(payStr)
+  const vn = parseVnTableCompactInput(vnStr)
+  const pay = parseVnPayInput(payStr, payCurrency)
   const rate = parsePositive(rateStr)
 
   if (filled.includes('vn') && filled.includes('rate')) {

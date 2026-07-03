@@ -68,6 +68,39 @@ export function formatVnTableCompact(value: number): string {
   })
 }
 
+const TWD_TABLE_COMPACT_UNIT = 10_000
+const VN_TABLE_COMPACT_UNIT = 100_000_000
+
+/** 表單 T 輸入：萬位縮寫 → 台幣 */
+export function parseTwdTableCompactInput(value: string, allowZero = false): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const n = Number(trimmed)
+  if (Number.isNaN(n) || n < 0 || (!allowZero && n <= 0)) return null
+  const compact = Math.round(n * 100) / 100
+  return Math.round(compact * TWD_TABLE_COMPACT_UNIT)
+}
+
+/** 表單 VN 輸入：億位縮寫 → VN 數量 */
+export function parseVnTableCompactInput(value: string, allowZero = false): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const n = Number(trimmed)
+  if (Number.isNaN(n) || n < 0 || (!allowZero && n <= 0)) return null
+  const compact = Math.round(n * 10_000) / 10_000
+  return Math.round(compact * VN_TABLE_COMPACT_UNIT)
+}
+
+export function formatTwdCompactInput(value: number): string {
+  return formatTwdTableCompact(value)
+}
+
+/** 表單 VN 輸入顯示（不含千分位） */
+export function formatVnCompactInput(value: number): string {
+  const rounded = roundVnTableCompact(value)
+  return rounded.toFixed(4).replace(/\.?0+$/, '')
+}
+
 export function roundMoney(value: number): number {
   return Math.round(value * 100) / 100
 }

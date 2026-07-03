@@ -1613,7 +1613,7 @@ export function VnTradeForm({
   const payLabel = assetCode(payCurrency)
 
   const resolvedPreview = useMemo(() => {
-    const resolved = resolveVnTradeFields(vn, pay, rate)
+    const resolved = resolveVnTradeFields(vn, pay, rate, payCurrency)
     return resolved.ok ? resolved : null
   }, [vn, pay, rate])
 
@@ -2237,9 +2237,9 @@ export function ExpenseForm({
           <span className="shrink-0">AMOUNT</span>
           <input
             type="number"
-            inputMode="numeric"
+            inputMode="decimal"
             min="0"
-            step="1"
+            step="any"
             value={amount}
             disabled={disabled}
             onChange={(e) => onAmountChange(e.target.value)}

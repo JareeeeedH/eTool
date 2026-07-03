@@ -76,7 +76,11 @@ import {
 import {
   dateInputValueFromDate,
   formatSettlementDateTime,
+  formatTwdCompactInput,
+  formatVnCompactInput,
   isValidDateInputValue,
+  parseTwdTableCompactInput,
+  parseVnTableCompactInput,
   timestampFromDateInput,
   todayDateInputValue,
 } from './utils/format'
@@ -715,8 +719,8 @@ function App() {
     setVnBuyError('')
     setVnSellError('')
 
-    const amount = parseFloat(expenseAmount)
-    if (Number.isNaN(amount) || amount <= 0) {
+    const amount = parseTwdTableCompactInput(expenseAmount)
+    if (amount === null) {
       setExpenseError('請輸入有效的正數金額')
       return
     }
@@ -904,7 +908,7 @@ function App() {
       return
     }
 
-    const resolved = resolveVnTradeFields(vnStr, payStr, rateStr)
+    const resolved = resolveVnTradeFields(vnStr, payStr, rateStr, payCurrency)
     if (!resolved.ok) {
       setError(resolved.error)
       return
@@ -1017,12 +1021,12 @@ function App() {
 
     if (tx.type === 'buy') {
       setBuyUsdtAmount(String(tx.usdtAmount))
-      setBuyFiatAmount(String(tx.fiatAmount))
+      setBuyFiatAmount(formatTwdCompactInput(tx.fiatAmount))
       setBuyRate(formatRateCalc(tx.rate))
       setBuyTradeDate(dateInputValueFromDate(tx.timestamp))
     } else {
       setSellUsdtAmount(String(tx.usdtAmount))
-      setSellFiatAmount(String(tx.fiatAmount))
+      setSellFiatAmount(formatTwdCompactInput(tx.fiatAmount))
       setSellRate(formatRateCalc(tx.rate))
       setSellTradeDate(dateInputValueFromDate(tx.timestamp))
     }
@@ -1043,14 +1047,22 @@ function App() {
 
     if (normalized.type === 'buy') {
       setVnBuyPayCurrency(normalized.payCurrency)
-      setVnBuyVnAmount(String(normalized.vnAmount))
-      setVnBuyPayAmount(String(vnTradePayAmount(normalized)))
+      setVnBuyVnAmount(formatVnCompactInput(normalized.vnAmount))
+      setVnBuyPayAmount(
+        normalized.payCurrency === 'twd'
+          ? formatTwdCompactInput(vnTradePayAmount(normalized))
+          : String(vnTradePayAmount(normalized)),
+      )
       setVnBuyRate(formatVnRateCalc(normalized.rate))
       setVnBuyTradeDate(dateInputValueFromDate(normalized.timestamp))
     } else {
       setVnSellPayCurrency(normalized.payCurrency)
-      setVnSellVnAmount(String(normalized.vnAmount))
-      setVnSellPayAmount(String(vnTradePayAmount(normalized)))
+      setVnSellVnAmount(formatVnCompactInput(normalized.vnAmount))
+      setVnSellPayAmount(
+        normalized.payCurrency === 'twd'
+          ? formatTwdCompactInput(vnTradePayAmount(normalized))
+          : String(vnTradePayAmount(normalized)),
+      )
       setVnSellRate(formatVnRateCalc(normalized.rate))
       setVnSellTradeDate(dateInputValueFromDate(normalized.timestamp))
     }
@@ -1067,7 +1079,7 @@ function App() {
     setVnSellError('')
     setExpenseError('')
     setExpenseType(tx.expenseType)
-    setExpenseAmount(String(tx.amountTwd))
+    setExpenseAmount(formatTwdCompactInput(tx.amountTwd))
     setExpenseNote(tx.note)
   }
 
@@ -1328,11 +1340,16 @@ function App() {
     vnTwdRate: number | null
     vnUsdtRate: number | null
   } | null => {
-    const twd = Number(openingBalanceForm.twd.trim())
+    const twd = parseTwdTableCompactInput(openingBalanceForm.twd.trim(), true)
     const usdt = Number(openingBalanceForm.usdt.trim())
-    const vn = Number(openingBalanceForm.vn.trim())
+    const vn = parseVnTableCompactInput(openingBalanceForm.vn.trim(), true)
 
-    if (![twd, usdt, vn].every((value) => Number.isFinite(value) && value >= 0)) {
+    if (
+      twd === null ||
+      !Number.isFinite(usdt) ||
+      usdt < 0 ||
+      vn === null
+    ) {
       setOpeningBalanceError('TWD / USDT / VN 請輸入有效的非負數')
       return null
     }

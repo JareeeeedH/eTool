@@ -28,8 +28,10 @@ import {
   formatArchiveDateRange,
   formatNumber,
   formatSettlementDate,
+  formatTwdCompactInput,
   formatUsdtTradeRateDisplay,
   formatTwd,
+  formatVnCompactInput,
   formatVnTradeRateDisplay,
   roundUsdtCostRate,
   roundVnPoolCostRate,
@@ -1387,9 +1389,9 @@ export function openingBalanceToForm(
   vnUsdtRate: number | null,
 ): OpeningBalanceForm {
   return {
-    twd: String(balances.twd),
+    twd: formatTwdCompactInput(balances.twd),
     usdt: String(balances.usdt),
-    vn: String(balances.vn),
+    vn: formatVnCompactInput(balances.vn),
     usdtCostTwd: usdtCost.twd !== null ? String(usdtCost.twd) : '',
     usdtCostVn: usdtCost.vn !== null ? String(usdtCost.vn) : '',
     vnTwdRate: vnTwdRate !== null ? String(vnTwdRate) : '',
