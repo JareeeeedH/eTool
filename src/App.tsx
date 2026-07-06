@@ -75,10 +75,12 @@ import {
 } from './domain'
 import {
   dateInputValueFromDate,
+  formatExpenseTwdInput,
   formatSettlementDateTime,
   formatTwdCompactInput,
   formatVnCompactInput,
   isValidDateInputValue,
+  parseExpenseTwdInput,
   parseTwdAdjustInput,
   parseTwdTableCompactInput,
   parseUsdtAdjustInput,
@@ -715,7 +717,7 @@ function App() {
     setVnBuyError('')
     setVnSellError('')
 
-    const amount = parseTwdTableCompactInput(expenseAmount)
+    const amount = parseExpenseTwdInput(expenseAmount)
     if (amount === null) {
       setExpenseError('請輸入有效的正數金額')
       return
@@ -1075,7 +1077,7 @@ function App() {
     setVnSellError('')
     setExpenseError('')
     setExpenseType(tx.expenseType)
-    setExpenseAmount(formatTwdCompactInput(tx.amountTwd))
+    setExpenseAmount(formatExpenseTwdInput(tx.amountTwd))
     setExpenseNote(tx.note)
   }
 
@@ -1682,9 +1684,6 @@ function App() {
                     />
                   </div>
                   <div className={recordCardClass('emerald')}>
-                    <h2 className="mb-1 hidden shrink-0 text-[11px] font-semibold leading-none text-emerald-700 sm:block">
-                      買入紀錄
-                    </h2>
                     <TransactionTable
                       transactions={buyTransactions}
                       editingId={editingId}
@@ -1732,9 +1731,6 @@ function App() {
                     />
                   </div>
                   <div className={recordCardClass('rose')}>
-                    <h2 className="mb-1 hidden shrink-0 text-[11px] font-semibold leading-none text-rose-700 sm:block">
-                      賣出紀錄
-                    </h2>
                     <TransactionTable
                       transactions={sellTransactions}
                       editingId={editingId}
@@ -1786,9 +1782,6 @@ function App() {
                     />
                   </div>
                   <div className={recordCardClass('violet')}>
-                    <h2 className="mb-1 hidden shrink-0 text-xs font-semibold leading-none text-violet-700 sm:block">
-                      買入紀錄
-                    </h2>
                     <VnTradeTable
                       transactions={vnBuyTransactions}
                       editingId={editingId}
@@ -1840,9 +1833,6 @@ function App() {
                     />
                   </div>
                   <div className={recordCardClass('rose')}>
-                    <h2 className="mb-1 hidden shrink-0 text-xs font-semibold leading-none text-amber-700 sm:block">
-                      賣出紀錄
-                    </h2>
                     <VnTradeTable
                       transactions={vnSellTransactions}
                       editingId={editingId}

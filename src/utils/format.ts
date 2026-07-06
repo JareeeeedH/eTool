@@ -46,6 +46,20 @@ export function formatTwd(value: number): string {
   })
 }
 
+/** 開銷金額輸入：完整台幣（非萬位縮寫） */
+export function parseExpenseTwdInput(value: string): number | null {
+  const trimmed = value.trim().replace(/,/g, '')
+  if (!trimmed) return null
+  const n = Number(trimmed)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return Math.trunc(n)
+}
+
+/** 開銷金額編輯欄顯示：完整台幣 */
+export function formatExpenseTwdInput(value: number): string {
+  return String(Math.trunc(value))
+}
+
 /** T 欄縮寫（總覽／交易明細）：以萬為單位，四捨五入至小數第二位 */
 export function roundTwdTableCompact(value: number): number {
   return Math.round((value / 10_000) * 100) / 100

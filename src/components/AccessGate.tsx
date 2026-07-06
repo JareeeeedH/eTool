@@ -1,5 +1,17 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { isDeviceAuthed, markDeviceAuthed, verifyAccessPin } from '../auth/deviceAccess'
+import {
+  DEVICE_LOCK_MS,
+  isDeviceAuthed,
+  markDeviceAuthed,
+  markDeviceHidden,
+  resumeDeviceAuth,
+  touchDeviceActivity,
+  verifyAccessPin,
+} from '../auth/deviceAccess'
+
+const LOCK_CHECK_INTERVAL_MS = 30_000
+
+const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const
 
 export function AccessGate({ children }: { children: ReactNode }) {
   const [authed, setAuthed] = useState(() => isDeviceAuthed())
@@ -13,11 +25,51 @@ export function AccessGate({ children }: { children: ReactNode }) {
     }
   }, [authed])
 
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        markDeviceHidden()
+        return
+      }
+      setAuthed(resumeDeviceAuth())
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [])
+
+  useEffect(() => {
+    if (!authed) return
+
+    const bumpActivity = () => {
+      touchDeviceActivity()
+    }
+
+    for (const eventName of ACTIVITY_EVENTS) {
+      window.addEventListener(eventName, bumpActivity, { passive: true })
+    }
+
+    const lockTimer = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return
+      if (!isDeviceAuthed()) {
+        setAuthed(false)
+      }
+    }, Math.min(LOCK_CHECK_INTERVAL_MS, DEVICE_LOCK_MS))
+
+    return () => {
+      for (const eventName of ACTIVITY_EVENTS) {
+        window.removeEventListener(eventName, bumpActivity)
+      }
+      window.clearInterval(lockTimer)
+    }
+  }, [authed])
+
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
     if (verifyAccessPin(pin)) {
       markDeviceAuthed()
       setError('')
+      setPin('')
       setAuthed(true)
       return
     }
@@ -37,22 +89,32 @@ export function AccessGate({ children }: { children: ReactNode }) {
           <input
             ref={inputRef}
             type="password"
-            inputMode="numeric"
+            inputMode="text"
             autoComplete="off"
-            maxLength={8}
+            maxLength={16}
             value={pin}
             onChange={(event) => {
               setPin(event.target.value)
               if (error) setError('')
             }}
-            className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-center text-base tracking-[0.3em] text-slate-800 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-500/20 sm:text-sm"
+            className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-center text-base tracking-[0.15em] text-slate-800 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-500/20 sm:text-sm"
             aria-label="驗證碼"
           />
           <button
             type="submit"
-            className="shrink-0 rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500/30"
+            aria-label="確認"
+            className="flex shrink-0 items-center justify-center rounded bg-slate-900 p-2 text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-500/30"
           >
-            OK
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
           </button>
         </div>
         {error && (

@@ -22,3 +22,14 @@ describe('compact input parsing', () => {
     expect(parseVnTableCompactInput('0', true)).toBe(0)
   })
 })
+
+describe('expense twd input', () => {
+  it('parses full twd amount without 萬 scaling', () => {
+    expect(parseExpenseTwdInput('2600000')).toBe(2_600_000)
+    expect(formatExpenseTwdInput(2_600_000)).toBe('2600000')
+  })
+
+  it('parses comma-separated twd amount', () => {
+    expect(parseExpenseTwdInput('2,600,300')).toBe(2_600_300)
+  })
+})
