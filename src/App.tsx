@@ -82,7 +82,6 @@ import {
   isValidDateInputValue,
   parseExpenseTwdInput,
   parseTwdAdjustInput,
-  parseTwdTableCompactInput,
   parseUsdtAdjustInput,
   parseVnAdjustInput,
   timestampFromDateInput,
@@ -266,6 +265,8 @@ function App() {
   }, [])
 
   useEffect(() => {
+    // 切換分頁時關閉手機選單
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- tab change should collapse mobile nav
     setMobileNavOpen(false)
   }, [activeTab])
 

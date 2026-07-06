@@ -255,7 +255,7 @@ export function createUsdtInventoryState(
   openingBalances: Balances,
   openingCost: UsdtInventoryCost,
 ): UsdtInventoryState {
-  let usdtQty = openingBalances.usdt
+  const usdtQty = openingBalances.usdt
   const openingUnitTwd =
     openingCost.twd !== null ? roundUsdtCostRate(openingCost.twd) : 0
   let twdCostTotal = openingUnitTwd * usdtQty
@@ -503,7 +503,7 @@ function createVnTradePoolState(
   openingUsdtCost: UsdtInventoryCost,
 ): VnTradePoolState {
   const usdtState = createUsdtInventoryState(openingBalances, openingUsdtCost)
-  let vnQty = openingBalances.vn
+  const vnQty = openingBalances.vn
   let vnTwdCostTotal =
     openingVnTwdRate !== null && openingVnTwdRate > 0 && vnQty > 0
       ? vnQty / roundVnPoolCostRate(openingVnTwdRate)
