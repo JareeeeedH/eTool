@@ -438,9 +438,9 @@ export interface MonthlyCloseModalProps {
 
 
 export interface OpeningBalanceForm {
-  twd: string
-  usdt: string
-  vn: string
+  twdAdjust: string
+  usdtAdjust: string
+  vnAdjust: string
   usdtCostTwd: string
   usdtCostVn: string
   vnTwdRate: string
@@ -449,6 +449,7 @@ export interface OpeningBalanceForm {
 
 export interface OpeningBalanceModalProps {
   open: boolean
+  currentBalances: Balances
   form: OpeningBalanceForm
   error: string
   onFieldChange: (field: keyof OpeningBalanceForm, value: string) => void

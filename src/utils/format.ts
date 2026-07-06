@@ -101,6 +101,60 @@ export function formatVnCompactInput(value: number): string {
   return rounded.toFixed(4).replace(/\.?0+$/, '')
 }
 
+export type ParseAdjustResult = number | 'invalid'
+
+function parseSignedCompactAdjust(
+  value: string,
+  parseMagnitude: (raw: string, allowZero: boolean) => number | null,
+): ParseAdjustResult {
+  const trimmed = value.trim()
+  if (!trimmed) return 0
+
+  let sign = 1
+  let raw = trimmed
+  if (raw.startsWith('+')) {
+    raw = raw.slice(1).trim()
+  } else if (raw.startsWith('-')) {
+    sign = -1
+    raw = raw.slice(1).trim()
+  }
+  if (!raw) return 'invalid'
+
+  const magnitude = parseMagnitude(raw, true)
+  if (magnitude === null) return 'invalid'
+  return sign * magnitude
+}
+
+/** 期初 T 增減：支援 +20（萬）格式 */
+export function parseTwdAdjustInput(value: string): ParseAdjustResult {
+  return parseSignedCompactAdjust(value, parseTwdTableCompactInput)
+}
+
+/** 期初 VN 增減：支援 +1.2（億）格式 */
+export function parseVnAdjustInput(value: string): ParseAdjustResult {
+  return parseSignedCompactAdjust(value, parseVnTableCompactInput)
+}
+
+/** 期初 USDT 增減：支援 +1000 格式 */
+export function parseUsdtAdjustInput(value: string): ParseAdjustResult {
+  const trimmed = value.trim()
+  if (!trimmed) return 0
+
+  let sign = 1
+  let raw = trimmed
+  if (raw.startsWith('+')) {
+    raw = raw.slice(1).trim()
+  } else if (raw.startsWith('-')) {
+    sign = -1
+    raw = raw.slice(1).trim()
+  }
+  if (!raw) return 'invalid'
+
+  const magnitude = Number(raw)
+  if (!Number.isFinite(magnitude) || magnitude < 0) return 'invalid'
+  return sign * magnitude
+}
+
 export function roundMoney(value: number): number {
   return Math.round(value * 100) / 100
 }

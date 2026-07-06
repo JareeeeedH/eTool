@@ -81,8 +81,13 @@ import {
   formatTradeMetaDateDisplay,
   formatTransactionTableDate,
   formatTwd,
+  formatTwdCompactInput,
   formatTwdTableCompact,
+  formatVnCompactInput,
   formatVnTableCompact,
+  parseTwdAdjustInput,
+  parseUsdtAdjustInput,
+  parseVnAdjustInput,
   formatVnNtdCostRateCompact,
   formatVnUsdtCostRateCompact,
   profitColorClass,
@@ -139,7 +144,14 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
       aria-labelledby="confirm-dialog-title"
     >
       <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-        <h2 id="confirm-dialog-title" className="text-base font-semibold text-slate-900">
+        <h2
+          id="confirm-dialog-title"
+          className={
+            dialog.tradeSettleSummary
+              ? 'sr-only'
+              : 'text-base font-semibold text-slate-900'
+          }
+        >
           {dialog.title}
         </h2>
         {dialog.tradeSettleSummary ? (
@@ -186,7 +198,7 @@ function TradeSettleConfirmBody({ summary }: { summary: TradeSettleConfirmSummar
   const countCols = summary.showVn ? 'grid-cols-2' : 'grid-cols-1'
 
   return (
-    <div className="mt-3 space-y-3">
+    <div className="space-y-3">
       <div className="flex items-baseline justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
         <span className="text-xs font-medium text-slate-500">交易筆數</span>
         <span className="text-sm font-semibold tabular-nums text-slate-900">
@@ -196,7 +208,7 @@ function TradeSettleConfirmBody({ summary }: { summary: TradeSettleConfirmSummar
 
       <div className={`grid gap-2 ${countCols}`}>
         <div className="rounded-lg border border-slate-200 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">USDT</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">P</p>
           <p className="mt-1 text-xs tabular-nums text-slate-700">
             買 <span className="font-semibold text-slate-900">{summary.usdtBuy}</span>
             <span className="mx-1.5 text-slate-300">·</span>
@@ -221,7 +233,7 @@ function TradeSettleConfirmBody({ summary }: { summary: TradeSettleConfirmSummar
           <div className="mt-2 space-y-1 text-sm tabular-nums">
             {summary.dayUsdtProfit !== null && (
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-slate-500">USDT</span>
+                <span className="text-slate-500">P</span>
                 <span className={`font-medium ${profitColorClass(summary.dayUsdtProfit)}`}>
                   {formatProfit(summary.dayUsdtProfit)}
                 </span>
@@ -3018,6 +3030,7 @@ export function MonthlyCloseModal({
 
 export function OpeningBalanceModal({
   open,
+  currentBalances,
   form,
   error,
   onFieldChange,
@@ -3027,7 +3040,24 @@ export function OpeningBalanceModal({
   if (!open) return null
 
   const fieldClass =
-    'mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1.5 text-base tabular-nums text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 sm:text-sm'
+    'mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1.5 text-[13px] tabular-nums text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 sm:text-sm'
+  const labelClass = 'text-[10px] font-medium text-slate-500'
+
+  const twdAdjust = parseTwdAdjustInput(form.twdAdjust)
+  const usdtAdjust = parseUsdtAdjustInput(form.usdtAdjust)
+  const vnAdjust = parseVnAdjustInput(form.vnAdjust)
+  const hasAdjustInput =
+    form.twdAdjust.trim() !== '' ||
+    form.usdtAdjust.trim() !== '' ||
+    form.vnAdjust.trim() !== ''
+  const previewBalances =
+    twdAdjust !== 'invalid' && usdtAdjust !== 'invalid' && vnAdjust !== 'invalid'
+      ? {
+          twd: currentBalances.twd + twdAdjust,
+          usdt: currentBalances.usdt + usdtAdjust,
+          vn: currentBalances.vn + vnAdjust,
+        }
+      : null
 
   return (
     <div
@@ -3037,49 +3067,86 @@ export function OpeningBalanceModal({
       aria-labelledby="opening-balance-title"
     >
       <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
-        <h2 id="opening-balance-title" className="text-base font-semibold text-slate-900">
-          期初餘額設定
+        <h2 id="opening-balance-title" className="sr-only">
+          期初餘額調整
         </h2>
-        <p className="mt-2 text-sm text-slate-600">
-          設定本帳期起點的庫存與成本。若有進行中流水或日結紀錄，變更前會再確認。
-        </p>
 
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          <label className="text-xs font-medium text-slate-700">
-            TWD
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="grid grid-cols-3 gap-2 text-[13px] tabular-nums text-slate-800 sm:text-sm">
+            <div>
+              <span className={labelClass}>T</span>
+              <p className="font-medium">{formatTwdCompactInput(currentBalances.twd)}</p>
+            </div>
+            <div>
+              <span className={labelClass}>P</span>
+              <p className="font-medium">{formatNumber(currentBalances.usdt)}</p>
+            </div>
+            <div>
+              <span className={labelClass}>VN</span>
+              <p className="font-medium">{formatVnCompactInput(currentBalances.vn)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <label className={labelClass}>
+            T +/-
             <input
               type="text"
               inputMode="decimal"
-              value={form.twd}
-              onChange={(event) => onFieldChange('twd', event.target.value)}
+              placeholder="+20"
+              value={form.twdAdjust}
+              onChange={(event) => onFieldChange('twdAdjust', event.target.value)}
               className={fieldClass}
             />
           </label>
-          <label className="text-xs font-medium text-slate-700">
-            USDT
+          <label className={labelClass}>
+            P +/-
             <input
               type="text"
               inputMode="decimal"
-              value={form.usdt}
-              onChange={(event) => onFieldChange('usdt', event.target.value)}
+              placeholder="+1000"
+              value={form.usdtAdjust}
+              onChange={(event) => onFieldChange('usdtAdjust', event.target.value)}
               className={fieldClass}
             />
           </label>
-          <label className="text-xs font-medium text-slate-700">
-            VN
+          <label className={labelClass}>
+            VN +/-
             <input
               type="text"
               inputMode="decimal"
-              value={form.vn}
-              onChange={(event) => onFieldChange('vn', event.target.value)}
+              placeholder="+1.2"
+              value={form.vnAdjust}
+              onChange={(event) => onFieldChange('vnAdjust', event.target.value)}
               className={fieldClass}
             />
           </label>
         </div>
 
+        {hasAdjustInput && previewBalances && (
+          <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2">
+            <p className="text-[10px] font-medium text-indigo-700">調整後期初</p>
+            <div className="mt-1 grid grid-cols-3 gap-2 text-[13px] tabular-nums text-indigo-900 sm:text-sm">
+              <div>
+                <span className="text-[10px] font-medium text-indigo-600">T</span>
+                <p className="font-medium">{formatTwdCompactInput(previewBalances.twd)}</p>
+              </div>
+              <div>
+                <span className="text-[10px] font-medium text-indigo-600">P</span>
+                <p className="font-medium">{formatNumber(previewBalances.usdt)}</p>
+              </div>
+              <div>
+                <span className="text-[10px] font-medium text-indigo-600">VN</span>
+                <p className="font-medium">{formatVnCompactInput(previewBalances.vn)}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <label className="text-xs font-medium text-slate-700">
-            USDT 成本 (TWD)
+          <label className={labelClass}>
+            P 成本 (T)
             <input
               type="text"
               inputMode="decimal"
@@ -3089,8 +3156,8 @@ export function OpeningBalanceModal({
               className={fieldClass}
             />
           </label>
-          <label className="text-xs font-medium text-slate-700">
-            USDT 成本 (VN)
+          <label className={labelClass}>
+            P 成本 (VN)
             <input
               type="text"
               inputMode="decimal"
@@ -3100,8 +3167,8 @@ export function OpeningBalanceModal({
               className={fieldClass}
             />
           </label>
-          <label className="text-xs font-medium text-slate-700">
-            VN 池成本 (VN/TWD)
+          <label className={labelClass}>
+            VN 池成本 (VN/T)
             <input
               type="text"
               inputMode="decimal"
@@ -3111,8 +3178,8 @@ export function OpeningBalanceModal({
               className={fieldClass}
             />
           </label>
-          <label className="text-xs font-medium text-slate-700">
-            VN 池成本 (VN/U)
+          <label className={labelClass}>
+            VN 池成本 (VN/P)
             <input
               type="text"
               inputMode="decimal"

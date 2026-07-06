@@ -79,8 +79,10 @@ import {
   formatTwdCompactInput,
   formatVnCompactInput,
   isValidDateInputValue,
+  parseTwdAdjustInput,
   parseTwdTableCompactInput,
-  parseVnTableCompactInput,
+  parseUsdtAdjustInput,
+  parseVnAdjustInput,
   timestampFromDateInput,
   todayDateInputValue,
 } from './utils/format'
@@ -191,12 +193,7 @@ function App() {
 
   const [openingBalanceModalOpen, setOpeningBalanceModalOpen] = useState(false)
   const [openingBalanceForm, setOpeningBalanceForm] = useState<OpeningBalanceForm>(() =>
-    openingBalanceToForm(
-      { ...INITIAL_BALANCES },
-      { ...EMPTY_USDT_COST },
-      null,
-      null,
-    ),
+    openingBalanceToForm({ ...EMPTY_USDT_COST }, null, null),
   )
   const [openingBalanceError, setOpeningBalanceError] = useState('')
 
@@ -242,7 +239,6 @@ function App() {
           setTransactions(normalizeLoadedTransactions(data.transactions))
           setOpeningBalanceForm(
             openingBalanceToForm(
-              data.openingBalances,
               data.openingUsdtCost,
               data.openingVnTwdRate ?? null,
               data.openingVnUsdtRate ?? null,
@@ -1244,7 +1240,7 @@ function App() {
         openingVnTwdRate,
         openingVnUsdtRate,
       ),
-      confirmLabel: '確認結算',
+      confirmLabel: '確認',
       variant: 'primary',
       onConfirm: () => {
         setConfirmDialog(null)
@@ -1307,24 +1303,8 @@ function App() {
   }
 
   const handleOpenOpeningBalance = () => {
-    if (tradeTransactions.length > 0) {
-      setConfirmDialog({
-        title: '請先完成每日結算',
-        lines: [
-          `尚有 ${tradeTransactions.length} 筆進行中的交易明細未日結。`,
-          '請先至「每日明細」結算今日交易，再調整期初餘額。',
-        ],
-        confirmLabel: '知道了',
-        variant: 'primary',
-        alertOnly: true,
-        onConfirm: () => setConfirmDialog(null),
-      })
-      return
-    }
-
     setOpeningBalanceForm(
       openingBalanceToForm(
-        openingBalances,
         openingUsdtCost,
         openingVnTwdRate,
         openingVnUsdtRate,
@@ -1340,17 +1320,33 @@ function App() {
     vnTwdRate: number | null
     vnUsdtRate: number | null
   } | null => {
-    const twd = parseTwdTableCompactInput(openingBalanceForm.twd.trim(), true)
-    const usdt = Number(openingBalanceForm.usdt.trim())
-    const vn = parseVnTableCompactInput(openingBalanceForm.vn.trim(), true)
+    const twdAdjust = parseTwdAdjustInput(openingBalanceForm.twdAdjust)
+    if (twdAdjust === 'invalid') {
+      setOpeningBalanceError('T 調整請輸入有效數字，例如 +20（萬）')
+      return null
+    }
+    const usdtAdjust = parseUsdtAdjustInput(openingBalanceForm.usdtAdjust)
+    if (usdtAdjust === 'invalid') {
+      setOpeningBalanceError('USDT 調整請輸入有效數字，例如 +1000')
+      return null
+    }
+    const vnAdjust = parseVnAdjustInput(openingBalanceForm.vnAdjust)
+    if (vnAdjust === 'invalid') {
+      setOpeningBalanceError('VN 調整請輸入有效數字，例如 +1.2（億）')
+      return null
+    }
 
-    if (
-      twd === null ||
-      !Number.isFinite(usdt) ||
-      usdt < 0 ||
-      vn === null
-    ) {
-      setOpeningBalanceError('TWD / USDT / VN 請輸入有效的非負數')
+    const twd = openingBalances.twd + twdAdjust
+    const usdt = openingBalances.usdt + usdtAdjust
+    const vn = openingBalances.vn + vnAdjust
+
+    if (twd < 0 || usdt < 0 || vn < 0) {
+      setOpeningBalanceError('調整後庫存不可為負數')
+      return null
+    }
+
+    if (twdAdjust === 0 && usdtAdjust === 0 && vnAdjust === 0) {
+      setOpeningBalanceError('請輸入至少一項庫存增減')
       return null
     }
 
@@ -1412,11 +1408,6 @@ function App() {
   const handleSaveOpeningBalance = () => {
     if (!parseOpeningBalanceForm()) return
 
-    if (tradeTransactions.length > 0) {
-      setOpeningBalanceError('尚有未日結的交易明細，請先完成每日結算。')
-      return
-    }
-
     const hasActivity =
       transactions.length > 0 ||
       settlements.length > 0 ||
@@ -1429,10 +1420,10 @@ function App() {
     }
 
     setConfirmDialog({
-      title: '確定更新期初餘額？',
+      title: '確定調整期初餘額？',
       lines: [
-        '將更新期初庫存與成本設定。',
-        '既有日結與開銷紀錄不會刪除，但顯示餘額會依新期初重算。',
+        '將在目前期初基礎上套用增減調整。',
+        '既有流水與日結紀錄不會刪除，顯示餘額會依新期初重算。',
       ],
       confirmLabel: '確認儲存',
       variant: 'primary',
@@ -1543,6 +1534,7 @@ function App() {
       />
       <OpeningBalanceModal
         open={openingBalanceModalOpen}
+        currentBalances={openingBalances}
         form={openingBalanceForm}
         error={openingBalanceError}
         onFieldChange={(field, value) =>

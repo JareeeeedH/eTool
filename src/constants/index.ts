@@ -55,7 +55,7 @@ export const TRADE_RATE_FIELD_CLASS = 'block min-w-0 sm:w-[7rem] sm:shrink-0'
 export const TRADE_RATE_INPUT_CLASS =
   'w-full rounded border border-slate-300 px-1.5 py-1 text-base tabular-nums placeholder:text-slate-400 sm:text-sm outline-none transition disabled:bg-slate-50'
 
-export const INITIAL_TWD = 5_000_000
+export const INITIAL_TWD = 0
 export const INITIAL_USDT = 0
 export const INITIAL_VN = 0
 
