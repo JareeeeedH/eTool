@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  defaultTradeDateInputValue,
   formatExpenseTwdInput,
   formatTwdCompactInput,
   formatVnCompactInput,
@@ -33,5 +34,12 @@ describe('expense twd input', () => {
 
   it('parses comma-separated twd amount', () => {
     expect(parseExpenseTwdInput('2,600,300')).toBe(2_600_300)
+  })
+})
+
+describe('defaultTradeDateInputValue', () => {
+  it('offsets today by 9 years and 6 months', () => {
+    const base = new Date(2026, 6, 8, 12, 0, 0)
+    expect(defaultTradeDateInputValue(base)).toBe('2017-01-08')
   })
 })

@@ -75,6 +75,7 @@ import {
 } from './domain'
 import {
   dateInputValueFromDate,
+  defaultTradeDateInputValue,
   formatExpenseTwdInput,
   formatSettlementDateTime,
   formatTwdCompactInput,
@@ -85,7 +86,6 @@ import {
   parseUsdtAdjustInput,
   parseVnAdjustInput,
   timestampFromDateInput,
-  todayDateInputValue,
 } from './utils/format'
 import { formCardClass, recordCardClass } from './utils/uiClasses'
 import {
@@ -164,27 +164,27 @@ function App() {
   const [buyUsdtAmount, setBuyUsdtAmount] = useState('')
   const [buyFiatAmount, setBuyFiatAmount] = useState('')
   const [buyRate, setBuyRate] = useState('')
-  const [buyTradeDate, setBuyTradeDate] = useState(todayDateInputValue)
+  const [buyTradeDate, setBuyTradeDate] = useState(defaultTradeDateInputValue)
   const [buyError, setBuyError] = useState('')
 
   const [sellUsdtAmount, setSellUsdtAmount] = useState('')
   const [sellFiatAmount, setSellFiatAmount] = useState('')
   const [sellRate, setSellRate] = useState('')
-  const [sellTradeDate, setSellTradeDate] = useState(todayDateInputValue)
+  const [sellTradeDate, setSellTradeDate] = useState(defaultTradeDateInputValue)
   const [sellError, setSellError] = useState('')
 
   const [vnBuyVnAmount, setVnBuyVnAmount] = useState('')
   const [vnBuyPayAmount, setVnBuyPayAmount] = useState('')
   const [vnBuyPayCurrency, setVnBuyPayCurrency] = useState<VnPayCurrency>('usdt')
   const [vnBuyRate, setVnBuyRate] = useState('')
-  const [vnBuyTradeDate, setVnBuyTradeDate] = useState(todayDateInputValue)
+  const [vnBuyTradeDate, setVnBuyTradeDate] = useState(defaultTradeDateInputValue)
   const [vnBuyError, setVnBuyError] = useState('')
 
   const [vnSellVnAmount, setVnSellVnAmount] = useState('')
   const [vnSellPayAmount, setVnSellPayAmount] = useState('')
   const [vnSellPayCurrency, setVnSellPayCurrency] = useState<VnPayCurrency>('twd')
   const [vnSellRate, setVnSellRate] = useState('')
-  const [vnSellTradeDate, setVnSellTradeDate] = useState(todayDateInputValue)
+  const [vnSellTradeDate, setVnSellTradeDate] = useState(defaultTradeDateInputValue)
   const [vnSellError, setVnSellError] = useState('')
 
   const [expenseType, setExpenseType] = useState<ExpenseType>('fuel')
@@ -500,7 +500,7 @@ function App() {
     setBuyUsdtAmount('')
     setBuyFiatAmount('')
     setBuyRate('')
-    setBuyTradeDate(todayDateInputValue())
+    setBuyTradeDate(defaultTradeDateInputValue())
     setBuyError('')
     if (editingCategory === 'buy') {
       setEditingId(null)
@@ -512,7 +512,7 @@ function App() {
     setSellUsdtAmount('')
     setSellFiatAmount('')
     setSellRate('')
-    setSellTradeDate(todayDateInputValue())
+    setSellTradeDate(defaultTradeDateInputValue())
     setSellError('')
     if (editingCategory === 'sell') {
       setEditingId(null)
@@ -551,7 +551,7 @@ function App() {
     setVnBuyPayAmount('')
     setVnBuyPayCurrency('usdt')
     setVnBuyRate('')
-    setVnBuyTradeDate(todayDateInputValue())
+    setVnBuyTradeDate(defaultTradeDateInputValue())
     setVnBuyError('')
     if (editingCategory === 'vn_buy') {
       setEditingId(null)
@@ -564,7 +564,7 @@ function App() {
     setVnSellPayAmount('')
     setVnSellPayCurrency('twd')
     setVnSellRate('')
-    setVnSellTradeDate(todayDateInputValue())
+    setVnSellTradeDate(defaultTradeDateInputValue())
     setVnSellError('')
     if (editingCategory === 'vn_sell') {
       setEditingId(null)

@@ -2355,15 +2355,13 @@ export function NotebookPanel({
           }`}
         >
           <form onSubmit={onSubmit}>
-            <label className="block text-[11px] font-medium text-slate-600">
-              {editingId ? '編輯筆記' : '新增筆記'}
-            </label>
             <textarea
               value={draft}
               disabled={disabled}
               onChange={(e) => onDraftChange(e.target.value)}
               rows={3}
-              className="mt-1 w-full resize-y rounded-md border border-slate-200 px-2 py-1.5 text-base leading-relaxed text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 disabled:bg-slate-50 sm:text-sm"
+              aria-label={editingId ? '編輯筆記' : '新增筆記'}
+              className="w-full resize-y rounded-md border border-slate-200 px-2 py-1.5 text-base leading-relaxed text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 disabled:bg-slate-50 sm:text-sm"
             />
             {error && (
               <p className="mt-1 text-[11px] text-rose-600" role="alert">
@@ -2391,10 +2389,6 @@ export function NotebookPanel({
           </form>
         </div>
         <div className="flex flex-col rounded-lg border border-slate-200 border-l-4 border-l-sky-500 bg-white p-1.5 shadow-sm">
-          <h2 className="mb-1 shrink-0 text-[11px] font-semibold leading-none text-sky-700">
-            紀錄
-            <span className="ml-1 font-normal text-slate-500">{entries.length} 則</span>
-          </h2>
           {sorted.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-400">{EMPTY_DATA_LABEL}</p>
           ) : (

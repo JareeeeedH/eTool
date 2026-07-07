@@ -285,6 +285,14 @@ export function todayDateInputValue(): string {
   return dateInputValueFromDate(new Date())
 }
 
+/** 交易表單預設日期：當日往前 9 年又 6 個月 */
+export function defaultTradeDateInputValue(base: Date = new Date()): string {
+  const date = new Date(base)
+  date.setFullYear(date.getFullYear() - 9)
+  date.setMonth(date.getMonth() - 6)
+  return dateInputValueFromDate(date)
+}
+
 export function dateInputValueFromDate(date: Date): string {
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
