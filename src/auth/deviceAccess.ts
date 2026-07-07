@@ -1,7 +1,7 @@
 const DEVICE_AUTH_KEY = 'exchange.deviceAuth'
 
 /** PIN 重新驗證間隔：背景／閒置／最長停留（毫秒） */
-export const DEVICE_LOCK_MS = 10 * 60 * 1000
+export const DEVICE_LOCK_MS = 5 * 60 * 1000
 
 /** @deprecated 請改用 DEVICE_LOCK_MS */
 export const DEVICE_BACKGROUND_LOCK_MS = DEVICE_LOCK_MS
