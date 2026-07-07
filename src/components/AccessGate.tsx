@@ -4,7 +4,7 @@ import {
   isDeviceAuthed,
   markDeviceAuthed,
   markDeviceHidden,
-  resumeDeviceAuth,
+  syncDeviceAuthState,
   touchDeviceActivity,
   verifyAccessPin,
 } from '../auth/deviceAccess'
@@ -26,16 +26,37 @@ export function AccessGate({ children }: { children: ReactNode }) {
   }, [authed])
 
   useEffect(() => {
+    const syncAuth = () => {
+      setAuthed(syncDeviceAuthState())
+    }
+
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         markDeviceHidden()
         return
       }
-      setAuthed(resumeDeviceAuth())
+      syncAuth()
     }
 
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        syncAuth()
+      }
+    }
+
+    const onPageHide = () => {
+      markDeviceHidden()
+    }
+
+    syncAuth()
     document.addEventListener('visibilitychange', onVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('pageshow', onPageShow)
+    window.addEventListener('pagehide', onPageHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('pageshow', onPageShow)
+      window.removeEventListener('pagehide', onPageHide)
+    }
   }, [])
 
   useEffect(() => {

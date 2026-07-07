@@ -21,7 +21,14 @@ function readRecord(): DeviceAuthRecord | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<DeviceAuthRecord>
     if (parsed.user !== 'y') return null
-    const authedAt = typeof parsed.authedAt === 'number' ? parsed.authedAt : Date.now()
+
+    // 舊版僅存 { user: 'y' } 時視為無效，避免每次讀取都重置計時
+    if (typeof parsed.authedAt !== 'number') {
+      clearDeviceAuth()
+      return null
+    }
+
+    const authedAt = parsed.authedAt
     return {
       user: 'y',
       authedAt,
@@ -92,10 +99,13 @@ export function touchDeviceActivity(): void {
   writeRecord({ ...record, lastActivityAt: now })
 }
 
-/** App 切到背景時記錄時間 */
+/** App 切到背景或關閉分頁時記錄時間 */
 export function markDeviceHidden(): void {
   const record = readRecord()
-  if (!record) return
+  if (!record || isRecordExpired(record)) {
+    clearDeviceAuth()
+    return
+  }
   writeRecord({ ...record, hiddenAt: Date.now() })
 }
 
@@ -111,10 +121,14 @@ export function resumeDeviceAuth(): boolean {
     return false
   }
   if (record.hiddenAt !== null) {
-    const now = Date.now()
-    writeRecord({ ...record, hiddenAt: null, lastActivityAt: now })
+    writeRecord({ ...record, hiddenAt: null, lastActivityAt: Date.now() })
   }
   return true
+}
+
+/** 重新讀取 localStorage 並同步驗證狀態（用於重整、bfcache 還原） */
+export function syncDeviceAuthState(): boolean {
+  return resumeDeviceAuth()
 }
 
 export function getAccessPin(): string {

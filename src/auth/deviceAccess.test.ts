@@ -67,6 +67,26 @@ describe('deviceAccess lock windows', () => {
     vi.advanceTimersByTime(DEVICE_LOCK_MS)
     expect(isDeviceAuthed()).toBe(false)
   })
+
+  it('rejects legacy record without authedAt', () => {
+    localStorage.setItem('exchange.deviceAuth', JSON.stringify({ user: 'y' }))
+    expect(isDeviceAuthed()).toBe(false)
+    expect(localStorage.getItem('exchange.deviceAuth')).toBeNull()
+  })
+
+  it('requires re-auth on cold load after session expires', () => {
+    const authedAt = Date.now() - DEVICE_LOCK_MS - 1
+    localStorage.setItem(
+      'exchange.deviceAuth',
+      JSON.stringify({
+        user: 'y',
+        authedAt,
+        hiddenAt: null,
+        lastActivityAt: authedAt,
+      }),
+    )
+    expect(isDeviceAuthed()).toBe(false)
+  })
 })
 
 describe('verifyAccessPin', () => {
