@@ -96,7 +96,6 @@ import { resolveUsdtTradeFields, resolveVnTradeFields } from '../utils/form'
 import {
   calculateAverageRate,
   calculateBuyDayAverageRate,
-  computePendingExpenseBreakdown,
   computeUsdtSellProfitPreview,
   computeVnSellProfitPreview,
   normalizeMonthlyCloseRecord,
@@ -2291,21 +2290,9 @@ export function ExpenseForm({
 
 export function ExpensePageSummary({ transactions }: ExpensePageSummaryProps) {
   const totalAmount = transactions.reduce((sum, tx) => sum + tx.amountTwd, 0)
-  const breakdown = computePendingExpenseBreakdown(transactions)
 
   return (
     <div className="mt-2 shrink-0 space-y-1.5 border-t border-orange-100 pt-2">
-      {breakdown.length > 0 && (
-        <p className="text-[10px] leading-relaxed text-slate-500">
-          {breakdown.map(({ label, amount }, index) => (
-            <span key={label}>
-              {index > 0 && ' · '}
-              {label}{' '}
-              <span className="tabular-nums text-rose-600">−{formatTwd(amount)}</span>
-            </span>
-          ))}
-        </p>
-      )}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-orange-200 bg-gradient-to-r from-orange-50/80 to-slate-50 px-2.5 py-1.5">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="text-xs font-semibold text-slate-800">
