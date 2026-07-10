@@ -1754,6 +1754,13 @@ function App() {
     <div className="h-dvh overflow-hidden bg-slate-50 text-slate-900">
       <ConfirmModal dialog={confirmDialog} onCancel={() => setConfirmDialog(null)} />
       <CabinAllocModal
+        key={
+          cabinAllocPending
+            ? `${cabinAllocPending.kind}-${cabinAllocPending.direction}-${cabinAllocPending.initialCabinA}-${
+                cabinAllocPending.kind === 'usdt' ? cabinAllocPending.usdt : cabinAllocPending.pay
+              }`
+            : 'cabin-alloc-closed'
+        }
         open={cabinAllocPending !== null}
         totalUsdt={
           cabinAllocPending?.kind === 'usdt'

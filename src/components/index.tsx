@@ -603,18 +603,11 @@ export function CabinAllocModal({
   onCancel,
   onConfirm,
 }: CabinAllocModalProps) {
-  const [cabinAStr, setCabinAStr] = useState('')
-  const [cabinBStr, setCabinBStr] = useState('')
+  const seedA = Math.min(Math.max(0, initialCabinA), totalUsdt)
+  const seedB = Math.max(0, totalUsdt - seedA)
+  const [cabinAStr, setCabinAStr] = useState(seedA === 0 ? '' : String(seedA))
+  const [cabinBStr, setCabinBStr] = useState(seedB === 0 ? '' : String(seedB))
   const [localError, setLocalError] = useState('')
-
-  useEffect(() => {
-    if (!open) return
-    const a = Math.min(Math.max(0, initialCabinA), totalUsdt)
-    const b = Math.max(0, totalUsdt - a)
-    setCabinAStr(a === 0 ? '' : String(a))
-    setCabinBStr(b === 0 ? '' : String(b))
-    setLocalError('')
-  }, [open, initialCabinA, totalUsdt])
 
   if (!open) return null
 
@@ -1439,39 +1432,6 @@ function TradeFormMetaCell({
           取消
         </button>
       )}
-    </div>
-  )
-}
-
-export function UsdtCabinToggle({
-  value,
-  onChange,
-  disabled = false,
-}: {
-  value: 'A' | 'B'
-  onChange: (cabin: 'A' | 'B') => void
-  disabled?: boolean
-}) {
-  return (
-    <div className="mb-1 flex items-center gap-0.5">
-      {(['A', 'B'] as const).map((cabin) => (
-        <button
-          key={cabin}
-          type="button"
-          disabled={disabled}
-          onClick={() => onChange(cabin)}
-          className={`rounded-full px-2 py-px text-[10px] font-semibold transition disabled:opacity-50 ${
-            value === cabin
-              ? cabin === 'A'
-                ? 'bg-sky-600 text-white shadow-sm'
-                : 'bg-violet-600 text-white shadow-sm'
-              : 'border border-slate-200 bg-white text-slate-500 hover:border-slate-300'
-          }`}
-        >
-          {cabin}
-        </button>
-      ))}
-      <span className="ml-1 text-[9px] text-slate-400">艙</span>
     </div>
   )
 }
