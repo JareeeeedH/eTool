@@ -272,12 +272,9 @@ export function formatTableDateTime(date: Date): string {
   return formatSettlementDate(date)
 }
 
-/** 交易明細日期：英文月/日（如 Jul 2） */
+/** 交易明細日期：僅顯示日（如 7） */
 export function formatTransactionTableDate(date: Date): string {
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  })
+  return String(date.getDate())
 }
 
 /** HTML date input（YYYY-MM-DD），本地時區 */

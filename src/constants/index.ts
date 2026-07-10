@@ -59,6 +59,9 @@ export const INITIAL_TWD = 0
 export const INITIAL_USDT = 0
 export const INITIAL_VN = 0
 
+/** 舊資料遷移：A 艙目標數量，其餘歸 B */
+export const USDT_CABIN_MIGRATE_TARGET_A = 30_000
+
 export const INITIAL_BALANCES: Balances = {
   twd: INITIAL_TWD,
   usdt: INITIAL_USDT,

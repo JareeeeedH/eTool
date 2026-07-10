@@ -8,8 +8,10 @@ export type DailyWorkTab = 'usdt' | 'vn'
 export type DailyMobileTradePane = 'buy_u' | 'sell_u' | 'buy_vn' | 'sell_vn'
 export type FiatCurrency = 'twd' | 'vn'
 export type VnPayCurrency = 'twd' | 'usdt'
+/** P（USDT）艙別：共用成本池，僅拆數量 */
+export type UsdtCabin = 'A' | 'B'
 export type ExpenseType = 'fuel' | 'parking' | 'meal' | 'traffic' | 'other'
-export type PageTab = 'daily' | 'expenses' | 'settlements' | 'monthly' | 'notes'
+export type PageTab = 'daily' | 'expenses' | 'settlements' | 'monthly' | 'notes' | 'cabins'
 export type AccentColor = 'emerald' | 'rose' | 'violet' | 'orange'
 
 export interface UsdtTransaction {
@@ -22,6 +24,10 @@ export interface UsdtTransaction {
   fiatAmount: number
   /** 匯率 = 法幣金額 / USDT 金額 */
   rate: number
+  /** 歸 A 艙的 USDT 數量；B = usdtAmount − cabinAAmount。成本仍共用 */
+  cabinAAmount?: number
+  /** 舊資料單艙標籤；有 cabinAAmount 時以數量為準 */
+  cabin?: UsdtCabin
 }
 
 export interface VnTradeTransaction {
@@ -35,6 +41,10 @@ export interface VnTradeTransaction {
   usdtAmount: number
   /** 匯率 = VN / 支付金額；VN/TWD 成本 = 1 NTD 可買多少 VN */
   rate: number
+  /** 支付／收入為 USDT 時：歸 A 艙數量 */
+  cabinAAmount?: number
+  /** 舊資料單艙標籤；有 cabinAAmount 時以數量為準 */
+  cabin?: UsdtCabin
 }
 
 export interface ExpenseTransaction {
@@ -233,6 +243,7 @@ export interface AppSnapshot {
   transactions: Transaction[]
   openingBalances: Balances
   openingUsdtCost: UsdtInventoryCost
+  openingUsdtCabinA: number
   openingVnTwdRate: number | null
   openingVnUsdtRate: number | null
   settlements: DailySettlement[]
@@ -260,6 +271,7 @@ export interface NotebookPanelProps {
 export interface DailyBalanceStripProps {
   balances: Balances
   inventoryCost: UsdtInventoryCost
+  usdtCabinBalances: { a: number; b: number }
   totalAssets: TotalAssetsTwd
   vnTwdRate: number | null
   vnUsdtRate: number | null
@@ -485,4 +497,17 @@ export interface UndoBannerProps {
 export interface ConfirmModalProps {
   dialog: ConfirmDialogState | null
   onCancel: () => void
+}
+
+export interface CabinAllocModalProps {
+  open: boolean
+  /** 本筆動到的 USDT 總量 */
+  totalUsdt: number
+  /** 買入為 +、賣出／付 U 為 −（僅顯示用） */
+  direction: 'in' | 'out'
+  initialCabinA: number
+  cabinBalances: { a: number; b: number }
+  error: string
+  onCancel: () => void
+  onConfirm: (cabinAAmount: number) => void
 }

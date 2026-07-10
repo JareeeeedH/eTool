@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import type {
   AppNavProps,
+  CabinAllocModalProps,
   ConfirmModalProps,
   DailyBalanceStripProps,
   DailyTradeSettleBarProps,
@@ -445,6 +446,7 @@ export function DailyPageHeader({
 export function DailyBalanceStrip({
   balances,
   inventoryCost,
+  usdtCabinBalances,
   totalAssets,
   vnTwdRate,
   vnUsdtRate,
@@ -452,6 +454,7 @@ export function DailyBalanceStrip({
   const showUsdtCost = balances.usdt > 0 && inventoryCost.twd !== null
   const showVnRates =
     balances.vn > 0 && (vnTwdRate !== null || vnUsdtRate !== null)
+  const showCabinSplit = balances.usdt > 0
 
   return (
     <div className="mb-1 grid grid-cols-2 items-stretch gap-1 sm:mb-1.5 sm:grid-cols-4 sm:gap-1.5">
@@ -468,6 +471,13 @@ export function DailyBalanceStrip({
         <p className={BALANCE_VALUE_CLASS}>{formatNumber(balances.usdt)}</p>
         {showUsdtCost && (
           <p className={BALANCE_SUB_CLASS}>@{formatUsdtCostRateDisplay(inventoryCost.twd!)}</p>
+        )}
+        {showCabinSplit && (
+          <p className={`${BALANCE_SUB_CLASS} w-full text-[9px] sm:text-[10px]`}>
+            A {formatNumber(usdtCabinBalances.a)}
+            <span className="mx-0.5 text-slate-300">·</span>
+            B {formatNumber(usdtCabinBalances.b)}
+          </p>
         )}
       </div>
       <div className={BALANCE_CARD_CLASS}>
@@ -497,6 +507,270 @@ export function DailyBalanceStrip({
         )}
       </div>
       <TotalAssetsColumn assets={totalAssets} dense />
+    </div>
+  )
+}
+
+/** 資產艙位管理總覽（獨立頁簽）— 放大卡片並垂直置中，減少下方空白感 */
+export function AssetsCabinOverview({
+  balances,
+  inventoryCost,
+  usdtCabinBalances,
+  totalAssets,
+  vnTwdRate,
+  vnUsdtRate,
+}: DailyBalanceStripProps) {
+  const showUsdtCost = balances.usdt > 0 && inventoryCost.twd !== null
+  const showVnRates =
+    balances.vn > 0 && (vnTwdRate !== null || vnUsdtRate !== null)
+  const showCabinSplit = balances.usdt > 0
+
+  const cardClass =
+    'flex min-h-[6.25rem] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-4 text-center shadow-sm sm:min-h-[7.5rem] sm:px-4 sm:py-5'
+  const labelClass = 'text-[11px] font-medium tracking-wide text-slate-400 sm:text-xs'
+  const valueClass = 'mt-1 text-xl font-bold tabular-nums leading-none text-slate-800 sm:text-2xl'
+  const totalValueClass =
+    'mt-1 text-xl font-bold tabular-nums leading-none text-indigo-800 sm:text-2xl'
+  const subClass = 'mt-1.5 text-[11px] tabular-nums leading-tight text-slate-400 sm:text-xs'
+
+  return (
+    <div className="flex min-h-0 w-full flex-1 flex-col">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-4 sm:max-w-xl sm:py-6">
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5">
+          <div className={cardClass}>
+            <p className={labelClass}>T</p>
+            <p className={valueClass} title={formatTwd(balances.twd)}>
+              {formatTwdTableCompact(balances.twd)}
+            </p>
+          </div>
+
+          <div className={cardClass}>
+            <p className={labelClass}>P</p>
+            <p className={valueClass}>{formatNumber(balances.usdt)}</p>
+            {showUsdtCost && (
+              <p className={subClass}>@{formatUsdtCostRateDisplay(inventoryCost.twd!)}</p>
+            )}
+            {showCabinSplit && (
+              <p className={`${subClass} mt-1`}>
+                A {formatNumber(usdtCabinBalances.a)}
+                <span className="mx-1 text-slate-300">·</span>
+                B {formatNumber(usdtCabinBalances.b)}
+              </p>
+            )}
+          </div>
+
+          <div className={cardClass}>
+            <p className={labelClass}>V</p>
+            <p className={valueClass} title={formatNumber(balances.vn)}>
+              {formatVnTableCompact(balances.vn)}
+            </p>
+            {showVnRates && (
+              <div className={`${subClass} flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5`}>
+                {vnTwdRate !== null && <span>{formatVnNtdCostRateCompact(vnTwdRate)}</span>}
+                {vnUsdtRate !== null && <span>{formatVnUsdtCostRateCompact(vnUsdtRate)}</span>}
+              </div>
+            )}
+          </div>
+
+          <div className={`${cardClass} border-indigo-200 bg-indigo-50/70`}>
+            <p className={totalValueClass} title={formatTwd(totalAssets.total)}>
+              {formatTwdTableCompact(totalAssets.total)}
+              {!totalAssets.isComplete && (
+                <span className="ml-1.5 align-middle rounded bg-amber-100 px-1 py-px text-[9px] font-medium text-amber-700">
+                  部分
+                </span>
+              )}
+            </p>
+            {totalAssets.missingNotes.length > 0 && (
+              <p className="mt-1.5 text-[10px] leading-tight text-amber-700">
+                {totalAssets.missingNotes.join('；')}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function CabinAllocModal({
+  open,
+  totalUsdt,
+  direction,
+  initialCabinA,
+  cabinBalances,
+  error,
+  onCancel,
+  onConfirm,
+}: CabinAllocModalProps) {
+  const [cabinAStr, setCabinAStr] = useState('')
+  const [cabinBStr, setCabinBStr] = useState('')
+  const [localError, setLocalError] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    const a = Math.min(Math.max(0, initialCabinA), totalUsdt)
+    const b = Math.max(0, totalUsdt - a)
+    setCabinAStr(a === 0 ? '' : String(a))
+    setCabinBStr(b === 0 ? '' : String(b))
+    setLocalError('')
+  }, [open, initialCabinA, totalUsdt])
+
+  if (!open) return null
+
+  const parseAmt = (value: string): number | null => {
+    const trimmed = value.trim()
+    if (!trimmed) return 0
+    const n = Number(trimmed)
+    if (!Number.isFinite(n) || n < 0) return null
+    return n
+  }
+
+  const applyA = (raw: string) => {
+    setCabinAStr(raw)
+    const a = parseAmt(raw)
+    if (a === null) return
+    const clamped = Math.min(a, totalUsdt)
+    setCabinBStr(String(Math.max(0, totalUsdt - clamped)))
+    setLocalError('')
+  }
+
+  const applyB = (raw: string) => {
+    setCabinBStr(raw)
+    const b = parseAmt(raw)
+    if (b === null) return
+    const clamped = Math.min(b, totalUsdt)
+    setCabinAStr(String(Math.max(0, totalUsdt - clamped)))
+    setLocalError('')
+  }
+
+  const setPreset = (a: number) => {
+    const clamped = Math.min(Math.max(0, a), totalUsdt)
+    setCabinAStr(clamped === 0 ? '0' : String(clamped))
+    setCabinBStr(String(Math.max(0, totalUsdt - clamped)))
+    setLocalError('')
+  }
+
+  const handleConfirm = () => {
+    const a = parseAmt(cabinAStr)
+    const b = parseAmt(cabinBStr)
+    if (a === null || b === null) {
+      setLocalError('請輸入有效的非負數量')
+      return
+    }
+    const sum = a + b
+    if (Math.abs(sum - totalUsdt) > 1e-9) {
+      setLocalError(`A+B 須等於 ${formatNumber(totalUsdt)}`)
+      return
+    }
+    onConfirm(a)
+  }
+
+  const signLabel = direction === 'in' ? '+' : '−'
+  const displayError = localError || error
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cabin-alloc-title"
+    >
+      <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+        <h2 id="cabin-alloc-title" className="text-base font-semibold text-slate-900">
+          分倉配置
+        </h2>
+        <p className="mt-1 text-xs text-slate-500">
+          本筆 P {formatNumber(totalUsdt)} · 請分配至 A / B（成本共用）
+        </p>
+
+        <div className="mt-3 flex gap-2 text-[10px] tabular-nums text-slate-500">
+          <span>
+            目前 A {formatNumber(cabinBalances.a)}
+          </span>
+          <span className="text-slate-300">·</span>
+          <span>
+            B {formatNumber(cabinBalances.b)}
+          </span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="mb-0.5 block text-[10px] font-semibold text-sky-600">
+              A{signLabel}
+            </span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="any"
+              value={cabinAStr}
+              onChange={(e) => applyA(e.target.value)}
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm tabular-nums outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20"
+              autoFocus
+            />
+          </label>
+          <label className="block">
+            <span className="mb-0.5 block text-[10px] font-semibold text-violet-600">
+              B{signLabel}
+            </span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="any"
+              value={cabinBStr}
+              onChange={(e) => applyB(e.target.value)}
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm tabular-nums outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
+            />
+          </label>
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setPreset(totalUsdt)}
+            className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 hover:bg-sky-100"
+          >
+            全 A
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreset(0)}
+            className="rounded border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 hover:bg-violet-100"
+          >
+            全 B
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreset(totalUsdt / 2)}
+            className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-100"
+          >
+            各半
+          </button>
+        </div>
+
+        {displayError && (
+          <p className="mt-2 text-xs text-rose-600">{displayError}</p>
+        )}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+          >
+            確認
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -769,7 +1043,7 @@ export function TransactionTableHeader({
             mobileRowIndex ? TRANSACTION_MOBILE_DATE_CELL_CLASS : TRANSACTION_TIME_CELL_CLASS
           } font-medium text-slate-500`}
         >
-          Date
+          {'\u00a0'}
         </th>
         <th className={numCell('font-medium text-slate-500')}>P</th>
         <th className={numCell('font-medium text-slate-500')}>T</th>
@@ -972,7 +1246,9 @@ export function TransactionTable({
             mobileRowIndex ? TRANSACTION_MOBILE_DATE_CELL_CLASS : TRANSACTION_TIME_CELL_CLASS
           } text-slate-600`}
         >
-          {formatTransactionTableDate(tx.timestamp)}
+          <span className="inline-flex items-center gap-0.5">
+            {formatTransactionTableDate(tx.timestamp)}
+          </span>
         </td>
         <td className={usdtNumCell('text-slate-800')}>
           {formatNumber(tx.usdtAmount)}
@@ -1163,6 +1439,39 @@ function TradeFormMetaCell({
           取消
         </button>
       )}
+    </div>
+  )
+}
+
+export function UsdtCabinToggle({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: 'A' | 'B'
+  onChange: (cabin: 'A' | 'B') => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="mb-1 flex items-center gap-0.5">
+      {(['A', 'B'] as const).map((cabin) => (
+        <button
+          key={cabin}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(cabin)}
+          className={`rounded-full px-2 py-px text-[10px] font-semibold transition disabled:opacity-50 ${
+            value === cabin
+              ? cabin === 'A'
+                ? 'bg-sky-600 text-white shadow-sm'
+                : 'bg-violet-600 text-white shadow-sm'
+              : 'border border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+          }`}
+        >
+          {cabin}
+        </button>
+      ))}
+      <span className="ml-1 text-[9px] text-slate-400">艙</span>
     </div>
   )
 }
@@ -1872,9 +2181,7 @@ export function VnTradeTable({
         }`}
         style={{ height: `${TRANSACTION_HEAD_REM}rem` }}
       >
-        <th className={vnIndexCell('font-medium text-slate-500')}>
-          Date
-        </th>
+        <th className={vnIndexCell('font-medium text-slate-500')}>{'\u00a0'}</th>
         <th
           className={vnAmountCell(
             mobileRowIndex
@@ -2034,7 +2341,9 @@ export function VnTradeTable({
         className={`group border-b border-slate-100 transition-colors hover:bg-slate-100/70 ${vnPayCurrencyRowAccent(tx.payCurrency)} ${transactionDataRowClass(tx.id, editingId, highlightedId)}`}
       >
         <td className={vnIndexCell('text-slate-600')}>
-          {formatTransactionTableDate(tx.timestamp)}
+          <span className="inline-flex items-center gap-0.5">
+            {formatTransactionTableDate(tx.timestamp)}
+          </span>
         </td>
         <td className={vnAmountCell('text-amber-700')}>
           <span className="block min-w-0 whitespace-nowrap" title={formatNumber(tx.vnAmount)}>
@@ -3377,6 +3686,15 @@ export function AppNav({
     label: string
     icon: (active: boolean) => ReactNode
   }[] = [
+    {
+      tab: 'cabins',
+      label: 'POS',
+      icon: (_active) => (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+        </svg>
+      ),
+    },
     {
       tab: 'daily',
       label: 'TRANS',

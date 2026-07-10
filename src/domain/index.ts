@@ -9,6 +9,7 @@ import type {
   OpeningBalanceForm,
   Transaction,
   TotalAssetsTwd,
+  UsdtCabin,
   UsdtInventoryCost,
   UsdtInventoryState,
   UsdtTransaction,
@@ -21,6 +22,7 @@ import type {
 import {
   EMPTY_EXPENSE_BY_CATEGORY,
   INITIAL_BALANCES,
+  USDT_CABIN_MIGRATE_TARGET_A,
 } from '../constants'
 import {
   expenseTypeLabel,
@@ -189,6 +191,247 @@ export function normalizeVnTradeTransaction(tx: VnTradeTransaction): VnTradeTran
 
 export function vnTradePayAmount(tx: VnTradeTransaction): number {
   return tx.payCurrency === 'usdt' ? tx.usdtAmount : tx.twdAmount
+}
+
+/** 該筆交易是否會異動 USDT 數量 */
+export function transactionMovesUsdt(tx: Transaction): boolean {
+  if (isUsdtTransaction(tx)) return true
+  return isVnTradeTransaction(tx) && tx.payCurrency === 'usdt'
+}
+
+export function resolveUsdtCabin(tx: UsdtTransaction | VnTradeTransaction): UsdtCabin {
+  const a = resolveCabinAAmount(tx)
+  if (a > 0 && a >= tx.usdtAmount - a) return 'A'
+  if (a <= 0) return 'B'
+  return tx.cabin === 'A' ? 'A' : 'B'
+}
+
+/** 本筆歸 A 艙的 USDT 數量（0…usdtAmount） */
+export function resolveCabinAAmount(tx: UsdtTransaction | VnTradeTransaction): number {
+  const total = Math.max(0, tx.usdtAmount)
+  if (typeof tx.cabinAAmount === 'number' && Number.isFinite(tx.cabinAAmount)) {
+    return Math.min(Math.max(0, tx.cabinAAmount), total)
+  }
+  return tx.cabin === 'A' ? total : 0
+}
+
+export function resolveCabinBAmount(tx: UsdtTransaction | VnTradeTransaction): number {
+  return Math.max(0, tx.usdtAmount) - resolveCabinAAmount(tx)
+}
+
+/** 寫入交易時正規化艙位欄位 */
+export function normalizeCabinAlloc(
+  usdtAmount: number,
+  cabinAAmount: number,
+): { cabinAAmount: number; cabin: UsdtCabin } {
+  const total = Math.max(0, usdtAmount)
+  const a = Math.min(Math.max(0, cabinAAmount), total)
+  const cabin: UsdtCabin = a >= total - a ? 'A' : 'B'
+  return { cabinAAmount: a, cabin }
+}
+
+function usdtAmountMoved(tx: UsdtTransaction | VnTradeTransaction): number {
+  if (isUsdtTransaction(tx)) return tx.usdtAmount
+  return tx.usdtAmount
+}
+
+/**
+ * 對 A/B 艙的 USDT 數量增減（買入／收 U 為正，賣出／付 U 為負）。
+ * 支援一筆拆到兩艙。
+ */
+export function usdtCabinSignedDeltas(tx: Transaction): { a: number; b: number } | null {
+  if (!transactionMovesUsdt(tx)) return null
+  if (isUsdtTransaction(tx)) {
+    const aAmt = resolveCabinAAmount(tx)
+    const bAmt = resolveCabinBAmount(tx)
+    const sign = tx.type === 'buy' ? 1 : -1
+    return { a: sign * aAmt, b: sign * bAmt }
+  }
+  if (isVnTradeTransaction(tx) && tx.payCurrency === 'usdt') {
+    const aAmt = resolveCabinAAmount(tx)
+    const bAmt = resolveCabinBAmount(tx)
+    // 買 VN 付 U → 艙減少；賣 VN 收 U → 艙增加
+    const sign = tx.type === 'buy' ? -1 : 1
+    return { a: sign * aAmt, b: sign * bAmt }
+  }
+  return null
+}
+
+/** @deprecated 單艙介面；新邏輯請用 usdtCabinSignedDeltas */
+export function usdtCabinDelta(tx: Transaction): { cabin: UsdtCabin; delta: number } | null {
+  const signed = usdtCabinSignedDeltas(tx)
+  if (!signed) return null
+  if (signed.a !== 0 && signed.b === 0) return { cabin: 'A', delta: signed.a }
+  if (signed.b !== 0 && signed.a === 0) return { cabin: 'B', delta: signed.b }
+  // 拆倉時回傳淨額較大的那側（僅相容舊呼叫）
+  if (Math.abs(signed.a) >= Math.abs(signed.b)) return { cabin: 'A', delta: signed.a }
+  return { cabin: 'B', delta: signed.b }
+}
+
+export function computeUsdtCabinBalances(
+  openingBalances: Balances,
+  openingUsdtCabinA: number,
+  transactions: Transaction[],
+  lastTradeSettledAt: Date | null = null,
+): { a: number; b: number } {
+  const openingA = Math.min(Math.max(0, openingUsdtCabinA), Math.max(0, openingBalances.usdt))
+  let a = openingA
+  let b = openingBalances.usdt - openingA
+
+  const applicable = filterBalanceAffectingTransactions(
+    filterTradeTransactions(transactions),
+    lastTradeSettledAt,
+  )
+  const sorted = [...applicable].sort(
+    (x, y) => x.timestamp.getTime() - y.timestamp.getTime() || x.id.localeCompare(y.id),
+  )
+
+  for (const tx of sorted) {
+    const moved = usdtCabinSignedDeltas(tx)
+    if (!moved) continue
+    a += moved.a
+    b += moved.b
+  }
+
+  return { a, b }
+}
+
+/**
+ * 舊資料遷移：A 艙目標 30000（不足則全給 A），其餘歸 B。
+ * - 期初盡量撥給 A
+ * - 再依時間把「流入 P」的交易改標 A，直到達標
+ * - 其餘動到 P 的交易標 B
+ */
+export function migrateUsdtCabinAttribution(
+  openingBalances: Balances,
+  openingUsdtCabinA: number | null | undefined,
+  transactions: Transaction[],
+): { openingUsdtCabinA: number; transactions: Transaction[]; didMigrate: boolean } {
+  const hasOpeningCabin = typeof openingUsdtCabinA === 'number' && Number.isFinite(openingUsdtCabinA)
+  const missingCabin = transactions.some((tx) => {
+    if (!transactionMovesUsdt(tx)) return false
+    if (!isUsdtTransaction(tx) && !(isVnTradeTransaction(tx) && tx.payCurrency === 'usdt')) {
+      return false
+    }
+    const hasAmount = typeof tx.cabinAAmount === 'number' && Number.isFinite(tx.cabinAAmount)
+    const hasTag = tx.cabin === 'A' || tx.cabin === 'B'
+    return !hasAmount && !hasTag
+  })
+
+  const withCabinAAmount = (
+    tx: Transaction,
+    cabin: UsdtCabin,
+  ): Transaction => {
+    if (isUsdtTransaction(tx)) {
+      const alloc = normalizeCabinAlloc(tx.usdtAmount, cabin === 'A' ? tx.usdtAmount : 0)
+      return { ...tx, ...alloc }
+    }
+    if (isVnTradeTransaction(tx) && tx.payCurrency === 'usdt') {
+      const alloc = normalizeCabinAlloc(tx.usdtAmount, cabin === 'A' ? tx.usdtAmount : 0)
+      return { ...tx, ...alloc }
+    }
+    return tx
+  }
+
+  if (hasOpeningCabin && !missingCabin) {
+    // 補齊已有 cabin 但缺 cabinAAmount 的舊列
+    const needsAmountFill = transactions.some((tx) => {
+      if (!transactionMovesUsdt(tx)) return false
+      if (!isUsdtTransaction(tx) && !(isVnTradeTransaction(tx) && tx.payCurrency === 'usdt')) {
+        return false
+      }
+      return typeof tx.cabinAAmount !== 'number' || !Number.isFinite(tx.cabinAAmount)
+    })
+    if (!needsAmountFill) {
+      return {
+        openingUsdtCabinA: openingUsdtCabinA,
+        transactions,
+        didMigrate: false,
+      }
+    }
+    return {
+      openingUsdtCabinA: openingUsdtCabinA,
+      transactions: transactions.map((tx) => {
+        if (!transactionMovesUsdt(tx)) return tx
+        if (isUsdtTransaction(tx) || (isVnTradeTransaction(tx) && tx.payCurrency === 'usdt')) {
+          if (typeof tx.cabinAAmount === 'number' && Number.isFinite(tx.cabinAAmount)) {
+            return { ...tx, ...normalizeCabinAlloc(tx.usdtAmount, tx.cabinAAmount) }
+          }
+          return withCabinAAmount(tx, tx.cabin === 'A' ? 'A' : 'B')
+        }
+        return tx
+      }),
+      didMigrate: true,
+    }
+  }
+
+  if (hasOpeningCabin && missingCabin) {
+    return {
+      openingUsdtCabinA: openingUsdtCabinA,
+      transactions: transactions.map((tx) => {
+        if (!transactionMovesUsdt(tx)) return tx
+        if (isUsdtTransaction(tx) || (isVnTradeTransaction(tx) && tx.payCurrency === 'usdt')) {
+          const cabin = tx.cabin === 'A' ? 'A' : 'B'
+          return withCabinAAmount(tx, cabin)
+        }
+        return tx
+      }),
+      didMigrate: true,
+    }
+  }
+
+  const total = recalculateBalances(transactions, openingBalances).usdt
+  const targetA = Math.min(USDT_CABIN_MIGRATE_TARGET_A, Math.max(0, total))
+  const openingA = Math.min(targetA, Math.max(0, openingBalances.usdt))
+  let need = targetA - openingA
+
+  const sorted = [...transactions].sort(
+    (x, y) => x.timestamp.getTime() - y.timestamp.getTime() || x.id.localeCompare(y.id),
+  )
+  const promoteToA = new Set<string>()
+
+  for (const tx of sorted) {
+    if (need <= 0) break
+    if (!transactionMovesUsdt(tx)) continue
+    const inflow =
+      (isUsdtTransaction(tx) && tx.type === 'buy') ||
+      (isVnTradeTransaction(tx) && tx.payCurrency === 'usdt' && tx.type === 'sell')
+    if (!inflow) continue
+    const amt = usdtAmountMoved(tx as UsdtTransaction | VnTradeTransaction)
+    if (amt <= 0) continue
+    promoteToA.add(tx.id)
+    need -= amt
+  }
+
+  const nextTransactions = transactions.map((tx) => {
+    if (!transactionMovesUsdt(tx)) return tx
+    const cabin: UsdtCabin = promoteToA.has(tx.id) ? 'A' : 'B'
+    return withCabinAAmount(tx, cabin)
+  })
+
+  return {
+    openingUsdtCabinA: openingA,
+    transactions: nextTransactions,
+    didMigrate: true,
+  }
+}
+
+/** 期初 USDT 增減時，同步調整 A 艙期初（優先動 B） */
+export function adjustOpeningUsdtCabinA(
+  prevOpeningUsdt: number,
+  prevCabinA: number,
+  nextOpeningUsdt: number,
+): number {
+  const prevA = Math.min(Math.max(0, prevCabinA), Math.max(0, prevOpeningUsdt))
+  const prevB = Math.max(0, prevOpeningUsdt - prevA)
+  const delta = nextOpeningUsdt - prevOpeningUsdt
+  if (delta >= 0) {
+    return Math.min(prevA, nextOpeningUsdt)
+  }
+  const reduce = -delta
+  const fromB = Math.min(prevB, reduce)
+  const fromA = reduce - fromB
+  return Math.max(0, prevA - fromA)
 }
 
 export function computeTotalAssetsTwd(
@@ -1330,6 +1573,7 @@ export function validateTransactions(
   transactions: Transaction[],
   openingBalances: Balances = INITIAL_BALANCES,
   lastTradeSettledAt: Date | null = null,
+  openingUsdtCabinA = 0,
 ): string | null {
   const applicable = filterBalanceAffectingTransactions(
     filterTradeTransactions(transactions),
@@ -1340,6 +1584,9 @@ export function validateTransactions(
   )
 
   let balances = { ...openingBalances }
+  const openingA = Math.min(Math.max(0, openingUsdtCabinA), Math.max(0, openingBalances.usdt))
+  let cabinA = openingA
+  let cabinB = openingBalances.usdt - openingA
 
   for (const tx of sorted) {
     if (isVnTradeTransaction(tx)) {
@@ -1351,13 +1598,24 @@ export function validateTransactions(
         if (tx.payCurrency === 'twd' && tx.twdAmount > balances.twd) {
           return '台幣庫存不足'
         }
-        if (tx.payCurrency === 'usdt' && tx.usdtAmount > balances.usdt) {
-          return 'USDT 庫存不足'
+        if (tx.payCurrency === 'usdt') {
+          if (tx.usdtAmount > balances.usdt) {
+            return 'USDT 庫存不足'
+          }
+          const aAmt = resolveCabinAAmount(tx)
+          const bAmt = resolveCabinBAmount(tx)
+          if (aAmt > cabinA) return 'A 艙 USDT 不足'
+          if (bAmt > cabinB) return 'B 艙 USDT 不足'
         }
       } else if (tx.vnAmount > balances.vn) {
         return 'VN 庫存不足'
       }
       balances = applyVnTradeTransaction(balances, tx)
+      const moved = usdtCabinSignedDeltas(tx)
+      if (moved) {
+        cabinA += moved.a
+        cabinB += moved.b
+      }
       continue
     }
 
@@ -1371,11 +1629,22 @@ export function validateTransactions(
       if (tx.fiatAmount > balances.twd) {
         return '台幣庫存不足'
       }
-    } else if (tx.usdtAmount > balances.usdt) {
-      return 'USDT 庫存不足'
+    } else {
+      if (tx.usdtAmount > balances.usdt) {
+        return 'USDT 庫存不足'
+      }
+      const aAmt = resolveCabinAAmount(tx)
+      const bAmt = resolveCabinBAmount(tx)
+      if (aAmt > cabinA) return 'A 艙 USDT 不足'
+      if (bAmt > cabinB) return 'B 艙 USDT 不足'
     }
 
     balances = applyUsdtTransaction(balances, tx)
+    const moved = usdtCabinSignedDeltas(tx)
+    if (moved) {
+      cabinA += moved.a
+      cabinB += moved.b
+    }
   }
 
   return null

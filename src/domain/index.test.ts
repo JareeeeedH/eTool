@@ -12,11 +12,13 @@ import {
   buildTradeSettleConfirmSummary,
   computeInventoryCost,
   computeSellProfitById,
+  computeUsdtCabinBalances,
   computeUsdtDayTotalProfit,
   computeUsdtSellProfitPreview,
   computeVnDayTotalProfit,
   computeVnSellProfitPreview,
   computeVnTradeAnalytics,
+  migrateUsdtCabinAttribution,
   recalculateBalances,
 } from './index'
 
@@ -726,5 +728,53 @@ describe('營業開銷與月結', () => {
     expect(close.closingBookTotalAssets).toBe(1_000_000)
     expect(close.closingTotalAssets).toBe(970_000)
     expect(close.netProfit).toBe(10_000 - 30_000)
+  })
+})
+
+describe('usdt cabin quantity (shared cost)', () => {
+  it('migrates old data so A≈30000 and rest is B', () => {
+    const opening: Balances = { twd: 0, usdt: 0, vn: 0 }
+    const txs: Transaction[] = [
+      usdtBuy('b1', at(1), 20_000, 640_000),
+      usdtBuy('b2', at(2), 16_000, 512_000),
+      usdtSell('s1', at(3), 625, 20_000),
+    ]
+    const migrated = migrateUsdtCabinAttribution(opening, undefined, txs)
+    expect(migrated.didMigrate).toBe(true)
+    const cabins = computeUsdtCabinBalances(
+      opening,
+      migrated.openingUsdtCabinA,
+      migrated.transactions,
+    )
+    expect(cabins.a + cabins.b).toBe(20_000 + 16_000 - 625)
+    expect(cabins.a).toBeGreaterThanOrEqual(30_000)
+    expect(cabins.b).toBe(cabins.a + cabins.b - cabins.a)
+  })
+
+  it('keeps shared inventory cost unchanged by cabin tags', () => {
+    const opening: Balances = { twd: 1_000_000, usdt: 0, vn: 0 }
+    const cost: UsdtInventoryCost = { twd: null, vn: null }
+    const txs: Transaction[] = [
+      { ...usdtBuy('b1', at(1), 10_000, 320_000), cabin: 'A' },
+      { ...usdtBuy('b2', at(2), 10_000, 330_000), cabin: 'B' },
+    ]
+    const inventory = computeInventoryCost(opening, cost, txs)
+    expect(inventory.twd).toBe(roundUsdtCostRate((320_000 + 330_000) / 20_000))
+  })
+
+  it('splits one buy across A and B with shared cost', () => {
+    const opening: Balances = { twd: 1_000_000, usdt: 0, vn: 0 }
+    const txs: Transaction[] = [
+      {
+        ...usdtBuy('b1', at(1), 10_000, 320_000),
+        cabinAAmount: 6_000,
+        cabin: 'A',
+      },
+    ]
+    const cabins = computeUsdtCabinBalances(opening, 0, txs)
+    expect(cabins.a).toBe(6_000)
+    expect(cabins.b).toBe(4_000)
+    const inventory = computeInventoryCost(opening, { twd: null, vn: null }, txs)
+    expect(inventory.twd).toBe(roundUsdtCostRate(320_000 / 10_000))
   })
 })

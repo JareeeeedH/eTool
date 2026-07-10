@@ -41,6 +41,7 @@ import {
 } from './utils/rateSanity'
 import {
   assembleExpenseSettlementsForMonthlyClose,
+  adjustOpeningUsdtCabinA,
   buildDeleteConfirmLines,
   buildMonthlyClose,
   buildMonthlyClosePreview,
@@ -50,6 +51,7 @@ import {
   computeInventoryCost,
   computeSellProfitById,
   computeTotalAssetsTwd,
+  computeUsdtCabinBalances,
   computeUsdtDayTotalProfit,
   computeVnDayTotalProfit,
   computeVnTradeAnalytics,
@@ -62,12 +64,15 @@ import {
   isExpenseTransaction,
   isUsdtTransaction,
   isVnTradeTransaction,
+  migrateUsdtCabinAttribution,
+  normalizeCabinAlloc,
   normalizeLoadedSettlement,
   normalizeLoadedTransactions,
   normalizeMonthlyClose,
   normalizeVnTradeTransaction,
   openingBalanceToForm,
   recalculateBalances,
+  resolveCabinAAmount,
   settlementFromTotalAssets,
   suggestMonthlyPeriodLabel,
   validateTransactions,
@@ -90,8 +95,9 @@ import {
 import { formCardClass, recordCardClass } from './utils/uiClasses'
 import {
   AppNav,
+  AssetsCabinOverview,
+  CabinAllocModal,
   ConfirmModal,
-  DailyBalanceStrip,
   DailyPageHeader,
   DailyTradeSettleBar,
   DailyMobileTradeTabBar,
@@ -118,7 +124,33 @@ import {
 const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'expenses' | 'notes'>, string> = {
   settlements: 'SET.',
   monthly: 'MONTH',
+  cabins: 'POS',
 }
+
+type PendingCabinAlloc =
+  | {
+      kind: 'usdt'
+      type: TransactionType
+      usdt: number
+      fiat: number
+      rate: number
+      isEditing: boolean
+      tradeDate: string
+      initialCabinA: number
+      direction: 'in' | 'out'
+    }
+  | {
+      kind: 'vn'
+      type: TransactionType
+      payCurrency: 'usdt'
+      vn: number
+      pay: number
+      rate: number
+      isEditing: boolean
+      tradeDate: string
+      initialCabinA: number
+      direction: 'in' | 'out'
+    }
 
 function dailyTradePaneClass(
   mobilePane: DailyMobileTradePane,
@@ -147,6 +179,7 @@ function App() {
   const [mobileTradePane, setMobileTradePane] = useState<DailyMobileTradePane>('buy_u')
   const [openingBalances, setOpeningBalances] = useState<Balances>({ ...INITIAL_BALANCES })
   const [openingUsdtCost, setOpeningUsdtCost] = useState<UsdtInventoryCost>({ ...EMPTY_USDT_COST })
+  const [openingUsdtCabinA, setOpeningUsdtCabinA] = useState(0)
   const [openingVnTwdRate, setOpeningVnTwdRate] = useState<number | null>(null)
   const [openingVnUsdtRate, setOpeningVnUsdtRate] = useState<number | null>(null)
   const [settlements, setSettlements] = useState<DailySettlement[]>([])
@@ -186,6 +219,10 @@ function App() {
   const [vnSellRate, setVnSellRate] = useState('')
   const [vnSellTradeDate, setVnSellTradeDate] = useState(defaultTradeDateInputValue)
   const [vnSellError, setVnSellError] = useState('')
+
+  const [cabinAllocPending, setCabinAllocPending] = useState<PendingCabinAlloc | null>(null)
+  const [cabinAllocError, setCabinAllocError] = useState('')
+  const [editCabinAAmount, setEditCabinAAmount] = useState<number | null>(null)
 
   const [expenseType, setExpenseType] = useState<ExpenseType>('fuel')
   const [expenseAmount, setExpenseAmount] = useState('')
@@ -237,7 +274,14 @@ function App() {
           setSettlements(data.settlements.map(normalizeLoadedSettlement))
           setExpenseSettlements(data.expenseSettlements ?? [])
           setMonthlyCloses((data.monthlyCloses ?? []).map((item) => normalizeMonthlyClose(item)))
-          setTransactions(normalizeLoadedTransactions(data.transactions))
+          const normalizedTx = normalizeLoadedTransactions(data.transactions)
+          const migrated = migrateUsdtCabinAttribution(
+            data.openingBalances,
+            data.openingUsdtCabinA,
+            normalizedTx,
+          )
+          setOpeningUsdtCabinA(migrated.openingUsdtCabinA)
+          setTransactions(migrated.transactions)
           setOpeningBalanceForm(
             openingBalanceToForm(
               data.openingUsdtCost,
@@ -310,6 +354,7 @@ function App() {
       dailyWorkTab,
       openingBalances,
       openingUsdtCost,
+      openingUsdtCabinA,
       openingVnTwdRate,
       openingVnUsdtRate,
       transactions,
@@ -327,6 +372,7 @@ function App() {
     dailyWorkTab,
     openingBalances,
     openingUsdtCost,
+    openingUsdtCabinA,
     openingVnTwdRate,
     openingVnUsdtRate,
     transactions,
@@ -343,6 +389,17 @@ function App() {
   const balances = useMemo(
     () => recalculateBalances(transactions, openingBalances, lastTradeSettledAt),
     [transactions, openingBalances, lastTradeSettledAt],
+  )
+
+  const usdtCabinBalances = useMemo(
+    () =>
+      computeUsdtCabinBalances(
+        openingBalances,
+        openingUsdtCabinA,
+        transactions,
+        lastTradeSettledAt,
+      ),
+    [openingBalances, openingUsdtCabinA, transactions, lastTradeSettledAt],
   )
 
   const usdtTransactions = useMemo(
@@ -384,6 +441,7 @@ function App() {
     transactions,
     openingBalances,
     openingUsdtCost,
+    openingUsdtCabinA,
     openingVnTwdRate,
     openingVnUsdtRate,
     settlements,
@@ -399,6 +457,7 @@ function App() {
     setTransactions(snapshot.transactions)
     setOpeningBalances(snapshot.openingBalances)
     setOpeningUsdtCost(snapshot.openingUsdtCost)
+    setOpeningUsdtCabinA(snapshot.openingUsdtCabinA ?? 0)
     setOpeningVnTwdRate(snapshot.openingVnTwdRate ?? null)
     setOpeningVnUsdtRate(snapshot.openingVnUsdtRate ?? null)
     setSettlements(snapshot.settlements.map(normalizeLoadedSettlement))
@@ -505,6 +564,7 @@ function App() {
     if (editingCategory === 'buy') {
       setEditingId(null)
       setEditingCategory(null)
+      setEditCabinAAmount(null)
     }
   }
 
@@ -517,6 +577,7 @@ function App() {
     if (editingCategory === 'sell') {
       setEditingId(null)
       setEditingCategory(null)
+      setEditCabinAAmount(null)
     }
   }
 
@@ -556,6 +617,7 @@ function App() {
     if (editingCategory === 'vn_buy') {
       setEditingId(null)
       setEditingCategory(null)
+      setEditCabinAAmount(null)
     }
   }
 
@@ -569,6 +631,7 @@ function App() {
     if (editingCategory === 'vn_sell') {
       setEditingId(null)
       setEditingCategory(null)
+      setEditCabinAAmount(null)
     }
   }
 
@@ -755,6 +818,7 @@ function App() {
       updatedTransactions,
       openingBalances,
       lastTradeSettledAt,
+      openingUsdtCabinA,
     )
     if (validationError) {
       setExpenseError(validationError)
@@ -796,6 +860,21 @@ function App() {
     }
     const { usdt, fiat, rate } = resolved
 
+    const openAlloc = () => {
+      setCabinAllocError('')
+      setCabinAllocPending({
+        kind: 'usdt',
+        type,
+        usdt,
+        fiat,
+        rate,
+        isEditing,
+        tradeDate,
+        initialCabinA: isEditing && editCabinAAmount !== null ? editCabinAAmount : usdt,
+        direction: isBuy ? 'in' : 'out',
+      })
+    }
+
     const rateCheck = assessRateDeviation(rate, inventoryCost.twd)
     if (rateCheck?.level === 'confirm') {
       setConfirmDialog({
@@ -805,19 +884,13 @@ function App() {
         variant: 'primary',
         onConfirm: () => {
           setConfirmDialog(null)
-          const newId = commitUsdtTrade(type, usdt, fiat, rate, isEditing, tradeDate)
-          if (newId) {
-            flashNewTransaction(newId)
-          }
+          openAlloc()
         },
       })
       return
     }
 
-    const newId = commitUsdtTrade(type, usdt, fiat, rate, isEditing, tradeDate)
-    if (newId) {
-      flashNewTransaction(newId)
-    }
+    openAlloc()
   }
 
   const commitUsdtTrade = (
@@ -827,10 +900,12 @@ function App() {
     rate: number,
     isEditing: boolean,
     tradeDate: string,
+    cabinAAmount: number,
   ): string | null => {
     const isBuy = type === 'buy'
     const setError = isBuy ? setBuyError : setSellError
     const newId = crypto.randomUUID()
+    const cabinAlloc = normalizeCabinAlloc(usdt, cabinAAmount)
 
     const buildUpdatedList = (list: Transaction[]): Transaction[] => {
       if (isEditing) {
@@ -843,6 +918,7 @@ function App() {
                 usdtAmount: usdt,
                 fiatAmount: fiat,
                 rate,
+                ...cabinAlloc,
                 timestamp: timestampFromDateInput(tradeDate, tx.timestamp),
               }
             : tx,
@@ -857,6 +933,7 @@ function App() {
         usdtAmount: usdt,
         fiatAmount: fiat,
         rate,
+        ...cabinAlloc,
       }
       return [newTransaction, ...list]
     }
@@ -866,6 +943,7 @@ function App() {
       updatedTransactions,
       openingBalances,
       lastTradeSettledAt,
+      openingUsdtCabinA,
     )
     if (validationError) {
       setError(validationError)
@@ -878,6 +956,7 @@ function App() {
     } else {
       resetSellForm()
     }
+    setEditCabinAAmount(null)
     return isEditing ? null : newId
   }
 
@@ -914,6 +993,37 @@ function App() {
     }
     const { vn, pay, rate } = resolved
 
+    const finishWithoutCabin = () => {
+      const newId = commitVnTrade(type, payCurrency, vn, pay, rate, isEditing, tradeDate, null)
+      if (newId) {
+        flashNewTransaction(newId)
+      }
+    }
+
+    const openAlloc = () => {
+      setCabinAllocError('')
+      setCabinAllocPending({
+        kind: 'vn',
+        type,
+        payCurrency: 'usdt',
+        vn,
+        pay,
+        rate,
+        isEditing,
+        tradeDate,
+        initialCabinA: isEditing && editCabinAAmount !== null ? editCabinAAmount : pay,
+        direction: isBuy ? 'out' : 'in',
+      })
+    }
+
+    const afterRateOk = () => {
+      if (payCurrency === 'usdt') {
+        openAlloc()
+      } else {
+        finishWithoutCabin()
+      }
+    }
+
     const vnReferenceRate =
       payCurrency === 'twd'
         ? vnTradeAnalytics.currentVnTwdRate
@@ -927,19 +1037,13 @@ function App() {
         variant: 'primary',
         onConfirm: () => {
           setConfirmDialog(null)
-          const newId = commitVnTrade(type, payCurrency, vn, pay, rate, isEditing, tradeDate)
-          if (newId) {
-            flashNewTransaction(newId)
-          }
+          afterRateOk()
         },
       })
       return
     }
 
-    const newId = commitVnTrade(type, payCurrency, vn, pay, rate, isEditing, tradeDate)
-    if (newId) {
-      flashNewTransaction(newId)
-    }
+    afterRateOk()
   }
 
   const commitVnTrade = (
@@ -950,10 +1054,16 @@ function App() {
     rate: number,
     isEditing: boolean,
     tradeDate: string,
+    cabinAAmount: number | null,
   ): string | null => {
     const isBuy = type === 'buy'
     const setError = isBuy ? setVnBuyError : setVnSellError
     const newId = crypto.randomUUID()
+
+    const cabinAlloc =
+      payCurrency === 'usdt' && cabinAAmount !== null
+        ? normalizeCabinAlloc(pay, cabinAAmount)
+        : null
 
     const buildUpdatedList = (list: Transaction[]): Transaction[] => {
       if (isEditing) {
@@ -967,6 +1077,8 @@ function App() {
                 twdAmount: payCurrency === 'twd' ? pay : 0,
                 usdtAmount: payCurrency === 'usdt' ? pay : 0,
                 rate,
+                cabin: cabinAlloc?.cabin,
+                cabinAAmount: cabinAlloc?.cabinAAmount,
                 timestamp: timestampFromDateInput(tradeDate, tx.timestamp),
               }
             : tx,
@@ -982,6 +1094,7 @@ function App() {
         twdAmount: payCurrency === 'twd' ? pay : 0,
         usdtAmount: payCurrency === 'usdt' ? pay : 0,
         rate,
+        ...(cabinAlloc ?? {}),
       }
       return [newTransaction, ...list]
     }
@@ -991,6 +1104,7 @@ function App() {
       updatedTransactions,
       openingBalances,
       lastTradeSettledAt,
+      openingUsdtCabinA,
     )
     if (validationError) {
       setError(validationError)
@@ -1003,7 +1117,108 @@ function App() {
     } else {
       resetVnSellForm()
     }
+    setEditCabinAAmount(null)
     return isEditing ? null : newId
+  }
+
+  const handleCabinAllocConfirm = (cabinAAmount: number) => {
+    if (!cabinAllocPending) return
+    setCabinAllocError('')
+
+    if (cabinAllocPending.kind === 'usdt') {
+      const { type, usdt, fiat, rate, isEditing, tradeDate } = cabinAllocPending
+      const cabinAlloc = normalizeCabinAlloc(usdt, cabinAAmount)
+      const updatedList: Transaction[] = isEditing
+        ? transactions.map((tx) =>
+            tx.id === editingId && isUsdtTransaction(tx)
+              ? {
+                  ...tx,
+                  type,
+                  fiatCurrency: 'twd' as const,
+                  usdtAmount: usdt,
+                  fiatAmount: fiat,
+                  rate,
+                  ...cabinAlloc,
+                  timestamp: timestampFromDateInput(tradeDate, tx.timestamp),
+                }
+              : tx,
+          )
+        : [
+            {
+              id: crypto.randomUUID(),
+              timestamp: timestampFromDateInput(tradeDate),
+              category: 'usdt' as const,
+              type,
+              fiatCurrency: 'twd' as const,
+              usdtAmount: usdt,
+              fiatAmount: fiat,
+              rate,
+              ...cabinAlloc,
+            },
+            ...transactions,
+          ]
+      const validationError = validateTransactions(
+        updatedList,
+        openingBalances,
+        lastTradeSettledAt,
+        openingUsdtCabinA,
+      )
+      if (validationError) {
+        setCabinAllocError(validationError)
+        return
+      }
+      const newId = commitUsdtTrade(type, usdt, fiat, rate, isEditing, tradeDate, cabinAAmount)
+      setCabinAllocPending(null)
+      if (newId) flashNewTransaction(newId)
+      return
+    }
+
+    const { type, vn, pay, rate, isEditing, tradeDate } = cabinAllocPending
+    const cabinAlloc = normalizeCabinAlloc(pay, cabinAAmount)
+    const updatedList: Transaction[] = isEditing
+      ? transactions.map((tx) =>
+          tx.id === editingId && isVnTradeTransaction(tx)
+            ? {
+                ...tx,
+                type,
+                payCurrency: 'usdt' as const,
+                vnAmount: vn,
+                twdAmount: 0,
+                usdtAmount: pay,
+                rate,
+                ...cabinAlloc,
+                timestamp: timestampFromDateInput(tradeDate, tx.timestamp),
+              }
+            : tx,
+        )
+      : [
+          {
+            id: crypto.randomUUID(),
+            timestamp: timestampFromDateInput(tradeDate),
+            category: 'vn_trade' as const,
+            type,
+            payCurrency: 'usdt' as const,
+            vnAmount: vn,
+            twdAmount: 0,
+            usdtAmount: pay,
+            rate,
+            ...cabinAlloc,
+          },
+          ...transactions,
+        ]
+    const validationError = validateTransactions(
+      updatedList,
+      openingBalances,
+      lastTradeSettledAt,
+      openingUsdtCabinA,
+    )
+    if (validationError) {
+      setCabinAllocError(validationError)
+      return
+    }
+    const newId = commitVnTrade(type, 'usdt', vn, pay, rate, isEditing, tradeDate, cabinAAmount)
+    setCabinAllocPending(null)
+    if (newId) flashNewTransaction(newId)
   }
 
   const handleEdit = (tx: UsdtTransaction) => {
@@ -1013,6 +1228,7 @@ function App() {
     setMobileTradePane(tx.type === 'buy' ? 'buy_u' : 'sell_u')
     setEditingId(tx.id)
     setEditingCategory(tx.type)
+    setEditCabinAAmount(resolveCabinAAmount(tx))
     setBuyError('')
     setSellError('')
     setVnBuyError('')
@@ -1039,6 +1255,9 @@ function App() {
     setMobileTradePane(normalized.type === 'buy' ? 'buy_vn' : 'sell_vn')
     setEditingId(normalized.id)
     setEditingCategory(normalized.type === 'buy' ? 'vn_buy' : 'vn_sell')
+    setEditCabinAAmount(
+      normalized.payCurrency === 'usdt' ? resolveCabinAAmount(normalized) : null,
+    )
     setBuyError('')
     setSellError('')
     setVnBuyError('')
@@ -1205,6 +1424,7 @@ function App() {
     setSettlements((prev) => [settlement, ...prev])
     setOpeningBalances(balances)
     setOpeningUsdtCost(inventoryAtSettle)
+    setOpeningUsdtCabinA(usdtCabinBalances.a)
     setOpeningVnTwdRate(assetsAtSettle.dayVnTwdRate)
     setOpeningVnUsdtRate(assetsAtSettle.dayVnUsdtRate)
     setTransactions((prev) => prev.filter(isExpenseTransaction))
@@ -1262,6 +1482,7 @@ function App() {
     setMonthlyPeriodLabel('')
     setOpeningBalances({ ...INITIAL_BALANCES })
     setOpeningUsdtCost({ ...EMPTY_USDT_COST })
+    setOpeningUsdtCabinA(0)
     setOpeningVnTwdRate(null)
     setOpeningVnUsdtRate(null)
     resetBuyForm()
@@ -1400,6 +1621,13 @@ function App() {
     const parsed = parseOpeningBalanceForm()
     if (!parsed) return
 
+    setOpeningUsdtCabinA(
+      adjustOpeningUsdtCabinA(
+        openingBalances.usdt,
+        openingUsdtCabinA,
+        parsed.balances.usdt,
+      ),
+    )
     setOpeningBalances(parsed.balances)
     setOpeningUsdtCost(parsed.usdtCost)
     setOpeningVnTwdRate(parsed.vnTwdRate)
@@ -1494,6 +1722,7 @@ function App() {
         ...balances,
         twd: balances.twd - expenseTotal,
       })
+      setOpeningUsdtCabinA(usdtCabinBalances.a)
     }
     setSelectedMonthlyCloseId(monthlyClose.id)
     setMonthlyCloseModalOpen(false)
@@ -1524,6 +1753,25 @@ function App() {
   return (
     <div className="h-dvh overflow-hidden bg-slate-50 text-slate-900">
       <ConfirmModal dialog={confirmDialog} onCancel={() => setConfirmDialog(null)} />
+      <CabinAllocModal
+        open={cabinAllocPending !== null}
+        totalUsdt={
+          cabinAllocPending?.kind === 'usdt'
+            ? cabinAllocPending.usdt
+            : cabinAllocPending?.kind === 'vn'
+              ? cabinAllocPending.pay
+              : 0
+        }
+        direction={cabinAllocPending?.direction ?? 'in'}
+        initialCabinA={cabinAllocPending?.initialCabinA ?? 0}
+        cabinBalances={usdtCabinBalances}
+        error={cabinAllocError}
+        onCancel={() => {
+          setCabinAllocPending(null)
+          setCabinAllocError('')
+        }}
+        onConfirm={handleCabinAllocConfirm}
+      />
       <MonthlyCloseModal
         open={monthlyCloseModalOpen}
         periodLabel={monthlyPeriodLabel}
@@ -1635,13 +1883,6 @@ function App() {
               <DailyPageHeader
                 businessDayLabel={businessDayLabel}
                 pendingCount={tradeTransactions.length}
-              />
-              <DailyBalanceStrip
-                balances={balances}
-                inventoryCost={inventoryCost}
-                totalAssets={totalAssets}
-                vnTwdRate={vnTradeAnalytics.currentVnTwdRate}
-                vnUsdtRate={vnTradeAnalytics.currentVnUsdtRate}
               />
               <DailyMobileTradeTabBar
                 className="lg:hidden"
@@ -1925,6 +2166,15 @@ function App() {
                 onDelete={handleDeleteNote}
               />
             </div>
+          ) : activeTab === 'cabins' ? (
+            <AssetsCabinOverview
+              balances={balances}
+              inventoryCost={inventoryCost}
+              usdtCabinBalances={usdtCabinBalances}
+              totalAssets={totalAssets}
+              vnTwdRate={vnTradeAnalytics.currentVnTwdRate}
+              vnUsdtRate={vnTradeAnalytics.currentVnUsdtRate}
+            />
           ) : activeTab === 'settlements' ? (
             <>
               <SettlementsPanel settlements={settlements} />

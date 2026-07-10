@@ -31,10 +31,12 @@ type PageTab =
   | 'settlements'
   | 'monthly'
   | 'notes'
+  | 'cabins'
 type DailyWorkTab = 'usdt' | 'vn'
 type FiatCurrency = 'twd' | 'vn'
 type TransactionType = 'buy' | 'sell'
 type VnPayCurrency = 'twd' | 'usdt'
+type UsdtCabin = 'A' | 'B'
 type ExpenseType = 'fuel' | 'parking' | 'meal' | 'traffic' | 'other'
 
 interface Balances {
@@ -57,6 +59,8 @@ interface UsdtTransaction {
   usdtAmount: number
   fiatAmount: number
   rate: number
+  cabinAAmount?: number
+  cabin?: UsdtCabin
 }
 
 interface VnTradeTransaction {
@@ -69,6 +73,8 @@ interface VnTradeTransaction {
   twdAmount: number
   usdtAmount: number
   rate: number
+  cabinAAmount?: number
+  cabin?: UsdtCabin
 }
 
 interface ExpenseTransaction {
@@ -156,6 +162,8 @@ export interface PersistedAppState {
   dailyWorkTab?: DailyWorkTab
   openingBalances: Balances
   openingUsdtCost: UsdtInventoryCost
+  /** 期初 P 歸 A 艙數量；B = openingBalances.usdt - openingUsdtCabinA */
+  openingUsdtCabinA?: number
   /** 期初 VN 庫存的 VN/TWD 成本均價（來自上次結算） */
   openingVnTwdRate?: number | null
   /** 期初 VN 庫存的 VN/USDT 成本均價（來自上次結算） */
@@ -183,6 +191,10 @@ function parseNullableNumber(value: unknown): number | null {
 
 function parseVnPayCurrency(value: unknown): VnPayCurrency {
   return value === 'usdt' ? 'usdt' : 'twd'
+}
+
+function parseUsdtCabin(value: unknown): UsdtCabin | undefined {
+  return value === 'A' || value === 'B' ? value : undefined
 }
 
 function parseExpenseType(value: unknown): ExpenseType {
@@ -216,6 +228,8 @@ function parseVnTradeRecord(
       twdAmount: 0,
       usdtAmount: usdtAmount > 0 ? usdtAmount : twdAmount,
       rate: parseNumber(value.rate),
+      cabin: parseUsdtCabin(value.cabin),
+      cabinAAmount: parseNullableNumber(value.cabinAAmount) ?? undefined,
     }
   }
 
@@ -271,6 +285,8 @@ function parseTransaction(value: unknown): Transaction | null {
     usdtAmount: parseNumber(value.usdtAmount),
     fiatAmount: parseNumber(value.fiatAmount),
     rate: parseNumber(value.rate),
+    cabin: parseUsdtCabin(value.cabin),
+    cabinAAmount: parseNullableNumber(value.cabinAAmount) ?? undefined,
   }
 }
 
@@ -508,7 +524,9 @@ function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
             ? 'monthly'
             : parsed.activeTab === 'notes'
               ? 'notes'
-              : 'daily'
+              : parsed.activeTab === 'cabins'
+                ? 'cabins'
+                : 'daily'
   const dailyWorkTab: DailyWorkTab = parsed.dailyWorkTab === 'vn' ? 'vn' : 'usdt'
 
   return {
@@ -516,6 +534,10 @@ function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
     dailyWorkTab,
     openingBalances,
     openingUsdtCost,
+    openingUsdtCabinA:
+      parsed.openingUsdtCabinA === undefined || parsed.openingUsdtCabinA === null
+        ? undefined
+        : parseNumber(parsed.openingUsdtCabinA),
     openingVnTwdRate: parseNullableNumber(parsed.openingVnTwdRate),
     openingVnUsdtRate: parseNullableNumber(parsed.openingVnUsdtRate),
     transactions,
