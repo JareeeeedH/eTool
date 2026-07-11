@@ -22,6 +22,7 @@ import {
   alignOpeningUsdtCabinsToSnapshot,
   openingUsdtCabinsAfterRebalance,
   recalculateBalances,
+  resolveUsdtSpendValidationError,
   transferUsdtBetweenCabins,
   validateTransactions,
 } from './index'
@@ -858,5 +859,17 @@ describe('usdt cabin quantity (shared cost)', () => {
     }
     expect(transferUsdtBetweenCabins(before, 'A', 'A', 1).ok).toBe(false)
     expect(transferUsdtBetweenCabins(before, 'A', 'C', 20_000).ok).toBe(false)
+  })
+
+  it('allows USDT spend when history TWD replay fails but current P/cabin is enough', () => {
+    const err = resolveUsdtSpendValidationError('台幣庫存不足', {
+      spendsTwd: false,
+      balances: { twd: 0, usdt: 167_530, vn: 0 },
+      cabins: { a: 27_000, b: 137_530, c: 3_000 },
+      usdtAmount: 1_988,
+      cabinAAmount: 0,
+      cabinBAmount: 0,
+    })
+    expect(err).toBeNull()
   })
 })

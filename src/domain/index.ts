@@ -1899,6 +1899,60 @@ export function validateTransactions(
 
   return null
 }
+
+/**
+ * 以「目前」庫存／分艙檢查一筆 USDT 支出（賣 P 或出 P 買 VN）。
+ * 用於歷史流水日期錯亂時，全量重播會誤報「台幣庫存不足」，但仍應允許合理的出 P。
+ */
+export function validateCurrentUsdtCabinSpend(
+  balances: Balances,
+  cabins: { a: number; b: number; c: number },
+  usdtAmount: number,
+  cabinAAmount: number,
+  cabinBAmount: number,
+): string | null {
+  if (!(usdtAmount > 0)) return '請輸入有效的正數金額'
+  if (usdtAmount > balances.usdt + 1e-9) return 'USDT 庫存不足'
+  const alloc = normalizeCabinAlloc(usdtAmount, cabinAAmount, cabinBAmount)
+  if (alloc.cabinAAmount > 0 && alloc.cabinAAmount > cabins.a + 1e-9) {
+    return 'A 艙 USDT 不足'
+  }
+  if (alloc.cabinBAmount > 0 && alloc.cabinBAmount > cabins.b + 1e-9) {
+    return 'B 艙 USDT 不足'
+  }
+  const cAmt = Math.max(0, usdtAmount - alloc.cabinAAmount - alloc.cabinBAmount)
+  if (cAmt > 0 && cAmt > cabins.c + 1e-9) return 'C 艙 USDT 不足'
+  return null
+}
+
+/**
+ * 全量驗證失敗時：若本筆不花台幣，且失敗原因是歷史重播的「台幣庫存不足」，
+ * 改以目前庫存檢查 USDT／分艙。
+ */
+export function resolveUsdtSpendValidationError(
+  fullError: string | null,
+  options: {
+    spendsTwd: boolean
+    balances: Balances
+    cabins: { a: number; b: number; c: number }
+    usdtAmount: number
+    cabinAAmount: number
+    cabinBAmount: number
+  },
+): string | null {
+  if (!fullError) return null
+  if (fullError === '台幣庫存不足' && !options.spendsTwd) {
+    return validateCurrentUsdtCabinSpend(
+      options.balances,
+      options.cabins,
+      options.usdtAmount,
+      options.cabinAAmount,
+      options.cabinBAmount,
+    )
+  }
+  return fullError
+}
+
 export function openingBalanceToForm(
   usdtCost: UsdtInventoryCost,
   vnTwdRate: number | null,

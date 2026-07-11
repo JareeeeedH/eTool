@@ -82,6 +82,7 @@ import {
   settlementFromTotalAssets,
   suggestMonthlyPeriodLabel,
   validateTransactions,
+  resolveUsdtSpendValidationError,
   vnTradePayAmount,
 } from './domain'
 import {
@@ -1009,12 +1010,22 @@ function App() {
     }
 
     const updatedTransactions = buildUpdatedList(transactions)
-    const validationError = validateTransactions(
-      updatedTransactions,
-      openingBalances,
-      lastTradeSettledAt,
-      openingUsdtCabinA,
-      openingUsdtCabinB,
+    const validationError = resolveUsdtSpendValidationError(
+      validateTransactions(
+        updatedTransactions,
+        openingBalances,
+        lastTradeSettledAt,
+        openingUsdtCabinA,
+        openingUsdtCabinB,
+      ),
+      {
+        spendsTwd: type === 'buy',
+        balances,
+        cabins: usdtCabinBalances,
+        usdtAmount: usdt,
+        cabinAAmount,
+        cabinBAmount,
+      },
     )
     if (validationError) {
       setError(validationError)
@@ -1178,13 +1189,34 @@ function App() {
     }
 
     const updatedTransactions = buildUpdatedList(transactions)
-    const validationError = validateTransactions(
-      updatedTransactions,
-      openingBalances,
-      lastTradeSettledAt,
-      openingUsdtCabinA,
-      openingUsdtCabinB,
-    )
+    const cabinAForCheck = cabinAlloc?.cabinAAmount ?? 0
+    const cabinBForCheck = cabinAlloc?.cabinBAmount ?? 0
+    const validationError =
+      payCurrency === 'usdt'
+        ? resolveUsdtSpendValidationError(
+            validateTransactions(
+              updatedTransactions,
+              openingBalances,
+              lastTradeSettledAt,
+              openingUsdtCabinA,
+              openingUsdtCabinB,
+            ),
+            {
+              spendsTwd: false,
+              balances,
+              cabins: usdtCabinBalances,
+              usdtAmount: pay,
+              cabinAAmount: cabinAForCheck,
+              cabinBAmount: cabinBForCheck,
+            },
+          )
+        : validateTransactions(
+            updatedTransactions,
+            openingBalances,
+            lastTradeSettledAt,
+            openingUsdtCabinA,
+            openingUsdtCabinB,
+          )
     if (validationError) {
       setError(validationError)
       return null
@@ -1240,12 +1272,22 @@ function App() {
             },
             ...transactions,
           ]
-      const validationError = validateTransactions(
-        updatedList,
-        openingBalances,
-        lastTradeSettledAt,
-        openingUsdtCabinA,
-        openingUsdtCabinB,
+      const validationError = resolveUsdtSpendValidationError(
+        validateTransactions(
+          updatedList,
+          openingBalances,
+          lastTradeSettledAt,
+          openingUsdtCabinA,
+          openingUsdtCabinB,
+        ),
+        {
+          spendsTwd: type === 'buy',
+          balances,
+          cabins: usdtCabinBalances,
+          usdtAmount: usdt,
+          cabinAAmount,
+          cabinBAmount,
+        },
       )
       if (validationError) {
         setCabinAllocError(validationError)
@@ -1302,12 +1344,22 @@ function App() {
           },
           ...transactions,
         ]
-    const validationError = validateTransactions(
-      updatedList,
-      openingBalances,
-      lastTradeSettledAt,
-      openingUsdtCabinA,
-      openingUsdtCabinB,
+    const validationError = resolveUsdtSpendValidationError(
+      validateTransactions(
+        updatedList,
+        openingBalances,
+        lastTradeSettledAt,
+        openingUsdtCabinA,
+        openingUsdtCabinB,
+      ),
+      {
+        spendsTwd: false,
+        balances,
+        cabins: usdtCabinBalances,
+        usdtAmount: pay,
+        cabinAAmount,
+        cabinBAmount,
+      },
     )
     if (validationError) {
       setCabinAllocError(validationError)
