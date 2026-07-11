@@ -360,7 +360,7 @@ export function UndoBanner({ message, onUndo, onDismiss }: UndoBannerProps) {
 }
 
 const BALANCE_CARD_CLASS =
-  'rounded-lg border border-slate-200 bg-white px-1.5 py-1 text-center leading-tight shadow-sm sm:px-2 sm:py-1.5'
+  'rounded-md border border-slate-200 bg-white px-1 py-0.5 text-center leading-tight shadow-sm sm:rounded-lg sm:px-2 sm:py-1.5'
 const BALANCE_LABEL_CLASS = 'shrink-0 text-[9px] font-medium leading-tight text-slate-500 sm:text-[10px]'
 const BALANCE_VALUE_CLASS =
   'min-w-0 text-xs font-bold tabular-nums leading-tight text-slate-800 sm:text-sm'
@@ -368,7 +368,7 @@ const BALANCE_SUB_CLASS = 'text-[9px] tabular-nums leading-tight text-slate-400 
 const BALANCE_MOBILE_ROW_CLASS = 'flex items-baseline justify-center gap-1 sm:block'
 
 const TOTAL_ASSETS_DENSE_CARD_CLASS =
-  'flex h-full min-h-0 flex-col items-center justify-center rounded-lg border border-indigo-200 bg-indigo-50/70 px-1.5 py-1 text-center shadow-sm sm:px-2 sm:py-1.5'
+  'flex h-full min-h-0 flex-col items-center justify-center rounded-md border border-indigo-200 bg-indigo-50/70 px-1 py-0.5 text-center shadow-sm sm:rounded-lg sm:px-2 sm:py-1.5'
 
 const TOTAL_ASSETS_CARD_CLASS =
   'rounded-lg border border-indigo-200 bg-indigo-50/50 px-2 py-1.5 text-center leading-tight shadow-sm'
@@ -457,7 +457,7 @@ export function DailyBalanceStrip({
     balances.vn > 0 && (vnTwdRate !== null || vnUsdtRate !== null)
 
   return (
-    <div className="mb-1 grid grid-cols-2 items-stretch gap-1 sm:mb-1.5 sm:grid-cols-4 sm:gap-1.5">
+    <div className="mb-0.5 grid grid-cols-2 items-stretch gap-0.5 sm:mb-1.5 sm:grid-cols-4 sm:gap-1.5">
       <div className={`${BALANCE_CARD_CLASS} ${BALANCE_MOBILE_ROW_CLASS}`}>
         <p className={BALANCE_LABEL_CLASS}>T</p>
         <p className={BALANCE_VALUE_CLASS} title={formatTwd(balances.twd)}>
@@ -1681,7 +1681,7 @@ function TradeMetaDateInput({
     <label className={`relative block min-w-0 ${className}`}>
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-1.5 flex items-center text-xs tabular-nums text-slate-700"
+        className="pointer-events-none absolute inset-y-0 left-1 flex items-center text-[11px] leading-none tabular-nums text-slate-700 sm:left-1.5 sm:text-xs"
       >
         {formatTradeMetaDateDisplay(value)}
       </span>
@@ -1692,7 +1692,7 @@ function TradeMetaDateInput({
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         aria-label="交易日期"
-        className="w-[4.85rem] max-w-full rounded border border-slate-300 py-1 pl-1.5 pr-0.5 text-xs tabular-nums text-transparent outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-300/40 disabled:bg-slate-50 sm:w-full sm:max-w-[9.5rem] sm:py-0.5 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+        className="w-[2.85rem] max-w-full rounded border border-slate-300 py-0.5 pl-1 pr-0 text-xs leading-tight tabular-nums text-transparent outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-300/40 disabled:bg-slate-50 sm:w-[3.5rem] sm:py-0.5 sm:pl-1.5 sm:pr-0.5 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
       />
     </label>
   )
@@ -2039,11 +2039,11 @@ export function DailyMobileTradeTabBar({
 }) {
   return (
     <div
-      className={`mb-1.5 rounded-xl bg-slate-100/90 p-1 ${className}`}
+      className={`mb-1 rounded-lg bg-slate-100/90 p-0.5 ${className}`}
       role="tablist"
       aria-label="交易功能"
     >
-      <div className="grid grid-cols-4 gap-1">
+      <div className="grid grid-cols-4 gap-0.5">
         {MOBILE_TRADE_PANES.map((pane) => {
           const selected = value === pane.id
           return (
@@ -2054,11 +2054,11 @@ export function DailyMobileTradeTabBar({
               aria-selected={selected}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => onChange(pane.id)}
-              className={`min-w-0 rounded-lg px-0.5 py-2 text-center transition-all ${
+              className={`min-w-0 rounded-md px-0.5 py-1 text-center transition-all ${
                 selected ? pane.activeClass : pane.idleClass
               }`}
             >
-              <span className="block text-[13px] font-bold leading-none tracking-tight">
+              <span className="block text-[12px] font-bold leading-none tracking-tight">
                 {TRADE_PANE_CODE[pane.id]}
               </span>
             </button>
@@ -2143,7 +2143,7 @@ export function VnPayCurrencyToggle({
       type="button"
       disabled={disabled}
       onClick={() => onChange('usdt')}
-      className={`rounded px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
+      className={`rounded px-1.5 py-0.5 text-[11px] font-medium leading-none transition-colors disabled:cursor-not-allowed sm:px-2 sm:py-1 sm:text-xs ${
         value === 'usdt'
           ? 'bg-sky-100 text-sky-800 shadow-sm ring-1 ring-sky-200'
           : 'text-slate-600 hover:text-sky-700'
@@ -2158,7 +2158,7 @@ export function VnPayCurrencyToggle({
       type="button"
       disabled={disabled}
       onClick={() => onChange('twd')}
-      className={`rounded px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed ${
+      className={`rounded px-1.5 py-0.5 text-[11px] font-medium leading-none transition-colors disabled:cursor-not-allowed sm:px-2 sm:py-1 sm:text-xs ${
         value === 'twd'
           ? 'bg-emerald-100 text-emerald-800 shadow-sm ring-1 ring-emerald-200'
           : 'text-slate-600 hover:text-emerald-700'
@@ -2265,7 +2265,7 @@ export function VnTradeForm({
 
   return (
     <>
-      <div className="mb-1.5 flex items-center justify-end gap-1.5 sm:mb-1 sm:justify-between">
+      <div className="mb-1 flex items-center justify-end gap-1 sm:mb-1 sm:justify-between">
         <h2 className={`hidden text-sm font-semibold sm:block ${accentClass}`}>
           {isEditing ? editTitle : title}
         </h2>

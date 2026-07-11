@@ -32,11 +32,11 @@ export const EXPENSE_INPUT_CLASS =
   'w-full rounded border border-slate-300 px-1.5 py-0.5 text-base sm:text-xs outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50'
 
 export const TRADE_INPUT_CLASS =
-  'w-full rounded border border-slate-300 px-1.5 py-1 text-base tabular-nums placeholder:text-slate-400 sm:text-xs outline-none transition disabled:bg-slate-50'
+  'w-full rounded border border-slate-300 px-1.5 py-0.5 text-base tabular-nums leading-tight placeholder:text-slate-400 outline-none transition disabled:bg-slate-50 sm:py-1 sm:text-xs sm:leading-normal'
 
 /** 買賣表單：手機 2×2（P/R/T + 日期按鈕格）；右欄略寬以容納日期 */
 export const TRADE_FORM_GRID_CLASS =
-  'grid grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] grid-rows-2 gap-1.5 sm:flex sm:grid-cols-none sm:items-center sm:gap-1'
+  'grid grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] grid-rows-2 gap-1 sm:flex sm:grid-cols-none sm:items-center sm:gap-1'
 
 /** 第四格：日期 + Cancel / Add 同一行併排 */
 export const TRADE_FORM_META_CELL_CLASS =
@@ -44,16 +44,16 @@ export const TRADE_FORM_META_CELL_CLASS =
 
 /** 買賣表單按鈕（第四格內與日期併排） */
 export const TRADE_FORM_ACTIONS_CLASS =
-  'min-w-[2.35rem] max-sm:min-h-[2.125rem] max-sm:flex-1 shrink-0 rounded border border-slate-300 bg-white px-3 py-1.5 text-center text-[10px] leading-tight text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:min-w-0 sm:min-h-0 sm:flex-none sm:px-2 sm:py-1 sm:text-xs'
+  'min-w-[2rem] max-sm:min-h-[1.75rem] max-sm:flex-1 shrink-0 rounded border border-slate-300 bg-white px-2 py-0.5 text-center text-[10px] leading-none text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:min-w-0 sm:min-h-0 sm:flex-none sm:px-2 sm:py-1 sm:text-xs sm:leading-tight'
 
 export const TRADE_FORM_SUBMIT_CLASS =
-  'min-w-[2.35rem] max-sm:min-h-[2.125rem] max-sm:flex-1 shrink-0 rounded px-3 py-1.5 text-center text-[10px] font-medium leading-tight text-white transition focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:min-h-0 sm:flex-none sm:px-3 sm:py-1 sm:text-xs'
+  'min-w-[2rem] max-sm:min-h-[1.75rem] max-sm:flex-1 shrink-0 rounded px-2 py-0.5 text-center text-[10px] font-medium leading-none text-white transition focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:min-h-0 sm:flex-none sm:px-3 sm:py-1 sm:text-xs sm:leading-tight'
 
 /** 買賣表單匯率欄容器：桌面版略寬 */
 export const TRADE_RATE_FIELD_CLASS = 'block min-w-0 sm:w-[7rem] sm:shrink-0'
 
 export const TRADE_RATE_INPUT_CLASS =
-  'w-full rounded border border-slate-300 px-1.5 py-1 text-base tabular-nums placeholder:text-slate-400 sm:text-sm outline-none transition disabled:bg-slate-50'
+  'w-full rounded border border-slate-300 px-1.5 py-0.5 text-base tabular-nums leading-tight placeholder:text-slate-400 outline-none transition disabled:bg-slate-50 sm:py-1 sm:text-sm sm:leading-normal'
 
 export const INITIAL_TWD = 0
 export const INITIAL_USDT = 0

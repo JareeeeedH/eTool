@@ -272,12 +272,9 @@ export function formatTableDateTime(date: Date): string {
   return formatSettlementDate(date)
 }
 
-/** 交易明細日期：年後兩碼／月／日（如 26/07/11） */
+/** 交易明細日期：僅顯示日（如 11） */
 export function formatTransactionTableDate(date: Date): string {
-  const y = String(date.getFullYear()).slice(-2)
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}/${m}/${d}`
+  return String(date.getDate())
 }
 
 /** HTML date input（YYYY-MM-DD），本地時區 */
@@ -302,11 +299,11 @@ export function isValidDateInputValue(value: string): boolean {
   return dateInputValueFromDate(timestampFromDateInput(value)) === value
 }
 
-/** 表單第四格日期顯示：26/07/03 */
+/** 表單第四格日期顯示：僅日（如 11） */
 export function formatTradeMetaDateDisplay(value: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (!match) return value
-  return `${match[1].slice(-2)}/${match[2]}/${match[3]}`
+  return String(Number(match[3]))
 }
 
 /** 將 date input 與既有時間（或現在）合併為 timestamp */
