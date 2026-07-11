@@ -4,6 +4,7 @@ import {
   loadPersistedAppStateAsync,
   savePersistedAppStateAsync,
   canPullProdStateToLocal,
+  canResetAllLocally,
   pullProdStateToLocalAsync,
   type PersistedAppState,
 } from './persistence'
@@ -1613,6 +1614,7 @@ function App() {
   }
 
   const executeResetAll = () => {
+    if (!canResetAllLocally()) return
     setTransactions([])
     setSettlements([])
     setExpenseSettlements([])
@@ -1638,6 +1640,7 @@ function App() {
   }
 
   const handleResetAll = () => {
+    if (!canResetAllLocally()) return
     setConfirmDialog({
       title: '清空',
       lines: [],
@@ -2319,7 +2322,7 @@ function App() {
                   canPullProdStateToLocal() ? handlePullProdState : undefined
                 }
                 pullProdBusy={pullProdBusy}
-                onResetAll={handleResetAll}
+                onResetAll={canResetAllLocally() ? handleResetAll : undefined}
               />
             </>
           )}

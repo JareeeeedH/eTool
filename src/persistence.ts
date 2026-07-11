@@ -19,6 +19,11 @@ export function canPullProdStateToLocal(): boolean {
   return Boolean(import.meta.env.DEV && !getPersistenceConfigError())
 }
 
+/** 僅本機開發顯示「清空」，正式站不露出以免誤清 */
+export function canResetAllLocally(): boolean {
+  return Boolean(import.meta.env.DEV)
+}
+
 function apiHeaders(): HeadersInit {
   return {
     Authorization: `Bearer ${API_TOKEN}`,

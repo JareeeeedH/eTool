@@ -485,7 +485,7 @@ export interface MonthlyClosesListProps {
   onCabinRebalance: () => void
   onPullProdState?: () => void
   pullProdBusy?: boolean
-  onResetAll: () => void
+  onResetAll?: () => void
 }
 
 

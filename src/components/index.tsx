@@ -3609,13 +3609,15 @@ export function MonthlyClosesList({
           {pullProdBusy ? '…' : 'PULL'}
         </button>
       )}
-      <button
-        type="button"
-        onClick={onResetAll}
-        className="px-0.5 text-[10px] font-medium text-red-500 transition hover:text-red-700 sm:text-xs"
-      >
-        清空
-      </button>
+      {onResetAll && (
+        <button
+          type="button"
+          onClick={onResetAll}
+          className="px-0.5 text-[10px] font-medium text-red-500 transition hover:text-red-700 sm:text-xs"
+        >
+          清空
+        </button>
+      )}
     </div>
   )
 }
