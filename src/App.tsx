@@ -17,7 +17,6 @@ import type {
   EditingCategory,
   ExpenseSettlement,
   ExpenseTransaction,
-  ExpenseType,
   MonthlyClose,
   NotebookEntry,
   OpeningBalanceForm,
@@ -42,11 +41,8 @@ import {
   formatRateDeviationConfirmTitle,
 } from './utils/rateSanity'
 import {
-  assembleExpenseSettlementsForMonthlyClose,
   adjustOpeningUsdtCabins,
   buildDeleteConfirmLines,
-  buildMonthlyClose,
-  buildMonthlyClosePreview,
   buildTradeSettleConfirmSummary,
   calculateBuyDayAverageRate,
   calculateVnBuyDayAverageRate,
@@ -80,7 +76,6 @@ import {
   resolveCabinAAmount,
   resolveCabinBAmount,
   settlementFromTotalAssets,
-  suggestMonthlyPeriodLabel,
   validateTransactions,
   resolveUsdtSpendValidationError,
   vnTradePayAmount,
@@ -117,7 +112,6 @@ import {
   ExpenseTable,
   MobileNavCloseIcon,
   MobileNavMenuIcon,
-  MonthlyCloseModal,
   MonthlyClosesList,
   NotebookPanel,
   OpeningBalanceModal,
@@ -132,7 +126,7 @@ import {
 
 const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'expenses' | 'notes'>, string> = {
   settlements: 'SET.',
-  monthly: 'MONTH',
+  monthly: 'SETUP',
 }
 
 type PendingCabinAlloc =
@@ -197,8 +191,6 @@ function App() {
   const [expenseSettlements, setExpenseSettlements] = useState<ExpenseSettlement[]>([])
   const [monthlyCloses, setMonthlyCloses] = useState<MonthlyClose[]>([])
   const [selectedMonthlyCloseId, setSelectedMonthlyCloseId] = useState<string | null>(null)
-  const [monthlyCloseModalOpen, setMonthlyCloseModalOpen] = useState(false)
-  const [monthlyPeriodLabel, setMonthlyPeriodLabel] = useState('')
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [notes, setNotes] = useState<NotebookEntry[]>([])
   const [noteDraft, setNoteDraft] = useState('')
@@ -236,7 +228,6 @@ function App() {
   const [editCabinAAmount, setEditCabinAAmount] = useState<number | null>(null)
   const [editCabinBAmount, setEditCabinBAmount] = useState<number | null>(null)
 
-  const [expenseType, setExpenseType] = useState<ExpenseType>('fuel')
   const [expenseAmount, setExpenseAmount] = useState('')
   const [expenseNote, setExpenseNote] = useState('')
   const [expenseError, setExpenseError] = useState('')
@@ -287,7 +278,9 @@ function App() {
           setOpeningVnUsdtRate(data.openingVnUsdtRate ?? null)
           setSettlements(data.settlements.map(normalizeLoadedSettlement))
           setExpenseSettlements(data.expenseSettlements ?? [])
-          setMonthlyCloses((data.monthlyCloses ?? []).map((item) => normalizeMonthlyClose(item)))
+          // 月結功能暫不使用：不載入、並在下次存檔時清掉本機月結
+          setMonthlyCloses([])
+          setSelectedMonthlyCloseId(null)
           const normalizedTx = normalizeLoadedTransactions(data.transactions)
           const migrated = migrateUsdtCabinAttribution(
             data.openingBalances,
@@ -530,8 +523,6 @@ function App() {
     setDailyWorkTab(restoredWorkTab)
     setMobileTradePane(restoredWorkTab === 'vn' ? 'buy_vn' : 'buy_u')
     setNotes(snapshot.notes ?? [])
-    setMonthlyCloseModalOpen(false)
-    setMonthlyPeriodLabel('')
   }
 
   const handleSelectTab = (tab: PageTab) => {
@@ -589,31 +580,6 @@ function App() {
         transactions,
       ),
     [balances, inventoryCost, openingBalances, openingUsdtCost, openingVnTwdRate, openingVnUsdtRate, transactions],
-  )
-
-  const monthlyClosePreview = useMemo(
-    () =>
-      buildMonthlyClosePreview(
-        settlements,
-        expenseSettlements,
-        expenseTransactions,
-        tradeTransactions.length,
-        balances,
-        totalAssets.total,
-      ),
-    [
-      settlements,
-      expenseSettlements,
-      expenseTransactions,
-      tradeTransactions.length,
-      balances,
-      totalAssets.total,
-    ],
-  )
-
-  const selectedMonthlyClose = useMemo(
-    () => monthlyCloses.find((item) => item.id === selectedMonthlyCloseId) ?? null,
-    [monthlyCloses, selectedMonthlyCloseId],
   )
 
   const resetBuyForm = () => {
@@ -715,7 +681,6 @@ function App() {
   }
 
   const resetExpenseForm = () => {
-    setExpenseType('fuel')
     setExpenseAmount('')
     setExpenseNote('')
     setExpenseError('')
@@ -860,7 +825,7 @@ function App() {
           tx.id === editingId && isExpenseTransaction(tx)
             ? {
                 ...tx,
-                expenseType,
+                expenseType: 'other',
                 amountTwd: amount,
                 note: expenseNote.trim(),
               }
@@ -871,7 +836,7 @@ function App() {
         id: crypto.randomUUID(),
         timestamp: new Date(),
         category: 'expense',
-        expenseType,
+        expenseType: 'other',
         amountTwd: amount,
         note: expenseNote.trim(),
       }
@@ -1459,7 +1424,6 @@ function App() {
     setVnBuyError('')
     setVnSellError('')
     setExpenseError('')
-    setExpenseType(tx.expenseType)
     setExpenseAmount(formatExpenseTwdInput(tx.amountTwd))
     setExpenseNote(tx.note)
   }
@@ -1627,7 +1591,7 @@ function App() {
         openingVnTwdRate,
         openingVnUsdtRate,
       ),
-      confirmLabel: '確認',
+      confirmLabel: 'OK',
       variant: 'primary',
       onConfirm: () => {
         setConfirmDialog(null)
@@ -1636,14 +1600,24 @@ function App() {
     })
   }
 
+  const handleUndo = () => {
+    if (!undoSnapshot) return
+    restoreSnapshot(undoSnapshot)
+    setUndoSnapshot(null)
+    setUndoMessage('')
+  }
+
+  const dismissUndo = () => {
+    setUndoSnapshot(null)
+    setUndoMessage('')
+  }
+
   const executeResetAll = () => {
     setTransactions([])
     setSettlements([])
     setExpenseSettlements([])
     setMonthlyCloses([])
     setSelectedMonthlyCloseId(null)
-    setMonthlyCloseModalOpen(false)
-    setMonthlyPeriodLabel('')
     setOpeningBalances({ ...INITIAL_BALANCES })
     setOpeningUsdtCost({ ...EMPTY_USDT_COST })
     setOpeningUsdtCabinA(0)
@@ -1665,30 +1639,15 @@ function App() {
 
   const handleResetAll = () => {
     setConfirmDialog({
-      title: '確定清空全部資料？',
-      lines: [
-        '將刪除所有交易與結算紀錄，並還原初始餘額。',
-        '此操作無法復原，僅供測試使用。',
-      ],
-      confirmLabel: '確認清空',
+      title: '清空',
+      lines: [],
+      confirmLabel: 'CLR',
       variant: 'danger',
       onConfirm: () => {
         setConfirmDialog(null)
         executeResetAll()
       },
     })
-  }
-
-  const handleUndo = () => {
-    if (!undoSnapshot) return
-    restoreSnapshot(undoSnapshot)
-    setUndoSnapshot(null)
-    setUndoMessage('')
-  }
-
-  const dismissUndo = () => {
-    setUndoSnapshot(null)
-    setUndoMessage('')
   }
 
   const handleOpenOpeningBalance = () => {
@@ -1749,27 +1708,27 @@ function App() {
 
     const usdtCostTwd = parseOptionalRate(openingBalanceForm.usdtCostTwd)
     if (usdtCostTwd === 'invalid') {
-      setOpeningBalanceError('USDT 成本 (TWD) 請輸入有效正數或留空')
+      setOpeningBalanceError('USDT 料金 (TWD) 請輸入有效正數或留空')
       return null
     }
     const usdtCostVn = parseOptionalRate(openingBalanceForm.usdtCostVn)
     if (usdtCostVn === 'invalid') {
-      setOpeningBalanceError('USDT 成本 (VN) 請輸入有效正數或留空')
+      setOpeningBalanceError('USDT 料金 (VN) 請輸入有效正數或留空')
       return null
     }
     const vnTwdRate = parseOptionalRate(openingBalanceForm.vnTwdRate)
     if (vnTwdRate === 'invalid') {
-      setOpeningBalanceError('VN 池成本 (VN/TWD) 請輸入有效正數或留空')
+      setOpeningBalanceError('VN 池料金 (VN/TWD) 請輸入有效正數或留空')
       return null
     }
     const vnUsdtRate = parseOptionalRate(openingBalanceForm.vnUsdtRate)
     if (vnUsdtRate === 'invalid') {
-      setOpeningBalanceError('VN 池成本 (VN/U) 請輸入有效正數或留空')
+      setOpeningBalanceError('VN 池料金 (VN/U) 請輸入有效正數或留空')
       return null
     }
 
     if (usdt > 0 && usdtCostTwd === null) {
-      setOpeningBalanceError('有 USDT 庫存時請填寫 USDT 成本 (TWD)')
+      setOpeningBalanceError('有 USDT 庫存時請填寫 USDT 料金 (TWD)')
       return null
     }
 
@@ -1854,12 +1813,9 @@ function App() {
   const handlePullProdState = () => {
     if (!canPullProdStateToLocal() || pullProdBusy) return
     setConfirmDialog({
-      title: '拉取正式站資料到本機？',
-      lines: [
-        '將以正式站目前資料覆寫本機後端（唯讀拉取，不會寫回正式站）。',
-        '本機現有未存到正式站的修改會被蓋掉。',
-      ],
-      confirmLabel: '確認拉取',
+      title: 'PULL',
+      lines: [],
+      confirmLabel: 'PULL',
       variant: 'primary',
       onConfirm: () => {
         setConfirmDialog(null)
@@ -1912,75 +1868,6 @@ function App() {
     })
   }
 
-  const handleOpenMonthlyClose = () => {
-    if (
-      settlements.length === 0 &&
-      expenseSettlements.length === 0 &&
-      expenseTransactions.length === 0
-    ) {
-      setConfirmDialog({
-        title: '無法月結',
-        lines: ['「每日結算」與「營業開銷」目前皆無紀錄，無法月結。'],
-        confirmLabel: '知道了',
-        variant: 'primary',
-        alertOnly: true,
-        onConfirm: () => setConfirmDialog(null),
-      })
-      return
-    }
-
-    setMonthlyPeriodLabel(suggestMonthlyPeriodLabel())
-    setMonthlyCloseModalOpen(true)
-  }
-
-  const executeMonthlyClose = () => {
-    const label = monthlyPeriodLabel.trim()
-    if (!label) return
-
-    const snapshot = createSnapshot()
-    const assembledExpenses = assembleExpenseSettlementsForMonthlyClose(
-      expenseSettlements,
-      expenseTransactions,
-      balances,
-    )
-    const expenseTotal = assembledExpenses.reduce(
-      (sum, item) => sum + item.expenseTotal,
-      0,
-    )
-    const monthlyClose = buildMonthlyClose(
-      label,
-      settlements,
-      assembledExpenses,
-      balances,
-      inventoryCost,
-      openingVnTwdRate,
-      openingVnUsdtRate,
-      totalAssets.total,
-    )
-
-    setMonthlyCloses((prev) => [monthlyClose, ...prev])
-    setSettlements([])
-    setExpenseSettlements([])
-    if (expenseTransactions.length > 0) {
-      setTransactions((prev) => prev.filter((tx) => !isExpenseTransaction(tx)))
-    }
-    if (expenseTotal > 0) {
-      setOpeningBalances({
-        ...balances,
-        twd: balances.twd - expenseTotal,
-      })
-      setOpeningUsdtCabinA(usdtCabinBalances.a)
-      setOpeningUsdtCabinB(usdtCabinBalances.b)
-    }
-    setSelectedMonthlyCloseId(monthlyClose.id)
-    setMonthlyCloseModalOpen(false)
-    setMonthlyPeriodLabel('')
-    setActiveTab('monthly')
-
-    setUndoSnapshot(snapshot)
-    setUndoMessage(`已完成「${monthlyClose.periodLabel}」月結封存`)
-  }
-
   if (!ready) {
     return (
       <div className="flex h-dvh items-center justify-center bg-slate-50 text-slate-600">
@@ -2029,17 +1916,6 @@ function App() {
         onDismissError={() => setCabinAllocError('')}
         onConfirm={handleCabinAllocConfirm}
       />
-      <MonthlyCloseModal
-        open={monthlyCloseModalOpen}
-        periodLabel={monthlyPeriodLabel}
-        preview={monthlyClosePreview}
-        onPeriodLabelChange={setMonthlyPeriodLabel}
-        onCancel={() => {
-          setMonthlyCloseModalOpen(false)
-          setMonthlyPeriodLabel('')
-        }}
-        onConfirm={executeMonthlyClose}
-      />
       <OpeningBalanceModal
         open={openingBalanceModalOpen}
         currentBalances={openingBalances}
@@ -2061,7 +1937,7 @@ function App() {
         onConfirm={handleRebalanceCabins}
       />
       <div className="flex h-full w-full">
-        <aside className="hidden w-[6rem] shrink-0 border-r border-slate-200 bg-white px-1 py-3 lg:block">
+        <aside className="hidden h-full w-[6rem] shrink-0 border-r border-slate-200 bg-white px-1 py-3 lg:flex lg:flex-col">
           <AppNav
             activeTab={activeTab}
             settlementsCount={settlements.length}
@@ -2122,9 +1998,7 @@ function App() {
             </button>
             {activeTab !== 'daily' && activeTab !== 'expenses' && activeTab !== 'notes' && (
               <p className="min-w-0 flex-1 text-xs font-medium text-slate-800">
-                {activeTab === 'monthly' && selectedMonthlyClose
-                  ? selectedMonthlyClose.periodLabel
-                  : MOBILE_TAB_LABEL[activeTab]}
+                {MOBILE_TAB_LABEL[activeTab]}
               </p>
             )}
           </header>
@@ -2388,26 +2262,21 @@ function App() {
                   筆
                 </p>
               </div>
-              <section className="mx-auto w-full max-w-2xl shrink-0 space-y-1.5">
+              <section className="mx-auto w-full max-w-sm shrink-0 space-y-1">
                 <div className={`${formCardClass('orange', isEditingExpense)} !p-1.5`}>
                   <ExpenseForm
-                    expenseType={expenseType}
                     amount={expenseAmount}
                     note={expenseNote}
                     error={expenseError}
                     isEditing={isEditingExpense}
                     disabled={isEditingAny && !isEditingExpense}
-                    onExpenseTypeChange={setExpenseType}
                     onAmountChange={setExpenseAmount}
                     onNoteChange={setExpenseNote}
                     onSubmit={handleExpenseSubmit}
                     onCancel={resetExpenseForm}
                   />
                 </div>
-                <div className={`${recordCardClass('orange')} flex flex-col`}>
-                  <h2 className="mb-1 shrink-0 text-[11px] font-semibold leading-none text-orange-700">
-                    EXPENSE
-                  </h2>
+                <div className={`${recordCardClass('orange')} flex flex-col !p-1.5`}>
                   <ExpenseTable
                     transactions={expenseTransactions}
                     editingId={editingId}
@@ -2444,17 +2313,13 @@ function App() {
           ) : (
             <>
               <MonthlyClosesList
-                closes={monthlyCloses}
-                expandedId={selectedMonthlyCloseId}
-                onExpandedChange={setSelectedMonthlyCloseId}
-                onStartClose={handleOpenMonthlyClose}
                 onOpeningBalance={handleOpenOpeningBalance}
                 onCabinRebalance={() => setCabinRebalanceModalOpen(true)}
-                onResetAll={handleResetAll}
                 onPullProdState={
                   canPullProdStateToLocal() ? handlePullProdState : undefined
                 }
                 pullProdBusy={pullProdBusy}
+                onResetAll={handleResetAll}
               />
             </>
           )}

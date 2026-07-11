@@ -399,13 +399,11 @@ export interface VnTradeTableProps {
 
 
 export interface ExpenseFormProps {
-  expenseType: ExpenseType
   amount: string
   note: string
   error: string
   isEditing: boolean
   disabled: boolean
-  onExpenseTypeChange: (value: ExpenseType) => void
   onAmountChange: (value: string) => void
   onNoteChange: (value: string) => void
   onSubmit: (e: FormEvent) => void
@@ -483,15 +481,11 @@ export interface OpeningBalanceModalProps {
 }
 
 export interface MonthlyClosesListProps {
-  closes: MonthlyClose[]
-  expandedId: string | null
-  onExpandedChange: (id: string | null) => void
-  onStartClose: () => void
   onOpeningBalance: () => void
   onCabinRebalance: () => void
-  onResetAll: () => void
   onPullProdState?: () => void
   pullProdBusy?: boolean
+  onResetAll: () => void
 }
 
 

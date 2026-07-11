@@ -250,7 +250,7 @@ export function normalizeCabinAlloc(
   const a = Math.min(Math.max(0, cabinAAmount), total)
   const b = Math.min(Math.max(0, cabinBAmount), Math.max(0, total - a))
   const c = Math.max(0, total - a - b)
-  let cabin: UsdtCabin = 'A'
+  let cabin: UsdtCabin
   if (c > a && c > b) cabin = 'C'
   else if (b > a && b >= c) cabin = 'B'
   else if (a > 0) cabin = 'A'
@@ -544,9 +544,7 @@ export function adjustOpeningUsdtCabins(
   let reduce = -delta
   let a = start.a
   let b = start.b
-  let c = start.c
-  const fromC = Math.min(c, reduce)
-  c -= fromC
+  const fromC = Math.min(start.c, reduce)
   reduce -= fromC
   const fromB = Math.min(b, reduce)
   b -= fromB
@@ -698,7 +696,7 @@ export function computeTotalAssetsTwd(
   } else if (inventoryCost.twd !== null) {
     usdtInTwd = floorTwd(balances.usdt * inventoryCost.twd)
   } else {
-    missingNotes.push('USDT 無 TWD 成本')
+    missingNotes.push('USDT 無 TWD 料金')
   }
 
   let vnInTwd: number | null = null
@@ -707,7 +705,7 @@ export function computeTotalAssetsTwd(
   } else if (vnPoolRate !== null) {
     vnInTwd = floorTwd(balances.vn / vnPoolRate)
   } else {
-    missingNotes.push('VN 無成本均價')
+    missingNotes.push('VN 無料金均價')
   }
 
   const total = twdCash + (usdtInTwd ?? 0) + (vnInTwd ?? 0)

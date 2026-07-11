@@ -10,7 +10,6 @@ import type {
   ExpensePageSummaryProps,
   ExpenseTableProps,
   MonthlyClosesListProps,
-  MonthlyCloseModalProps,
   NotebookPanelProps,
   OpeningBalanceModalProps,
   SettlementsPanelProps,
@@ -24,7 +23,6 @@ import type {
   VnTradeTableProps,
   DailyWorkTab,
   DailyMobileTradePane,
-  MonthlyClose,
   PageTab,
   TotalAssetsTwd,
   UsdtTransaction,
@@ -33,8 +31,6 @@ import type {
 } from '../types'
 import {
   EXPENSE_INPUT_CLASS,
-  EXPENSE_TABLE_CLASS,
-  EXPENSE_TYPE_OPTIONS,
   EMPTY_DATA_LABEL,
   TRADE_FORM_META_CELL_CLASS,
   TRADE_FORM_ACTIONS_CLASS,
@@ -68,8 +64,6 @@ import {
   VN_TRANSACTION_TABLE_MOBILE_CLASS,
 } from '../constants'
 import {
-  expenseTypeLabel,
-  formatArchiveDateRange,
   assetCode,
   formatNumber,
   formatProfit,
@@ -101,7 +95,6 @@ import {
   calculateBuyDayAverageRate,
   computeUsdtSellProfitPreview,
   computeVnSellProfitPreview,
-  normalizeMonthlyCloseRecord,
   settlementHasSplitProfit,
   totalAssetsFromSettlement,
   transferUsdtBetweenCabins,
@@ -139,6 +132,9 @@ export function VnPoolCostLines({
 export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
   if (!dialog) return null
 
+  const isTradeSettle = Boolean(dialog.tradeSettleSummary)
+  const isCompactConfirm = !isTradeSettle && dialog.lines.length === 0
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
@@ -146,11 +142,15 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
       aria-modal="true"
       aria-labelledby="confirm-dialog-title"
     >
-      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+      <div
+        className={`w-full rounded-xl bg-white shadow-xl ${
+          isTradeSettle || isCompactConfirm ? 'max-w-[16.5rem] p-3.5' : 'max-w-md p-5'
+        }`}
+      >
         <h2
           id="confirm-dialog-title"
           className={
-            dialog.tradeSettleSummary
+            isTradeSettle || isCompactConfirm
               ? 'sr-only'
               : 'text-base font-semibold text-slate-900'
           }
@@ -159,7 +159,7 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
         </h2>
         {dialog.tradeSettleSummary ? (
           <TradeSettleConfirmBody summary={dialog.tradeSettleSummary} />
-        ) : (
+        ) : dialog.lines.length > 0 ? (
           <div className="mt-3 space-y-1 text-sm text-slate-600">
             {dialog.lines.map((line, i) =>
               line === '' ? (
@@ -169,21 +169,33 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
               ),
             )}
           </div>
-        )}
-        <div className="mt-5 flex justify-end gap-2">
+        ) : null}
+        <div
+          className={`flex justify-end gap-2 ${
+            isTradeSettle || isCompactConfirm ? 'mt-0' : 'mt-5'
+          }`}
+        >
           {!dialog.alertOnly && (
             <button
               type="button"
               onClick={onCancel}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className={`rounded-md border border-slate-300 bg-white font-medium text-slate-700 hover:bg-slate-50 ${
+                isTradeSettle || isCompactConfirm
+                  ? 'min-w-[2.5rem] px-2.5 py-1.5 text-xs'
+                  : 'px-3 py-1.5 text-sm'
+              }`}
             >
-              取消
+              {isTradeSettle || isCompactConfirm ? 'C' : '取消'}
             </button>
           )}
           <button
             type="button"
             onClick={dialog.onConfirm}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium text-white ${
+            className={`rounded-md font-medium text-white ${
+              isTradeSettle || isCompactConfirm
+                ? 'min-w-[2.5rem] px-2.5 py-1.5 text-xs'
+                : 'px-3 py-1.5 text-sm'
+            } ${
               dialog.variant === 'danger'
                 ? 'bg-rose-600 hover:bg-rose-700'
                 : 'bg-indigo-600 hover:bg-indigo-700'
@@ -198,43 +210,40 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
 }
 
 function TradeSettleConfirmBody({ summary }: { summary: TradeSettleConfirmSummary }) {
-  const countCols = summary.showVn ? 'grid-cols-2' : 'grid-cols-1'
-
   return (
-    <div className="space-y-3">
-      <div className="flex items-baseline justify-end gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+    <div className="space-y-2">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-center">
         <span className="text-sm font-semibold tabular-nums text-slate-900">
-          {summary.tradeCount} 筆
+          #{summary.tradeCount}
         </span>
       </div>
 
-      <div className={`grid gap-2 ${countCols}`}>
-        <div className="rounded-lg border border-slate-200 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">P</p>
-          <p className="mt-1 text-xs tabular-nums text-slate-700">
-            買 <span className="font-semibold text-slate-900">{summary.usdtBuy}</span>
-            <span className="mx-1.5 text-slate-300">·</span>
-            賣 <span className="font-semibold text-slate-900">{summary.usdtSell}</span>
+      <div className={`grid gap-1.5 ${summary.showVn ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <div className="rounded-lg border border-slate-200 px-2 py-1.5">
+          <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">P</p>
+          <p className="mt-0.5 text-[11px] tabular-nums text-slate-700">
+            IN <span className="font-semibold text-slate-900">{summary.usdtBuy}</span>
+            <span className="mx-1 text-slate-300">·</span>
+            OUT <span className="font-semibold text-slate-900">{summary.usdtSell}</span>
           </p>
         </div>
         {summary.showVn && (
-          <div className="rounded-lg border border-slate-200 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">VN</p>
-            <p className="mt-1 text-xs tabular-nums text-slate-700">
-              買 <span className="font-semibold text-slate-900">{summary.vnBuy}</span>
-              <span className="mx-1.5 text-slate-300">·</span>
-              賣 <span className="font-semibold text-slate-900">{summary.vnSell}</span>
+          <div className="rounded-lg border border-slate-200 px-2 py-1.5">
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">VN</p>
+            <p className="mt-0.5 text-[11px] tabular-nums text-slate-700">
+              IN <span className="font-semibold text-slate-900">{summary.vnBuy}</span>
+              <span className="mx-1 text-slate-300">·</span>
+              OUT <span className="font-semibold text-slate-900">{summary.vnSell}</span>
             </p>
           </div>
         )}
       </div>
 
-      <div className="rounded-lg border border-slate-200 px-3 py-2.5">
-        <p className="text-xs font-medium text-slate-500">當日毛利</p>
+      <div className="rounded-lg border border-slate-200 px-2.5 py-2">
         {summary.hasSells ? (
-          <div className="mt-2 space-y-1 text-sm tabular-nums">
+          <div className="space-y-0.5 text-xs tabular-nums">
             {summary.dayUsdtProfit !== null && (
-              <div className="flex items-baseline justify-between gap-3">
+              <div className="flex items-baseline justify-between gap-2">
                 <span className="text-slate-500">P</span>
                 <span className={`font-medium ${profitColorClass(summary.dayUsdtProfit)}`}>
                   {formatProfit(summary.dayUsdtProfit)}
@@ -242,28 +251,23 @@ function TradeSettleConfirmBody({ summary }: { summary: TradeSettleConfirmSummar
               </div>
             )}
             {summary.dayVnProfit !== null && (
-              <div className="flex items-baseline justify-between gap-3">
+              <div className="flex items-baseline justify-between gap-2">
                 <span className="text-slate-500">VN</span>
                 <span className={`font-medium ${profitColorClass(summary.dayVnProfit)}`}>
                   {formatProfit(summary.dayVnProfit)}
                 </span>
               </div>
             )}
-            <div className="flex items-baseline justify-between gap-3 border-t border-slate-100 pt-2">
-              <span className="font-medium text-slate-700">合計</span>
-              <span className={`text-base font-bold ${profitColorClass(summary.dayTotalProfit)}`}>
+            <div className="flex items-baseline justify-end gap-2 border-t border-slate-100 pt-1.5">
+              <span className={`text-sm font-bold ${profitColorClass(summary.dayTotalProfit)}`}>
                 {formatProfit(summary.dayTotalProfit)}
               </span>
             </div>
           </div>
         ) : (
-          <p className="mt-1.5 text-sm text-slate-400">—（無賣出）</p>
+          <p className="text-xs text-slate-400">—</p>
         )}
       </div>
-
-      <p className="text-xs leading-relaxed text-slate-500">
-        結算後將封存交易紀錄並清空每日明細。
-      </p>
     </div>
   )
 }
@@ -300,12 +304,36 @@ export function SettlementDayProfit({
 }) {
   const showSplit = usdtProfit !== undefined && vnProfit !== undefined
   const showNet = expenseTotal !== undefined && expenseTotal > 0
-  const textClass = compact ? 'text-[10px] leading-tight' : 'text-xs leading-tight'
+  const textClass = compact ? 'text-[11px] leading-tight' : 'text-xs leading-tight'
 
   if (!showSplit && !showNet) {
     return (
-      <p className={`${textClass} font-bold tabular-nums ${profitColorClass(totalProfit)}`}>
+      <p className={`${textClass} font-semibold tabular-nums ${profitColorClass(totalProfit)}`}>
         {formatProfit(totalProfit)}
+      </p>
+    )
+  }
+
+  if (compact) {
+    return (
+      <p className={`${textClass} flex flex-wrap items-baseline gap-x-1.5 gap-y-0 font-semibold tabular-nums`}>
+        {showSplit ? (
+          <>
+            <span className={profitColorClass(usdtProfit!)}>P {formatProfit(usdtProfit!)}</span>
+            <span className={profitColorClass(vnProfit!)}>VN {formatProfit(vnProfit!)}</span>
+            <span className={profitColorClass(totalProfit)}>{formatProfit(totalProfit)}</span>
+          </>
+        ) : (
+          <span className={profitColorClass(totalProfit)}>{formatProfit(totalProfit)}</span>
+        )}
+        {showNet && (
+          <>
+            <span className="text-rose-600">開銷 −{formatTwd(expenseTotal!)}</span>
+            <span className={profitColorClass(netProfit ?? totalProfit - expenseTotal!)}>
+              淨利 {formatProfit(netProfit ?? totalProfit - expenseTotal!)}
+            </span>
+          </>
+        )}
       </p>
     )
   }
@@ -374,6 +402,82 @@ const TOTAL_ASSETS_DENSE_CARD_CLASS =
 const TOTAL_ASSETS_CARD_CLASS =
   'rounded-lg border border-indigo-200 bg-indigo-50/50 px-2 py-1.5 text-center leading-tight shadow-sm'
 
+/** 數字異動時由舊值滾動至新值 */
+function useAnimatedNumber(target: number, durationMs = 800): number {
+  const [display, setDisplay] = useState(target)
+  const displayRef = useRef(target)
+  const rafRef = useRef(0)
+
+  useEffect(() => {
+    const from = displayRef.current
+    const to = target
+    if (Object.is(from, to)) return
+
+    const start = performance.now()
+    const integerOnly = Number.isInteger(from) && Number.isInteger(to)
+    cancelAnimationFrame(rafRef.current)
+
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - start) / durationMs)
+      const eased = 1 - (1 - progress) ** 3
+      let next = from + (to - from) * eased
+      if (integerOnly) next = Math.round(next)
+      displayRef.current = next
+      setDisplay(next)
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(tick)
+      } else {
+        displayRef.current = to
+        setDisplay(to)
+      }
+    }
+
+    rafRef.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [target, durationMs])
+
+  return display
+}
+
+function AnimatedAmount({
+  value,
+  format = formatNumber,
+  className,
+  title,
+  as: Tag = 'span',
+}: {
+  value: number
+  format?: (n: number) => string
+  className?: string
+  title?: string
+  as?: 'span' | 'p'
+}) {
+  const display = useAnimatedNumber(value)
+  const prevRef = useRef(value)
+  const [tone, setTone] = useState<'up' | 'down' | null>(null)
+
+  useEffect(() => {
+    if (Object.is(value, prevRef.current)) return
+    setTone(value > prevRef.current ? 'up' : 'down')
+    prevRef.current = value
+    const timer = window.setTimeout(() => setTone(null), 850)
+    return () => window.clearTimeout(timer)
+  }, [value])
+
+  const toneClass =
+    tone === 'up'
+      ? 'text-emerald-700 transition-colors duration-300'
+      : tone === 'down'
+        ? 'text-rose-700 transition-colors duration-300'
+        : 'transition-colors duration-300'
+
+  return (
+    <Tag className={[className, toneClass].filter(Boolean).join(' ')} title={title}>
+      {format(display)}
+    </Tag>
+  )
+}
+
 export function TotalAssetsColumn({
   assets,
   dense = false,
@@ -413,7 +517,7 @@ export function TotalAssetsColumn({
         className={`${valueClass}${dense ? ' flex flex-wrap items-center justify-center gap-1' : ''}`}
         title={formatTwd(assets.total)}
       >
-        {formatTwdTableCompact(assets.total)}
+        <AnimatedAmount value={assets.total} format={formatTwdTableCompact} />
         {dense && !assets.isComplete && (
           <span className="rounded bg-amber-100 px-1 py-px text-[8px] font-medium text-amber-700">
             部分
@@ -471,17 +575,26 @@ export function DailyBalanceStrip({
     <div className="mb-0.5 grid grid-cols-2 items-stretch gap-0.5 sm:mb-1.5 sm:grid-cols-4 sm:gap-1.5">
       <div className={`${BALANCE_CARD_CLASS} ${BALANCE_MOBILE_ROW_CLASS}`}>
         <p className={BALANCE_LABEL_CLASS}>T</p>
-        <p className={BALANCE_VALUE_CLASS} title={formatTwd(balances.twd)}>
-          {formatTwdTableCompact(balances.twd)}
-        </p>
+        <AnimatedAmount
+          as="p"
+          className={BALANCE_VALUE_CLASS}
+          value={balances.twd}
+          format={formatTwdTableCompact}
+          title={formatTwd(balances.twd)}
+        />
       </div>
       <div
         className={`${BALANCE_CARD_CLASS} flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0 sm:block`}
       >
         <p className={BALANCE_LABEL_CLASS}>P</p>
-        <p className={BALANCE_VALUE_CLASS}>{formatNumber(balances.usdt)}</p>
+        <AnimatedAmount as="p" className={BALANCE_VALUE_CLASS} value={balances.usdt} />
         {showUsdtCost && (
-          <p className={BALANCE_SUB_CLASS}>@{formatUsdtCostRateDisplay(inventoryCost.twd!)}</p>
+          <AnimatedAmount
+            as="p"
+            className={BALANCE_SUB_CLASS}
+            value={inventoryCost.twd!}
+            format={(n) => `@${formatUsdtCostRateDisplay(n)}`}
+          />
         )}
         {showCabinSplit && (
           <div className="mt-1 flex w-full flex-wrap items-center justify-center gap-1">
@@ -491,7 +604,7 @@ export function DailyBalanceStrip({
                 className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-semibold tabular-nums ring-1 ring-inset sm:text-[10px] ${cabinTone[cabin]}`}
               >
                 <span className="opacity-70">{cabin}</span>
-                <AnimatedCabinAmount value={cabinBalance(cabin)} />
+                <AnimatedAmount value={cabinBalance(cabin)} />
               </span>
             ))}
           </div>
@@ -500,26 +613,42 @@ export function DailyBalanceStrip({
       <div className={BALANCE_CARD_CLASS}>
         <div className={BALANCE_MOBILE_ROW_CLASS}>
           <p className={BALANCE_LABEL_CLASS}>V</p>
-          <p className={`${BALANCE_VALUE_CLASS} text-[10px] sm:text-sm`} title={formatNumber(balances.vn)}>
-            {formatVnTableCompact(balances.vn)}
-          </p>
+          <AnimatedAmount
+            as="p"
+            className={`${BALANCE_VALUE_CLASS} text-[10px] sm:text-sm`}
+            value={balances.vn}
+            format={formatVnTableCompact}
+            title={formatNumber(balances.vn)}
+          />
         </div>
         {showVnRates && (
           <>
             <div className="mt-0.5 flex items-center justify-center gap-1.5 sm:hidden">
               {vnTwdRate !== null && (
-                <p className={BALANCE_SUB_CLASS}>{formatVnNtdCostRateCompact(vnTwdRate)}</p>
+                <AnimatedAmount
+                  as="p"
+                  className={BALANCE_SUB_CLASS}
+                  value={vnTwdRate}
+                  format={formatVnNtdCostRateCompact}
+                />
               )}
               {vnUsdtRate !== null && (
-                <p className={BALANCE_SUB_CLASS}>{formatVnUsdtCostRateCompact(vnUsdtRate)}</p>
+                <AnimatedAmount
+                  as="p"
+                  className={BALANCE_SUB_CLASS}
+                  value={vnUsdtRate}
+                  format={formatVnUsdtCostRateCompact}
+                />
               )}
             </div>
-            <VnPoolCostLines
-              twdRate={vnTwdRate}
-              usdtRate={vnUsdtRate}
-              inline
-              className={`${BALANCE_SUB_CLASS} mt-0.5 hidden sm:block`}
-            />
+            <div className={`${BALANCE_SUB_CLASS} mt-0.5 hidden items-baseline justify-center gap-1.5 sm:flex`}>
+              {vnTwdRate !== null && (
+                <AnimatedAmount value={vnTwdRate} format={formatVnNtdCostRateCompact} />
+              )}
+              {vnUsdtRate !== null && (
+                <AnimatedAmount value={vnUsdtRate} format={formatVnUsdtCostRateCompact} />
+              )}
+            </div>
           </>
         )}
       </div>
@@ -528,79 +657,32 @@ export function DailyBalanceStrip({
   )
 }
 
-/** 艙位數字異動時由舊值滾動至新值 */
-function useAnimatedNumber(target: number, durationMs = 800): number {
-  const [display, setDisplay] = useState(target)
-  const displayRef = useRef(target)
-  const rafRef = useRef(0)
-
-  useEffect(() => {
-    const from = displayRef.current
-    const to = target
-    if (Object.is(from, to)) return
-
-    const start = performance.now()
-    const integerOnly = Number.isInteger(from) && Number.isInteger(to)
-    cancelAnimationFrame(rafRef.current)
-
-    const tick = (now: number) => {
-      const progress = Math.min(1, (now - start) / durationMs)
-      const eased = 1 - (1 - progress) ** 3
-      let next = from + (to - from) * eased
-      if (integerOnly) next = Math.round(next)
-      else next = Math.round(next * 100) / 100
-      displayRef.current = next
-      setDisplay(next)
-      if (progress < 1) {
-        rafRef.current = requestAnimationFrame(tick)
-      } else {
-        displayRef.current = to
-        setDisplay(to)
-      }
-    }
-
-    rafRef.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [target, durationMs])
-
-  return display
-}
-
-function AnimatedCabinAmount({ value }: { value: number }) {
-  const display = useAnimatedNumber(value)
-  const prevRef = useRef(value)
-  const [tone, setTone] = useState<'up' | 'down' | null>(null)
-
-  useEffect(() => {
-    if (Object.is(value, prevRef.current)) return
-    setTone(value > prevRef.current ? 'up' : 'down')
-    prevRef.current = value
-    const timer = window.setTimeout(() => setTone(null), 850)
-    return () => window.clearTimeout(timer)
-  }, [value])
-
-  return (
-    <span
-      className={
-        tone === 'up'
-          ? 'text-emerald-700 transition-colors duration-300'
-          : tone === 'down'
-            ? 'text-rose-700 transition-colors duration-300'
-            : 'transition-colors duration-300'
-      }
-    >
-      {formatNumber(display)}
-    </span>
-  )
-}
-
-/** A/B/C 內部調度（月結頁 modal） */
+/** A/B/C 內部調度：選出倉 → 收倉，並顯示三艙現況 */
 export function CabinRebalanceModal({
   open,
   cabins,
   onCancel,
   onConfirm,
 }: CabinRebalanceModalProps) {
+  if (!open) return null
+  return (
+    <CabinRebalanceModalContent
+      cabins={cabins}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
+  )
+}
+
+function CabinRebalanceModalContent({
+  cabins,
+  onCancel,
+  onConfirm,
+}: {
+  cabins: CabinRebalanceModalProps['cabins']
+  onCancel: CabinRebalanceModalProps['onCancel']
+  onConfirm: CabinRebalanceModalProps['onConfirm']
+}) {
   const totalP = Math.max(0, cabins.a + cabins.b + cabins.c)
   const [fromCabin, setFromCabin] = useState<UsdtCabin>('A')
   const [toCabin, setToCabin] = useState<UsdtCabin>('C')
@@ -613,25 +695,17 @@ export function CabinRebalanceModal({
     next: { a: number; b: number; c: number }
   } | null>(null)
 
-  useEffect(() => {
-    if (!open) {
-      setFromCabin('A')
-      setToCabin('C')
-      setAmountStr('')
-      setRebalanceError('')
-      setPendingTransfer(null)
-    }
-  }, [open])
-
-  if (!open) return null
-
   const cabinBalance = (cabin: UsdtCabin) =>
     cabin === 'A' ? cabins.a : cabin === 'B' ? cabins.b : cabins.c
 
+  const cabinTone: Record<UsdtCabin, string> = {
+    A: 'text-sky-700',
+    B: 'text-violet-700',
+    C: 'text-emerald-700',
+  }
+
   const cabinSelectClass =
-    'w-full rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-900/10'
-  const cabinOptionLabel = (cabin: UsdtCabin) =>
-    `${cabin}（${formatNumber(cabinBalance(cabin))}）`
+    'w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm font-semibold text-slate-800 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-900/10'
 
   const handleTransferClick = () => {
     const trimmed = amountStr.trim()
@@ -658,12 +732,12 @@ export function CabinRebalanceModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
       role="dialog"
       aria-modal="true"
       aria-label="艙位調度"
     >
-      <div className="w-full max-w-sm rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xl">
+      <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
         {pendingTransfer ? (
           <>
             <div className="space-y-3 text-sm text-slate-600">
@@ -696,18 +770,18 @@ export function CabinRebalanceModal({
                   ))}
               </div>
             </div>
-            <div className="mt-5 flex gap-2">
+            <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setPendingTransfer(null)}
-                className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 取消
               </button>
               <button
                 type="button"
                 onClick={confirmPendingTransfer}
-                className="flex-1 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
               >
                 OK
               </button>
@@ -715,19 +789,22 @@ export function CabinRebalanceModal({
           </>
         ) : (
           <>
-            <p className="text-sm font-semibold text-slate-900">艙位調度</p>
-            <p className="mt-0.5 text-[11px] text-slate-500">
-              P 合計 {formatNumber(totalP)}
-            </p>
+            <p className="text-xs text-slate-500">P 合計 {formatNumber(totalP)}</p>
+
+            <div className="mt-2 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] tabular-nums">
+              {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
+                <span key={cabin} className={cabinTone[cabin]}>
+                  {cabin} {formatNumber(cabinBalance(cabin))}
+                </span>
+              ))}
+            </div>
+
             {totalP <= 0 ? (
               <p className="mt-4 text-center text-sm text-slate-400">目前無 P 可調度</p>
             ) : (
-              <div className="mt-4">
-                <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2.5">
+              <div className="mt-3 space-y-3">
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                   <label className="block">
-                    <span className="mb-1 block text-[10px] font-semibold tracking-[0.12em] text-slate-400">
-                      O
-                    </span>
                     <select
                       value={fromCabin}
                       onChange={(e) => {
@@ -736,21 +813,20 @@ export function CabinRebalanceModal({
                       }}
                       className={cabinSelectClass}
                     >
-                      <option value="A">{cabinOptionLabel('A')}</option>
-                      <option value="B">{cabinOptionLabel('B')}</option>
-                      <option value="C">{cabinOptionLabel('C')}</option>
+                      {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
+                        <option key={cabin} value={cabin}>
+                          {cabin}（{formatNumber(cabinBalance(cabin))}）
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <span
-                    className="mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-medium text-slate-500"
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-medium text-slate-500"
                     aria-hidden
                   >
                     →
                   </span>
                   <label className="block">
-                    <span className="mb-1 block text-[10px] font-semibold tracking-[0.12em] text-slate-400">
-                      I
-                    </span>
                     <select
                       value={toCabin}
                       onChange={(e) => {
@@ -759,13 +835,19 @@ export function CabinRebalanceModal({
                       }}
                       className={cabinSelectClass}
                     >
-                      <option value="A">{cabinOptionLabel('A')}</option>
-                      <option value="B">{cabinOptionLabel('B')}</option>
-                      <option value="C">{cabinOptionLabel('C')}</option>
+                      {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
+                        <option key={cabin} value={cabin}>
+                          {cabin}（{formatNumber(cabinBalance(cabin))}）
+                        </option>
+                      ))}
                     </select>
                   </label>
                 </div>
-                <label className="mt-3 block">
+
+                <label className="block">
+                  <span className="mb-1 block text-[10px] font-semibold tracking-wide text-slate-400">
+                    AMT
+                  </span>
                   <input
                     type="number"
                     inputMode="decimal"
@@ -776,19 +858,23 @@ export function CabinRebalanceModal({
                       setAmountStr(e.target.value)
                       setRebalanceError('')
                     }}
-                    className="w-full rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 text-sm tabular-nums text-slate-900 outline-none transition placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-900/10"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm tabular-nums text-slate-900 outline-none transition placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-900/10"
+                    placeholder="0"
+                    autoFocus
                   />
                 </label>
+
                 {rebalanceError && (
-                  <p className="mt-2 text-[11px] text-rose-600">{rebalanceError}</p>
+                  <p className="text-xs text-rose-600">{rebalanceError}</p>
                 )}
               </div>
             )}
-            <div className="mt-5 flex gap-2">
+
+            <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={onCancel}
-                className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 取消
               </button>
@@ -796,7 +882,7 @@ export function CabinRebalanceModal({
                 type="button"
                 disabled={totalP <= 0}
                 onClick={handleTransferClick}
-                className="flex-1 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 OK
               </button>
@@ -904,25 +990,21 @@ export function CabinAllocModal({
 
   const signLabel = direction === 'in' ? '+' : '−'
   const displayError = localError || error
-  const third = totalUsdt / 3
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="cabin-alloc-title"
+      aria-label="本筆分倉"
     >
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
-        <h2 id="cabin-alloc-title" className="text-base font-semibold text-slate-900">
-          分倉配置
-        </h2>
-        <p className="mt-1 text-xs text-slate-500">
-          本筆 P {formatNumber(totalUsdt)} · 請分配至 A / B / C（成本共用）
+        <p className="text-xs text-slate-500">
+          P {formatNumber(totalUsdt)}
         </p>
 
         <div className="mt-3 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] tabular-nums text-slate-500">
-          <span>目前 A {formatNumber(cabinBalances.a)}</span>
+          <span>A {formatNumber(cabinBalances.a)}</span>
           <span className="text-slate-300">·</span>
           <span>B {formatNumber(cabinBalances.b)}</span>
           <span className="text-slate-300">·</span>
@@ -981,28 +1063,21 @@ export function CabinAllocModal({
             onClick={() => setPreset(totalUsdt, 0)}
             className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 hover:bg-sky-100"
           >
-            全 A
+            A
           </button>
           <button
             type="button"
             onClick={() => setPreset(0, totalUsdt)}
             className="rounded border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 hover:bg-violet-100"
           >
-            全 B
+            B
           </button>
           <button
             type="button"
             onClick={() => setPreset(0, 0)}
             className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100"
           >
-            全 C
-          </button>
-          <button
-            type="button"
-            onClick={() => setPreset(third, third)}
-            className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-100"
-          >
-            均分
+            C
           </button>
         </div>
 
@@ -1688,7 +1763,7 @@ function TradeFormMetaCell({
             : buttonClass
         }`}
       >
-        {isEditing ? '儲存' : 'A'}
+        {isEditing ? '儲存' : 'OK'}
       </button>
       {isEditing && (
         <button type="button" onClick={onCancel} className={TRADE_FORM_ACTIONS_CLASS}>
@@ -2154,7 +2229,7 @@ export function VnTradeForm({
   const resolvedPreview = useMemo(() => {
     const resolved = resolveVnTradeFields(vn, pay, rate, payCurrency)
     return resolved.ok ? resolved : null
-  }, [vn, pay, rate])
+  }, [vn, pay, rate, payCurrency])
 
   const vnNum = resolvedPreview?.vn ?? NaN
   const payNum = resolvedPreview?.pay ?? NaN
@@ -2740,13 +2815,11 @@ export function VnTradeTable({
 }
 
 export function ExpenseForm({
-  expenseType,
   amount,
   note,
   error,
   isEditing,
   disabled,
-  onExpenseTypeChange,
   onAmountChange,
   onNoteChange,
   onSubmit,
@@ -2754,26 +2827,9 @@ export function ExpenseForm({
 }: ExpenseFormProps) {
   return (
     <form onSubmit={onSubmit}>
-      <div className="mb-1 flex flex-wrap items-center gap-0.5">
-        {EXPENSE_TYPE_OPTIONS.map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            disabled={disabled}
-            onClick={() => onExpenseTypeChange(item.value)}
-            className={`rounded-full px-2 py-px text-[10px] font-medium transition disabled:opacity-50 ${
-              expenseType === item.value
-                ? 'bg-orange-600 text-white shadow-sm'
-                : 'border border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:text-orange-700'
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
       <div className="flex items-center gap-1">
-        <label className="flex min-w-0 flex-[1.1] items-center gap-1 text-[11px] text-slate-600">
-          <span className="shrink-0">AMOUNT</span>
+        <label className="flex w-[5.5rem] shrink-0 items-center gap-0.5 text-[10px] text-slate-500">
+          <span className="shrink-0">AMT</span>
           <input
             type="number"
             inputMode="decimal"
@@ -2786,7 +2842,7 @@ export function ExpenseForm({
             placeholder="0"
           />
         </label>
-        <label className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-slate-600">
+        <label className="flex min-w-0 flex-1 items-center gap-0.5 text-[10px] text-slate-500">
           <span className="shrink-0">NOTE</span>
           <input
             type="text"
@@ -2796,11 +2852,11 @@ export function ExpenseForm({
             className={`min-w-0 flex-1 ${EXPENSE_INPUT_CLASS}`}
           />
         </label>
-        <div className="flex shrink-0 gap-1">
+        <div className="flex shrink-0 gap-0.5">
           <button
             type="submit"
             disabled={disabled}
-            className="rounded bg-orange-600 px-2.5 py-0.5 text-xs font-medium text-white transition hover:bg-orange-700 focus:ring-2 focus:ring-orange-600/30 disabled:opacity-50"
+            className="rounded bg-orange-600 px-2 py-0.5 text-[11px] font-medium text-white transition hover:bg-orange-700 focus:ring-2 focus:ring-orange-600/30 disabled:opacity-50"
           >
             {isEditing ? '儲存' : 'Add'}
           </button>
@@ -2808,7 +2864,7 @@ export function ExpenseForm({
             <button
               type="button"
               onClick={onCancel}
-              className="rounded border border-slate-300 px-1.5 py-0.5 text-xs text-slate-600 hover:bg-slate-50"
+              className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-600 hover:bg-slate-50"
             >
               取消
             </button>
@@ -2824,20 +2880,9 @@ export function ExpensePageSummary({ transactions }: ExpensePageSummaryProps) {
   const totalAmount = transactions.reduce((sum, tx) => sum + tx.amountTwd, 0)
 
   return (
-    <div className="mt-2 shrink-0 space-y-1.5 border-t border-orange-100 pt-2">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-orange-200 bg-gradient-to-r from-orange-50/80 to-slate-50 px-2.5 py-1.5">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-xs font-semibold text-slate-800">
-            總結
-            <span className="ml-1 text-[10px] font-normal text-slate-500">
-              {transactions.length} 筆
-            </span>
-          </span>
-          <span className="text-sm font-bold tabular-nums text-rose-600">
-            −{formatTwd(totalAmount)}
-          </span>
-        </div>
-      </div>
+    <div className="mt-1 flex items-baseline justify-between gap-2 border-t border-orange-100 pt-1">
+      <span className="text-[10px] tabular-nums text-slate-400">#{transactions.length}</span>
+      <span className="text-xs font-bold tabular-nums text-rose-600">−{formatTwd(totalAmount)}</span>
     </div>
   )
 }
@@ -2962,99 +3007,70 @@ export function ExpenseTable({
     row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   }, [editingId])
 
-  const expenseRows = transactions.map((tx) => (
-    <tr
-      key={tx.id}
-      data-expense-row={tx.id}
-      style={TRANSACTION_DATA_ROW_STYLE}
-      className={`group border-b border-slate-100 transition-colors hover:bg-slate-100/70 ${
-        editingId === tx.id ? 'bg-amber-50/60 hover:bg-amber-50/80' : ''
-      }`}
-    >
-      <td className={`w-[3.25rem] whitespace-nowrap ${TRANSACTION_CELL_CLASS} tabular-nums text-[11px] text-slate-600`}>
-        {formatSettlementDate(tx.timestamp)}
-      </td>
-      <td className={`w-14 ${TRANSACTION_CELL_CLASS} text-[11px] font-medium text-orange-700`}>
-        {expenseTypeLabel(tx.expenseType)}
-      </td>
-      <td className={`w-[4.5rem] ${TRANSACTION_CELL_CLASS} text-right tabular-nums text-rose-700`}>
-        −{formatTwd(tx.amountTwd)}
-      </td>
-      <td className={`${TRANSACTION_CELL_CLASS} truncate text-[11px] text-slate-500`}>
-        {tx.note.trim() || '—'}
-      </td>
-      <td className={`w-12 whitespace-nowrap ${TRANSACTION_CELL_CLASS} text-right`}>
-        <div className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-          <RowActionButtons onEdit={() => onEdit(tx)} onDelete={() => onDelete(tx.id)} />
-        </div>
-      </td>
-    </tr>
-  ))
-
-  const tableHeader = (
-    <thead>
-      <tr
-        className="border-b border-slate-200 text-[11px] text-slate-500"
-        style={{ height: `${TRANSACTION_HEAD_REM}rem` }}
-      >
-        <th className={`w-[3.25rem] ${TRANSACTION_CELL_CLASS} font-medium`}>DATE</th>
-        <th className={`w-14 ${TRANSACTION_CELL_CLASS} font-medium`}>CATEGORY</th>
-        <th className={`w-[4.5rem] ${TRANSACTION_CELL_CLASS} text-right font-medium`}>AMOUNT</th>
-        <th className={`${TRANSACTION_CELL_CLASS} font-medium`}>NOTE</th>
-        <th className={`w-12 ${TRANSACTION_CELL_CLASS} text-right font-medium`} />
-      </tr>
-    </thead>
-  )
-
-  const emptyBody = (
-    <tr style={TRANSACTION_DATA_ROW_STYLE}>
-      <td
-        colSpan={5}
-        className={`${TRANSACTION_CELL_CLASS} py-8 text-center`}
-      >
-        <p className="text-sm text-slate-400">{EMPTY_DATA_LABEL}</p>
-      </td>
-    </tr>
-  )
-
-  if (!hasOverflow) {
+  if (transactions.length === 0) {
     return (
-      <div className="overflow-x-auto">
-        <table className={EXPENSE_TABLE_CLASS}>
-          {tableHeader}
-          <tbody>
-            {transactions.length === 0 ? emptyBody : expenseRows}
-          </tbody>
-        </table>
-      </div>
+      <p className="py-4 text-center text-xs text-slate-400">{EMPTY_DATA_LABEL}</p>
     )
   }
 
+  const rows = (
+    <ul className="divide-y divide-slate-100">
+      {transactions.map((tx) => (
+        <li
+          key={tx.id}
+          data-expense-row={tx.id}
+          className={`group flex items-center gap-1.5 py-1 text-[11px] leading-tight transition-colors hover:bg-slate-50/80 ${
+            editingId === tx.id ? 'bg-amber-50/70 hover:bg-amber-50/90' : ''
+          }`}
+        >
+          <span className="w-[2.5rem] shrink-0 tabular-nums text-slate-400">
+            {formatSettlementDate(tx.timestamp)}
+          </span>
+          <span className="w-[3.75rem] shrink-0 text-right tabular-nums text-rose-700">
+            −{formatTwd(tx.amountTwd)}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-slate-600">
+            {tx.note.trim() || '—'}
+          </span>
+          <div className="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+            <RowActionButtons onEdit={() => onEdit(tx)} onDelete={() => onDelete(tx.id)} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+
+  if (!hasOverflow) return rows
+
   return (
-    <div className="flex shrink-0 flex-col overflow-x-auto">
-      <table className={`${EXPENSE_TABLE_CLASS} shrink-0`}>{tableHeader}</table>
-      <div
-        className="transaction-table-body-scroll--overflow overflow-x-auto overflow-y-auto"
-        style={{ maxHeight: maxBodyHeight }}
-      >
-        <table className={EXPENSE_TABLE_CLASS}>
-          <tbody>{expenseRows}</tbody>
-        </table>
-      </div>
+    <div
+      className="transaction-table-body-scroll--overflow overflow-y-auto"
+      style={{ maxHeight: maxBodyHeight }}
+    >
+      {rows}
     </div>
   )
 }
 
-const SETTLEMENT_METRIC_CLASS =
-  'min-w-0 rounded-md border border-slate-100 bg-white px-2 py-1.5'
+function SettlementMetricRow({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <div className="flex items-baseline gap-2 text-[11px] leading-tight">
+      <span className="w-5 shrink-0 text-[10px] font-medium text-slate-400">{label}</span>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  )
+}
 
 export function SettlementRecordBody({
   twdBalance,
   usdtBalance,
   vnBalance,
-  twdAvg,
-  vnPoolRate,
-  vnUsdtPoolRate,
   displayAssets,
   dayUsdtProfit,
   dayVnProfit,
@@ -3064,83 +3080,52 @@ export function SettlementRecordBody({
     dayUsdtProfit !== undefined || dayVnProfit !== undefined || dayTotalProfit !== 0
 
   return (
-    <div
-      className={`grid grid-cols-2 items-stretch gap-1.5 ${
-        showProfit ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
-      }`}
-    >
-      <div className={SETTLEMENT_METRIC_CLASS}>
-        <p className="text-[10px] font-medium text-slate-500">T</p>
-        <p
-          className="mt-0.5 text-sm font-bold tabular-nums text-emerald-600"
-          title={formatTwd(twdBalance)}
-        >
+    <div className="space-y-1">
+      <SettlementMetricRow label="T">
+        <p className="font-semibold tabular-nums text-emerald-600" title={formatTwd(twdBalance)}>
           {formatTwdTableCompact(twdBalance)}
         </p>
-      </div>
-      <div className={SETTLEMENT_METRIC_CLASS}>
-        <p className="text-[10px] font-medium text-slate-500">P</p>
-        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1 gap-y-0">
-          <p className="text-sm font-bold tabular-nums text-sky-600">
-            {formatNumber(usdtBalance)}
-          </p>
-          {usdtBalance > 0 && twdAvg !== null && (
-            <span className="text-[10px] tabular-nums text-slate-400">
-              @{formatUsdtCostRateDisplay(twdAvg)}
+      </SettlementMetricRow>
+      <SettlementMetricRow label="P">
+        <p className="font-semibold tabular-nums text-sky-600">
+          {formatNumber(usdtBalance)}
+          {usdtBalance > 0 && displayAssets.usdtInTwd !== null && (
+            <span className="ml-1.5 font-normal text-sky-600/75" title={formatTwd(displayAssets.usdtInTwd)}>
+              ({formatTwdTableCompact(displayAssets.usdtInTwd)})
             </span>
           )}
-        </div>
-        {usdtBalance > 0 && displayAssets.usdtInTwd !== null && (
-          <p
-            className="mt-0.5 text-[10px] tabular-nums text-sky-600/80"
-            title={formatTwd(displayAssets.usdtInTwd)}
-          >
-            ({formatTwdTableCompact(displayAssets.usdtInTwd)})
-          </p>
-        )}
-      </div>
-      <div className={SETTLEMENT_METRIC_CLASS}>
-        <p className="text-[10px] font-medium text-slate-500">VN</p>
-        <p
-          className="mt-0.5 text-sm font-bold tabular-nums text-amber-600"
-          title={formatNumber(vnBalance)}
-        >
-          {formatVnTableCompact(vnBalance)}
         </p>
-        {vnBalance > 0 && (vnPoolRate !== null || vnUsdtPoolRate !== null) && (
-          <div className="mt-0.5 flex items-center gap-1.5 text-[10px] tabular-nums text-slate-400">
-            {vnPoolRate !== null && (
-              <span>{formatVnNtdCostRateCompact(vnPoolRate)}</span>
-            )}
-            {vnUsdtPoolRate !== null && (
-              <span>{formatVnUsdtCostRateCompact(vnUsdtPoolRate)}</span>
-            )}
-          </div>
-        )}
-        {vnBalance > 0 && displayAssets.vnInTwd !== null && (
-          <p
-            className="mt-0.5 text-[10px] tabular-nums text-amber-600/80"
-            title={formatTwd(displayAssets.vnInTwd)}
-          >
-            ({formatTwdTableCompact(displayAssets.vnInTwd)})
-          </p>
-        )}
-      </div>
+      </SettlementMetricRow>
+      <SettlementMetricRow label="VN">
+        <p className="font-semibold tabular-nums text-amber-600" title={formatNumber(vnBalance)}>
+          {formatVnTableCompact(vnBalance)}
+          {vnBalance > 0 && displayAssets.vnInTwd !== null && (
+            <span className="ml-1.5 font-normal text-amber-600/75" title={formatTwd(displayAssets.vnInTwd)}>
+              ({formatTwdTableCompact(displayAssets.vnInTwd)})
+            </span>
+          )}
+        </p>
+      </SettlementMetricRow>
       {showProfit && (
-        <div className={`${SETTLEMENT_METRIC_CLASS} bg-slate-50/80`}>
-          <p className="text-[10px] font-medium text-slate-500">PF</p>
-          <div className="mt-0.5">
-            <SettlementDayProfit
-              compact
-              usdtProfit={dayUsdtProfit}
-              vnProfit={dayVnProfit}
-              totalProfit={dayTotalProfit}
-            />
-          </div>
-        </div>
+        <SettlementMetricRow label="PF">
+          <SettlementDayProfit
+            compact
+            usdtProfit={dayUsdtProfit}
+            vnProfit={dayVnProfit}
+            totalProfit={dayTotalProfit}
+          />
+        </SettlementMetricRow>
       )}
-      <div className="col-span-2 min-w-0 lg:col-span-1 [&>div]:h-full">
-        <TotalAssetsColumn assets={displayAssets} titleLabel="TOTAL" showCurrencySuffix={false} />
+      <div className="flex items-baseline justify-end border-t border-slate-100 pt-1">
+        <p
+          className="text-xs font-bold tabular-nums text-indigo-800"
+          title={formatTwd(displayAssets.total)}
+        >
+          {formatTwdTableCompact(displayAssets.total)}
+          {!displayAssets.isComplete && (
+            <span className="ml-1 text-[9px] font-medium text-amber-700">部分</span>
+          )}
+        </p>
       </div>
     </div>
   )
@@ -3233,7 +3218,7 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
           </div>
         </button>
         <CollapsibleSection open={isExpanded}>
-          <div className="border-t border-slate-100 px-3 pb-3 pt-2">
+          <div className="border-t border-slate-100 px-3 pb-2 pt-1.5">
             <SettlementRecordBody {...body} />
           </div>
         </CollapsibleSection>
@@ -3246,7 +3231,7 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
       <div className="rounded-lg border border-indigo-200 bg-indigo-50/80 px-3 py-2 shadow-sm">
         <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-0 text-[10px] tabular-nums">
-            <span className="font-normal text-indigo-700/70">共 {settlements.length} 次</span>
+            <span className="font-normal text-indigo-700/70">#{settlements.length}</span>
             {showCumulativeSplit && (
               <>
                 <span className={profitColorClass(cumulativeUsdtProfit)}>
@@ -3381,7 +3366,6 @@ export function ExpenseSettlementsPanel({ settlements }: ExpenseSettlementsPanel
                   <thead>
                     <tr className="border-b border-slate-100 text-slate-500">
                       <th className="py-1 font-medium">時間</th>
-                      <th className="py-1 font-medium">類別</th>
                       <th className="py-1 text-right font-medium">金額</th>
                       <th className="py-1 font-medium">備註</th>
                     </tr>
@@ -3391,9 +3375,6 @@ export function ExpenseSettlementsPanel({ settlements }: ExpenseSettlementsPanel
                       <tr key={`${item.id}-${index}`} className="border-b border-slate-50">
                         <td className="py-1 tabular-nums text-slate-600">
                           {formatTableDateTime(row.timestamp)}
-                        </td>
-                        <td className="py-1 text-orange-700">
-                          {expenseTypeLabel(row.expenseType)}
                         </td>
                         <td className="py-1 text-right tabular-nums text-rose-700">
                           −{formatTwd(row.amountTwd)}
@@ -3410,122 +3391,6 @@ export function ExpenseSettlementsPanel({ settlements }: ExpenseSettlementsPanel
           </article>
         )
       })}
-    </div>
-  )
-}
-
-export function MonthCloseButton({
-  onClick,
-  compact = false,
-}: {
-  onClick: () => void
-  compact?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded font-medium text-white transition hover:bg-violet-700 ${
-        compact
-          ? 'bg-violet-600 px-2 py-0.5 text-[10px]'
-          : 'bg-violet-600 px-2.5 py-1 text-xs'
-      }`}
-    >
-      月結
-    </button>
-  )
-}
-
-export function MonthlyCloseModal({
-  open,
-  periodLabel,
-  preview,
-  onPeriodLabelChange,
-  onCancel,
-  onConfirm,
-}: MonthlyCloseModalProps) {
-  if (!open) return null
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="monthly-close-title"
-    >
-      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-        <h2 id="monthly-close-title" className="text-base font-semibold text-slate-900">
-          月結封存
-        </h2>
-        <p className="mt-2 text-sm text-slate-600">
-          將「每日結算」列表與進行中的營業開銷一併打包封存，並清空進行中列表。
-        </p>
-
-        <label className="mt-4 block text-sm font-medium text-slate-700">
-          期間名稱
-          <input
-            type="text"
-            value={periodLabel}
-            onChange={(event) => onPeriodLabelChange(event.target.value)}
-            placeholder="例如：6月份、06/01–06/30"
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base text-slate-900 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/20 sm:text-sm"
-          />
-        </label>
-
-        <div className="mt-4 space-y-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-          <p>
-            將封存：交易日結 {preview.tradeCount} 筆
-            {preview.expenseItemCount > 0 &&
-              `、開銷 ${preview.expenseItemCount} 筆`}
-          </p>
-          <p className="tabular-nums">
-            實際封存區間：{preview.dateRangeLabel}
-          </p>
-          <p className="tabular-nums">
-            毛利 {formatProfit(preview.grossProfit)}
-            {preview.expenseTotal > 0 && ` · 開銷 −${formatTwd(preview.expenseTotal)}`}
-            {' · '}
-            淨利 {formatProfit(preview.netProfit)}
-          </p>
-          <p className="tabular-nums text-slate-600">
-            庫存計價總資產 {formatTwd(preview.closingBookTotalAssets)} TWD
-            {preview.expenseTotal > 0 && (
-              <>
-                {' · '}
-                扣開銷後 {formatTwd(preview.closingTotalAssets)} TWD
-              </>
-            )}
-          </p>
-          {preview.pendingExpenseCount > 0 && (
-            <p className="text-slate-600">
-              含進行中開銷 {preview.pendingExpenseCount} 筆（將一併納入封存）
-            </p>
-          )}
-          {preview.pendingTradeCount > 0 && (
-            <p className="text-amber-700">
-              尚有未日結交易 {preview.pendingTradeCount} 筆（不會納入本次封存）
-            </p>
-          )}
-        </div>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={!periodLabel.trim()}
-            className="rounded-md bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            確認月結
-          </button>
-        </div>
-      </div>
     </div>
   )
 }
@@ -3648,7 +3513,7 @@ export function OpeningBalanceModal({
 
         <div className="mt-3 grid grid-cols-2 gap-2">
           <label className={labelClass}>
-            P 成本 (T)
+            P 料金 (T)
             <input
               type="text"
               inputMode="decimal"
@@ -3659,7 +3524,7 @@ export function OpeningBalanceModal({
             />
           </label>
           <label className={labelClass}>
-            P 成本 (VN)
+            P 料金 (VN)
             <input
               type="text"
               inputMode="decimal"
@@ -3670,7 +3535,7 @@ export function OpeningBalanceModal({
             />
           </label>
           <label className={labelClass}>
-            VN 池成本 (VN/T)
+            VN 池料金 (VN/T)
             <input
               type="text"
               inputMode="decimal"
@@ -3681,7 +3546,7 @@ export function OpeningBalanceModal({
             />
           </label>
           <label className={labelClass}>
-            VN 池成本 (VN/P)
+            VN 池料金 (VN/P)
             <input
               type="text"
               inputMode="decimal"
@@ -3716,197 +3581,41 @@ export function OpeningBalanceModal({
   )
 }
 
-function MonthlyCloseExpandedBody({ monthlyClose }: { monthlyClose: MonthlyClose }) {
-  const resolved = useMemo(
-    () => normalizeMonthlyCloseRecord(monthlyClose),
-    [monthlyClose],
-  )
-
-  return (
-    <div className="space-y-3">
-      <div className="rounded-lg border border-violet-200 bg-violet-50/80 px-3 py-2">
-        <div className="flex flex-wrap gap-x-3 gap-y-0 text-[10px] tabular-nums text-slate-700">
-          <span>
-            毛利{' '}
-            <span className={`font-semibold ${profitColorClass(resolved.grossProfit)}`}>
-              {formatProfit(resolved.grossProfit)}
-            </span>
-          </span>
-          {resolved.expenseTotal > 0 && (
-            <span>
-              開銷{' '}
-              <span className="font-semibold text-rose-600">
-                −{formatTwd(resolved.expenseTotal)}
-              </span>
-            </span>
-          )}
-          <span>
-            淨利{' '}
-            <span className={`font-semibold ${profitColorClass(resolved.netProfit)}`}>
-              {formatProfit(resolved.netProfit)}
-            </span>
-          </span>
-        </div>
-        {(resolved.usdtProfit !== 0 || resolved.vnProfit !== 0) && (
-          <p className="mt-1 text-[10px] tabular-nums text-slate-600">
-            U {formatProfit(resolved.usdtProfit)} · VN {formatProfit(resolved.vnProfit)}
-          </p>
-        )}
-        <p className="mt-2 text-[10px] tabular-nums text-slate-600">
-          月底實際資產 {formatTwd(resolved.closingTotalAssets)} TWD
-        </p>
-        {resolved.expenseTotal > 0 &&
-          resolved.closingBookTotalAssets !== undefined &&
-          resolved.closingBookTotalAssets !== resolved.closingTotalAssets && (
-            <p className="mt-0.5 text-[9px] tabular-nums text-slate-400">
-              庫存計價帳面 {formatTwd(resolved.closingBookTotalAssets)} TWD（未扣開銷）
-            </p>
-          )}
-      </div>
-
-      <div>
-        <h2 className="mb-1 text-xs font-semibold text-slate-700">交易日結明細</h2>
-        <SettlementsPanel settlements={resolved.tradeSettlements} />
-      </div>
-
-      <div>
-        <h2 className="mb-1 text-xs font-semibold text-slate-700">本期開銷明細</h2>
-        <ExpenseSettlementsPanel settlements={resolved.expenseSettlements} />
-      </div>
-    </div>
-  )
-}
-
 export function MonthlyClosesList({
-  closes,
-  expandedId,
-  onExpandedChange,
-  onStartClose,
   onOpeningBalance,
   onCabinRebalance,
-  onResetAll,
   onPullProdState,
   pullProdBusy,
+  onResetAll,
 }: MonthlyClosesListProps) {
-  const toggleExpanded = (id: string) => {
-    onExpandedChange(expandedId === id ? null : id)
-  }
+  const btnClass =
+    'rounded border border-slate-200 bg-white px-1.5 py-px text-[10px] font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:text-xs'
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-          <button
-            type="button"
-            onClick={onOpeningBalance}
-            className="rounded border border-slate-200 bg-white px-1.5 py-px text-[10px] font-medium text-slate-600 transition hover:bg-slate-50 sm:text-xs"
-          >
-            期初
-          </button>
-          <button
-            type="button"
-            onClick={onCabinRebalance}
-            className="rounded border border-slate-200 bg-white px-1.5 py-px text-[10px] font-medium text-slate-600 transition hover:bg-slate-50 sm:text-xs"
-          >
-            調度
-          </button>
-          <button
-            type="button"
-            onClick={onResetAll}
-            className="px-0.5 text-[10px] font-medium text-red-500 transition hover:text-red-700 sm:text-xs"
-          >
-            清空
-          </button>
-          <MonthCloseButton onClick={onStartClose} />
-        </div>
-      </div>
+    <div className="flex flex-wrap items-center justify-end gap-1">
+      <button type="button" onClick={onOpeningBalance} className={btnClass}>
+        +/-
+      </button>
+      <button type="button" onClick={onCabinRebalance} className={btnClass}>
+        ADJ
+      </button>
       {onPullProdState && (
-        <div className="rounded-lg border border-dashed border-amber-300/80 bg-amber-50/70 px-3 py-2.5">
-          <p className="text-[10px] leading-relaxed text-amber-950/75 sm:text-[11px]">
-            從正式站唯讀拉取整包資料覆寫本機；之後只改本地，不會寫回正式站。
-          </p>
-          <button
-            type="button"
-            disabled={pullProdBusy}
-            onClick={onPullProdState}
-            className="mt-1.5 w-full rounded-md border border-amber-300 bg-white px-2 py-1.5 text-[11px] font-medium text-amber-950 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 sm:text-xs"
-          >
-            {pullProdBusy ? '拉取中…' : '拉取正式站資料到本機'}
-          </button>
-        </div>
+        <button
+          type="button"
+          disabled={pullProdBusy}
+          onClick={onPullProdState}
+          className={btnClass}
+        >
+          {pullProdBusy ? '…' : 'PULL'}
+        </button>
       )}
-
-      {closes.length === 0 ? (
-        <p className="rounded-lg border border-slate-200 bg-white py-8 text-center text-xs text-slate-400 shadow-sm">
-          {EMPTY_DATA_LABEL}
-        </p>
-      ) : (
-        closes.map((item) => {
-          const isExpanded = expandedId === item.id
-          return (
-            <article
-              key={item.id}
-              className="rounded-lg border border-slate-200 bg-white shadow-sm"
-            >
-              <button
-                type="button"
-                onClick={() => toggleExpanded(item.id)}
-                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-slate-50"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-violet-900">
-                    {item.periodLabel}
-                    <span className="ml-1.5 text-[10px] font-normal tabular-nums text-violet-800/80">
-                      實際封存 {formatArchiveDateRange(item.actualStartDate, item.actualEndDate)}
-                      {' · '}
-                      {item.closedAt.toLocaleString('zh-TW', {
-                        month: '2-digit',
-                        day: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: false,
-                      })}{' '}
-                      月結
-                    </span>
-                  </p>
-                  <p
-                    className={`overflow-hidden text-[10px] text-slate-400 transition-all duration-300 ease-in-out motion-reduce:transition-none ${
-                      isExpanded ? 'mt-0 max-h-0 opacity-0' : 'mt-0.5 max-h-8 opacity-100'
-                    }`}
-                  >
-                    交易 {item.tradeSettlements.length} 筆 · 開銷 {item.expenseSettlements.length}{' '}
-                    筆
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <p
-                    className={`text-sm font-bold tabular-nums ${profitColorClass(item.netProfit)}`}
-                  >
-                    {formatProfit(item.netProfit)}
-                  </p>
-                  <svg
-                    className={`h-4 w-4 text-slate-400 transition-transform duration-300 ease-in-out motion-reduce:transition-none ${
-                      isExpanded ? 'rotate-180' : ''
-                    }`}
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    aria-hidden
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
-                  </svg>
-                </div>
-              </button>
-              <CollapsibleSection open={isExpanded}>
-                <div className="border-t border-slate-100 px-3 pb-3 pt-2">
-                  <MonthlyCloseExpandedBody monthlyClose={item} />
-                </div>
-              </CollapsibleSection>
-            </article>
-          )
-        })
-      )}
+      <button
+        type="button"
+        onClick={onResetAll}
+        className="px-0.5 text-[10px] font-medium text-red-500 transition hover:text-red-700 sm:text-xs"
+      >
+        清空
+      </button>
     </div>
   )
 }
@@ -3921,7 +3630,7 @@ export function AppNav({
   const isDrawer = layout === 'drawer'
 
   const navItems: {
-    tab: PageTab
+    tab: Exclude<PageTab, 'monthly'>
     label: string
     icon: (active: boolean) => ReactNode
   }[] = [
@@ -3962,16 +3671,19 @@ export function AppNav({
         </svg>
       ),
     },
-    {
-      tab: 'monthly',
-      label: 'MONTH',
-      icon: (_active) => (
-        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
-        </svg>
-      ),
-    },
   ]
+
+  const setupActive = activeTab === 'monthly'
+  const setupIcon = (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 0 1 0 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 0 1 0-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281Z"
+      />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+    </svg>
+  )
 
   const drawerButtonClass = (tab: PageTab) => {
     const active = activeTab === tab
@@ -3997,47 +3709,81 @@ export function AppNav({
   if (isDrawer) {
     return (
       <nav className="flex flex-1 flex-col gap-1.5 px-3 py-4">
-        {navItems.map(({ tab, label, icon }) => {
-          const active = activeTab === tab
-          return (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => selectTab(tab)}
-              className={drawerButtonClass(tab)}
-            >
-              <span
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
-                  active
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700'
-                }`}
+        <div className="flex flex-col gap-1.5">
+          {navItems.map(({ tab, label, icon }) => {
+            const active = activeTab === tab
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => selectTab(tab)}
+                className={drawerButtonClass(tab)}
               >
-                {icon(active)}
-              </span>
-              <span className="min-w-0 flex-1">{label}</span>
-              {tab === 'settlements' && settlementsCount > 0 && (
-                <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-indigo-700">
-                  {settlementsCount}
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                    active
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700'
+                  }`}
+                >
+                  {icon(active)}
                 </span>
-              )}
-            </button>
-          )
-        })}
+                <span className="min-w-0 flex-1">{label}</span>
+                {tab === 'settlements' && settlementsCount > 0 && (
+                  <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-indigo-700">
+                    {settlementsCount}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        <div className="mt-auto border-t border-slate-200/80 pt-3">
+          <button
+            type="button"
+            aria-label="SETUP"
+            title="SETUP"
+            onClick={() => selectTab('monthly')}
+            className={`mx-auto flex h-9 w-9 items-center justify-center rounded-lg transition ${
+              setupActive
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700'
+            }`}
+          >
+            {setupIcon}
+          </button>
+        </div>
       </nav>
     )
   }
 
   return (
-    <nav className="space-y-1">
-      {navItems.map(({ tab, label }) => (
-        <button key={tab} type="button" onClick={() => selectTab(tab)} className={sidebarButtonClass(tab)}>
-          {label}
-          {tab === 'settlements' && settlementsCount > 0 && (
-            <span className="block text-[10px] opacity-70">({settlementsCount})</span>
-          )}
+    <nav className="flex h-full flex-col">
+      <div className="space-y-1">
+        {navItems.map(({ tab, label }) => (
+          <button key={tab} type="button" onClick={() => selectTab(tab)} className={sidebarButtonClass(tab)}>
+            {label}
+            {tab === 'settlements' && settlementsCount > 0 && (
+              <span className="block text-[10px] opacity-70">({settlementsCount})</span>
+            )}
+          </button>
+        ))}
+      </div>
+      <div className="mt-auto border-t border-slate-100 pt-2">
+        <button
+          type="button"
+          aria-label="SETUP"
+          title="SETUP"
+          onClick={() => selectTab('monthly')}
+          className={`mx-auto flex h-8 w-8 items-center justify-center rounded-md transition ${
+            setupActive
+              ? 'bg-slate-900 text-white shadow-sm'
+              : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+          }`}
+        >
+          {setupIcon}
         </button>
-      ))}
+      </div>
     </nav>
   )
 }
