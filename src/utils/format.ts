@@ -272,9 +272,12 @@ export function formatTableDateTime(date: Date): string {
   return formatSettlementDate(date)
 }
 
-/** 交易明細日期：僅顯示日（如 7） */
+/** 交易明細日期：年後兩碼／月／日（如 26/07/11） */
 export function formatTransactionTableDate(date: Date): string {
-  return String(date.getDate())
+  const y = String(date.getFullYear()).slice(-2)
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}/${m}/${d}`
 }
 
 /** HTML date input（YYYY-MM-DD），本地時區 */

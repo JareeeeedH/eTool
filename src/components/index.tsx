@@ -504,7 +504,73 @@ export function DailyBalanceStrip({
   )
 }
 
-/** 資產艙位管理總覽（獨立頁簽）— 放大卡片並垂直置中，減少下方空白感 */
+/** 艙位數字異動時由舊值滾動至新值 */
+function useAnimatedNumber(target: number, durationMs = 800): number {
+  const [display, setDisplay] = useState(target)
+  const displayRef = useRef(target)
+  const rafRef = useRef(0)
+
+  useEffect(() => {
+    const from = displayRef.current
+    const to = target
+    if (Object.is(from, to)) return
+
+    const start = performance.now()
+    const integerOnly = Number.isInteger(from) && Number.isInteger(to)
+    cancelAnimationFrame(rafRef.current)
+
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - start) / durationMs)
+      const eased = 1 - (1 - progress) ** 3
+      let next = from + (to - from) * eased
+      if (integerOnly) next = Math.round(next)
+      else next = Math.round(next * 100) / 100
+      displayRef.current = next
+      setDisplay(next)
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(tick)
+      } else {
+        displayRef.current = to
+        setDisplay(to)
+      }
+    }
+
+    rafRef.current = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [target, durationMs])
+
+  return display
+}
+
+function AnimatedCabinAmount({ value }: { value: number }) {
+  const display = useAnimatedNumber(value)
+  const prevRef = useRef(value)
+  const [tone, setTone] = useState<'up' | 'down' | null>(null)
+
+  useEffect(() => {
+    if (Object.is(value, prevRef.current)) return
+    setTone(value > prevRef.current ? 'up' : 'down')
+    prevRef.current = value
+    const timer = window.setTimeout(() => setTone(null), 850)
+    return () => window.clearTimeout(timer)
+  }, [value])
+
+  return (
+    <span
+      className={
+        tone === 'up'
+          ? 'text-emerald-700 transition-colors duration-300'
+          : tone === 'down'
+            ? 'text-rose-700 transition-colors duration-300'
+            : 'transition-colors duration-300'
+      }
+    >
+      {formatNumber(display)}
+    </span>
+  )
+}
+
+/** 資產艙位管理總覽（獨立頁簽）— 總覽 + 部位調度 */
 export function AssetsCabinOverview({
   balances,
   inventoryCost,
@@ -527,11 +593,17 @@ export function AssetsCabinOverview({
   const [toCabin, setToCabin] = useState<UsdtCabin>('C')
   const [amountStr, setAmountStr] = useState('')
   const [rebalanceError, setRebalanceError] = useState('')
+  const [pendingTransfer, setPendingTransfer] = useState<{
+    from: UsdtCabin
+    to: UsdtCabin
+    amount: number
+    next: { a: number; b: number; c: number }
+  } | null>(null)
 
   const cabinBalance = (cabin: UsdtCabin) =>
     cabin === 'A' ? cabins.a : cabin === 'B' ? cabins.b : cabins.c
 
-  const handleTransfer = () => {
+  const handleTransferClick = () => {
     if (!onRebalanceCabins) return
     const trimmed = amountStr.trim()
     const amount = trimmed === '' ? NaN : Number(trimmed)
@@ -541,27 +613,44 @@ export function AssetsCabinOverview({
       return
     }
     setRebalanceError('')
+    setPendingTransfer({
+      from: fromCabin,
+      to: toCabin,
+      amount,
+      next: result.next,
+    })
+  }
+
+  const confirmPendingTransfer = () => {
+    if (!onRebalanceCabins || !pendingTransfer) return
+    onRebalanceCabins(pendingTransfer.next.a, pendingTransfer.next.b)
     setAmountStr('')
-    onRebalanceCabins(result.next.a, result.next.b)
+    setPendingTransfer(null)
+  }
+
+  const cabinTone: Record<UsdtCabin, string> = {
+    A: 'bg-sky-50 text-sky-800 ring-sky-200',
+    B: 'bg-violet-50 text-violet-800 ring-violet-200',
+    C: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
   }
 
   const cabinSelectClass =
-    'w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm font-semibold outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-500/15'
+    'w-full rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-900/10'
   const cabinOptionLabel = (cabin: UsdtCabin) =>
     `${cabin}（${formatNumber(cabinBalance(cabin))}）`
 
   const cardClass =
-    'flex min-h-[6.25rem] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-4 text-center shadow-sm sm:min-h-[7.5rem] sm:px-4 sm:py-5'
-  const labelClass = 'text-[11px] font-medium tracking-wide text-slate-400 sm:text-xs'
-  const valueClass = 'mt-1 text-xl font-bold tabular-nums leading-none text-slate-800 sm:text-2xl'
-  const totalValueClass =
-    'mt-1 text-xl font-bold tabular-nums leading-none text-indigo-800 sm:text-2xl'
-  const subClass = 'mt-1.5 text-[11px] tabular-nums leading-tight text-slate-400 sm:text-xs'
+    'relative flex min-h-[7rem] flex-col items-center justify-center overflow-hidden rounded-2xl border border-slate-200/80 bg-white px-3 py-4 text-center shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)] sm:min-h-[8rem] sm:px-4 sm:py-5'
+  const labelClass =
+    'text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400 sm:text-[11px]'
+  const valueClass =
+    'mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-slate-900 sm:text-[1.75rem]'
+  const subClass = 'mt-1.5 text-[11px] tabular-nums leading-tight text-slate-500 sm:text-xs'
 
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col">
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-3 py-4 sm:max-w-xl sm:gap-4 sm:py-6">
-        <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5">
+    <div className="relative flex min-h-0 w-full flex-1 flex-col bg-[radial-gradient(ellipse_at_top,_#f8fafc_0%,_#f1f5f9_45%,_#eef2ff_100%)]">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-4 px-1 py-5 sm:max-w-lg sm:gap-5 sm:py-8">
+        <div className="grid grid-cols-2 gap-3 sm:gap-3.5">
           <div className={cardClass}>
             <p className={labelClass}>T</p>
             <p className={valueClass} title={formatTwd(balances.twd)}>
@@ -576,13 +665,17 @@ export function AssetsCabinOverview({
               <p className={subClass}>@{formatUsdtCostRateDisplay(inventoryCost.twd!)}</p>
             )}
             {showCabinSplit && (
-              <p className={`${subClass} mt-1`}>
-                A {formatNumber(cabins.a)}
-                <span className="mx-1 text-slate-300">·</span>
-                B {formatNumber(cabins.b)}
-                <span className="mx-1 text-slate-300">·</span>
-                C {formatNumber(cabins.c)}
-              </p>
+              <div className="mt-2.5 flex flex-wrap items-center justify-center gap-1.5">
+                {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
+                  <span
+                    key={cabin}
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ring-1 ring-inset sm:text-[11px] ${cabinTone[cabin]}`}
+                  >
+                    <span className="opacity-70">{cabin}</span>
+                    <AnimatedCabinAmount value={cabinBalance(cabin)} />
+                  </span>
+                ))}
+              </div>
             )}
           </div>
 
@@ -599,11 +692,17 @@ export function AssetsCabinOverview({
             )}
           </div>
 
-          <div className={`${cardClass} border-indigo-200 bg-indigo-50/70`}>
-            <p className={totalValueClass} title={formatTwd(totalAssets.total)}>
+          <div
+            className={`${cardClass} border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50`}
+          >
+            <p className={labelClass}>Total</p>
+            <p
+              className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-indigo-900 sm:text-[1.75rem]"
+              title={formatTwd(totalAssets.total)}
+            >
               {formatTwdTableCompact(totalAssets.total)}
               {!totalAssets.isComplete && (
-                <span className="ml-1.5 align-middle rounded bg-amber-100 px-1 py-px text-[9px] font-medium text-amber-700">
+                <span className="ml-1.5 align-middle rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800">
                   部分
                 </span>
               )}
@@ -617,14 +716,12 @@ export function AssetsCabinOverview({
         </div>
 
         {onRebalanceCabins && totalP > 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm sm:px-4 sm:py-4">
-            <p className="text-[11px] font-medium text-slate-500 sm:text-xs">
-              A/B/C 內部互轉
-              <span className="ml-1 font-normal text-slate-400">總 P 與成本不變</span>
-            </p>
-            <div className="mt-2.5 grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+          <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:p-5">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2.5">
               <label className="block">
-                <span className="mb-0.5 block text-[10px] font-semibold text-slate-500">出倉</span>
+                <span className="mb-1 block text-[10px] font-semibold tracking-[0.12em] text-slate-400">
+                  O
+                </span>
                 <select
                   value={fromCabin}
                   onChange={(e) => {
@@ -638,11 +735,16 @@ export function AssetsCabinOverview({
                   <option value="C">{cabinOptionLabel('C')}</option>
                 </select>
               </label>
-              <span className="pb-2 text-sm font-medium text-slate-400" aria-hidden>
+              <span
+                className="mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-medium text-slate-500"
+                aria-hidden
+              >
                 →
               </span>
               <label className="block">
-                <span className="mb-0.5 block text-[10px] font-semibold text-slate-500">收倉</span>
+                <span className="mb-1 block text-[10px] font-semibold tracking-[0.12em] text-slate-400">
+                  I
+                </span>
                 <select
                   value={toCabin}
                   onChange={(e) => {
@@ -657,20 +759,18 @@ export function AssetsCabinOverview({
                 </select>
               </label>
             </div>
-            <label className="mt-2.5 block">
-              <span className="mb-0.5 block text-[10px] font-semibold text-slate-500">轉出數量</span>
+            <label className="mt-3 block">
               <input
                 type="number"
                 inputMode="decimal"
                 min="0"
                 step="any"
                 value={amountStr}
-                placeholder="例如 5000"
                 onChange={(e) => {
                   setAmountStr(e.target.value)
                   setRebalanceError('')
                 }}
-                className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm tabular-nums outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-500/15"
+                className="w-full rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 text-sm tabular-nums text-slate-900 outline-none transition placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-900/10"
               />
             </label>
             {rebalanceError && (
@@ -678,30 +778,91 @@ export function AssetsCabinOverview({
             )}
             <button
               type="button"
-              onClick={handleTransfer}
-              className="mt-3 w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+              onClick={handleTransferClick}
+              className="mt-3.5 w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold tracking-wide text-white transition hover:bg-slate-800 active:scale-[0.99]"
             >
-              套用分倉
+              OK
             </button>
           </div>
         )}
 
         {onPullProdState && (
-          <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50/60 px-3 py-3 sm:px-4">
-            <p className="text-[11px] text-amber-900/80 sm:text-xs">
+          <div className="rounded-2xl border border-dashed border-amber-300/80 bg-amber-50/70 px-4 py-3.5">
+            <p className="text-[11px] leading-relaxed text-amber-950/75 sm:text-xs">
               從正式站唯讀拉取整包資料覆寫本機；之後在本機操作只會改本地，不會寫回正式站。
             </p>
             <button
               type="button"
               disabled={pullProdBusy}
               onClick={onPullProdState}
-              className="mt-2.5 w-full rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-medium text-amber-950 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-2.5 w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-950 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {pullProdBusy ? '拉取中…' : '拉取正式站資料到本機'}
             </button>
           </div>
         )}
       </div>
+
+      {pendingTransfer && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${pendingTransfer.from} → ${pendingTransfer.to}`}
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xl">
+            <div className="space-y-3 text-sm text-slate-600">
+              <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-center text-base font-semibold tabular-nums text-slate-900">
+                {pendingTransfer.from}
+                <span className="mx-2 font-normal text-slate-400">→</span>
+                {pendingTransfer.to}
+                <span className="ml-2 text-slate-500">
+                  {formatNumber(pendingTransfer.amount)}
+                </span>
+              </p>
+              <div className="space-y-1.5 rounded-xl border border-slate-100 px-3 py-2.5 text-[13px]">
+                {(
+                  [
+                    ['A', cabins.a, pendingTransfer.next.a],
+                    ['B', cabins.b, pendingTransfer.next.b],
+                    ['C', cabins.c, pendingTransfer.next.c],
+                  ] as const
+                )
+                  .filter(([, before, after]) => before !== after)
+                  .map(([label, before, after]) => (
+                    <p
+                      key={label}
+                      className="flex justify-between gap-3 tabular-nums"
+                    >
+                      <span className="text-slate-400">{label}</span>
+                      <span>
+                        {formatNumber(before)}
+                        <span className="mx-1.5 text-slate-300">→</span>
+                        {formatNumber(after)}
+                      </span>
+                    </p>
+                  ))}
+              </div>
+            </div>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingTransfer(null)}
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={confirmPendingTransfer}
+                className="flex-1 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
