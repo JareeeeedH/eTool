@@ -275,6 +275,8 @@ export interface DailyBalanceStripProps {
   totalAssets: TotalAssetsTwd
   vnTwdRate: number | null
   vnUsdtRate: number | null
+  /** POS 頁：套用 A/B 內部互轉（只改分倉，總 P 不變） */
+  onRebalanceCabins?: (targetCabinA: number) => void
 }
 
 

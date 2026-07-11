@@ -71,6 +71,7 @@ import {
   normalizeMonthlyClose,
   normalizeVnTradeTransaction,
   openingBalanceToForm,
+  openingUsdtCabinAAfterRebalance,
   recalculateBalances,
   resolveCabinAAmount,
   settlementFromTotalAssets,
@@ -1636,6 +1637,17 @@ function App() {
     setOpeningBalanceError('')
   }
 
+  const handleRebalanceCabins = (targetCabinA: number) => {
+    setOpeningUsdtCabinA(
+      openingUsdtCabinAAfterRebalance(
+        openingUsdtCabinA,
+        usdtCabinBalances.a,
+        targetCabinA,
+        balances.usdt,
+      ),
+    )
+  }
+
   const handleSaveOpeningBalance = () => {
     if (!parseOpeningBalanceForm()) return
 
@@ -2181,6 +2193,7 @@ function App() {
               totalAssets={totalAssets}
               vnTwdRate={vnTradeAnalytics.currentVnTwdRate}
               vnUsdtRate={vnTradeAnalytics.currentVnUsdtRate}
+              onRebalanceCabins={handleRebalanceCabins}
             />
           ) : activeTab === 'settlements' ? (
             <>

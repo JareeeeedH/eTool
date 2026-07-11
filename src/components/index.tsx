@@ -519,11 +519,72 @@ export function AssetsCabinOverview({
   totalAssets,
   vnTwdRate,
   vnUsdtRate,
+  onRebalanceCabins,
 }: DailyBalanceStripProps) {
   const showUsdtCost = balances.usdt > 0 && inventoryCost.twd !== null
   const showVnRates =
     balances.vn > 0 && (vnTwdRate !== null || vnUsdtRate !== null)
   const showCabinSplit = balances.usdt > 0
+  const totalP = Math.max(0, balances.usdt)
+
+  const [cabinAStr, setCabinAStr] = useState(
+    usdtCabinBalances.a === 0 ? '' : String(usdtCabinBalances.a),
+  )
+  const [cabinBStr, setCabinBStr] = useState(
+    usdtCabinBalances.b === 0 ? '' : String(usdtCabinBalances.b),
+  )
+  const [rebalanceError, setRebalanceError] = useState('')
+  const [draftKey, setDraftKey] = useState(
+    `${usdtCabinBalances.a}|${usdtCabinBalances.b}|${totalP}`,
+  )
+  const liveKey = `${usdtCabinBalances.a}|${usdtCabinBalances.b}|${totalP}`
+  if (liveKey !== draftKey) {
+    setDraftKey(liveKey)
+    setCabinAStr(usdtCabinBalances.a === 0 ? '' : String(usdtCabinBalances.a))
+    setCabinBStr(usdtCabinBalances.b === 0 ? '' : String(usdtCabinBalances.b))
+    setRebalanceError('')
+  }
+
+  const parseAmt = (value: string): number | null => {
+    const trimmed = value.trim()
+    if (!trimmed) return 0
+    const n = Number(trimmed)
+    if (!Number.isFinite(n) || n < 0) return null
+    return n
+  }
+
+  const applyA = (raw: string) => {
+    setCabinAStr(raw)
+    const a = parseAmt(raw)
+    if (a === null) return
+    const clamped = Math.min(a, totalP)
+    setCabinBStr(String(Math.max(0, totalP - clamped)))
+    setRebalanceError('')
+  }
+
+  const applyB = (raw: string) => {
+    setCabinBStr(raw)
+    const b = parseAmt(raw)
+    if (b === null) return
+    const clamped = Math.min(b, totalP)
+    setCabinAStr(String(Math.max(0, totalP - clamped)))
+    setRebalanceError('')
+  }
+
+  const handleRebalance = () => {
+    if (!onRebalanceCabins) return
+    const a = parseAmt(cabinAStr)
+    const b = parseAmt(cabinBStr)
+    if (a === null || b === null) {
+      setRebalanceError('請輸入有效的非負數量')
+      return
+    }
+    if (Math.abs(a + b - totalP) > 1e-9) {
+      setRebalanceError(`A+B 須等於 ${formatNumber(totalP)}`)
+      return
+    }
+    onRebalanceCabins(a)
+  }
 
   const cardClass =
     'flex min-h-[6.25rem] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-4 text-center shadow-sm sm:min-h-[7.5rem] sm:px-4 sm:py-5'
@@ -535,7 +596,7 @@ export function AssetsCabinOverview({
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col">
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-4 sm:max-w-xl sm:py-6">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-3 py-4 sm:max-w-xl sm:gap-4 sm:py-6">
         <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5">
           <div className={cardClass}>
             <p className={labelClass}>T</p>
@@ -588,6 +649,51 @@ export function AssetsCabinOverview({
             )}
           </div>
         </div>
+
+        {onRebalanceCabins && totalP > 0 && (
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm sm:px-4 sm:py-4">
+            <p className="text-[11px] font-medium text-slate-500 sm:text-xs">
+              A/B 內部互轉
+              <span className="ml-1 font-normal text-slate-400">總 P 與成本不變</span>
+            </p>
+            <div className="mt-2.5 grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-0.5 block text-[10px] font-semibold text-sky-600">A</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="any"
+                  value={cabinAStr}
+                  onChange={(e) => applyA(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm tabular-nums outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-0.5 block text-[10px] font-semibold text-violet-600">B</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="any"
+                  value={cabinBStr}
+                  onChange={(e) => applyB(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm tabular-nums outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
+                />
+              </label>
+            </div>
+            {rebalanceError && (
+              <p className="mt-2 text-[11px] text-rose-600">{rebalanceError}</p>
+            )}
+            <button
+              type="button"
+              onClick={handleRebalance}
+              className="mt-3 w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+            >
+              套用分倉
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

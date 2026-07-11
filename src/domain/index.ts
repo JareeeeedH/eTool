@@ -274,9 +274,12 @@ export function computeUsdtCabinBalances(
   transactions: Transaction[],
   lastTradeSettledAt: Date | null = null,
 ): { a: number; b: number } {
-  const openingA = Math.min(Math.max(0, openingUsdtCabinA), Math.max(0, openingBalances.usdt))
-  let a = openingA
-  let b = openingBalances.usdt - openingA
+  const { a: startA, b: startB } = initialUsdtCabinSplit(
+    openingBalances.usdt,
+    openingUsdtCabinA,
+  )
+  let a = startA
+  let b = startB
 
   const applicable = filterBalanceAffectingTransactions(
     filterTradeTransactions(transactions),
@@ -294,6 +297,25 @@ export function computeUsdtCabinBalances(
   }
 
   return { a, b }
+}
+
+/**
+ * 期初分倉：openingUsdtCabinA 可超出期初 P（或為負）以表達 A↔B 內部互轉。
+ * - 落在 [0, openingUsdt] 的部分為期初歸屬
+ * - 超出／不足的差額在交易套用後視為互轉調整
+ */
+export function initialUsdtCabinSplit(
+  openingUsdt: number,
+  openingUsdtCabinA: number,
+): { a: number; b: number; transferToA: number } {
+  const opening = Math.max(0, openingUsdt)
+  const clampedA = Math.min(Math.max(0, openingUsdtCabinA), opening)
+  const transferToA = openingUsdtCabinA - clampedA
+  return {
+    a: clampedA + transferToA,
+    b: opening - clampedA - transferToA,
+    transferToA,
+  }
 }
 
 /**
@@ -432,6 +454,21 @@ export function adjustOpeningUsdtCabinA(
   const fromB = Math.min(prevB, reduce)
   const fromA = reduce - fromB
   return Math.max(0, prevA - fromA)
+}
+
+/**
+ * A/B 內部互轉：只改分倉數量，總 P 與成本不變。
+ * 透過調整 openingUsdtCabinA 達成目標 A（B = total − A）。
+ */
+export function openingUsdtCabinAAfterRebalance(
+  openingUsdtCabinA: number,
+  currentCabinA: number,
+  targetCabinA: number,
+  totalUsdt: number,
+): number {
+  const total = Math.max(0, totalUsdt)
+  const clampedTarget = Math.min(Math.max(0, targetCabinA), total)
+  return openingUsdtCabinA + (clampedTarget - currentCabinA)
 }
 
 export function computeTotalAssetsTwd(
@@ -1584,9 +1621,9 @@ export function validateTransactions(
   )
 
   let balances = { ...openingBalances }
-  const openingA = Math.min(Math.max(0, openingUsdtCabinA), Math.max(0, openingBalances.usdt))
-  let cabinA = openingA
-  let cabinB = openingBalances.usdt - openingA
+  const startCabins = initialUsdtCabinSplit(openingBalances.usdt, openingUsdtCabinA)
+  let cabinA = startCabins.a
+  let cabinB = startCabins.b
 
   for (const tx of sorted) {
     if (isVnTradeTransaction(tx)) {

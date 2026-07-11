@@ -19,6 +19,7 @@ import {
   computeVnSellProfitPreview,
   computeVnTradeAnalytics,
   migrateUsdtCabinAttribution,
+  openingUsdtCabinAAfterRebalance,
   recalculateBalances,
 } from './index'
 
@@ -776,5 +777,20 @@ describe('usdt cabin quantity (shared cost)', () => {
     expect(cabins.b).toBe(4_000)
     const inventory = computeInventoryCost(opening, { twd: null, vn: null }, txs)
     expect(inventory.twd).toBe(roundUsdtCostRate(320_000 / 10_000))
+  })
+
+  it('rebalances A/B by adjusting opening cabin A only', () => {
+    const opening: Balances = { twd: 0, usdt: 0, vn: 0 }
+    const txs: Transaction[] = [
+      { ...usdtBuy('b1', at(1), 30_000, 960_000), cabinAAmount: 30_000, cabin: 'A' },
+      { ...usdtBuy('b2', at(2), 100_000, 3_200_000), cabinAAmount: 0, cabin: 'B' },
+    ]
+    const before = computeUsdtCabinBalances(opening, 0, txs)
+    expect(before).toEqual({ a: 30_000, b: 100_000 })
+
+    const nextOpeningA = openingUsdtCabinAAfterRebalance(0, before.a, 50_000, 130_000)
+    const after = computeUsdtCabinBalances(opening, nextOpeningA, txs)
+    expect(after).toEqual({ a: 50_000, b: 80_000 })
+    expect(after.a + after.b).toBe(130_000)
   })
 })
