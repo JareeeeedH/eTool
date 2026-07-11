@@ -11,7 +11,7 @@ export type VnPayCurrency = 'twd' | 'usdt'
 /** P（USDT）艙別：共用成本池，僅拆數量 */
 export type UsdtCabin = 'A' | 'B' | 'C'
 export type ExpenseType = 'fuel' | 'parking' | 'meal' | 'traffic' | 'other'
-export type PageTab = 'daily' | 'expenses' | 'settlements' | 'monthly' | 'notes' | 'cabins'
+export type PageTab = 'daily' | 'expenses' | 'settlements' | 'monthly' | 'notes'
 export type AccentColor = 'emerald' | 'rose' | 'violet' | 'orange'
 
 export interface UsdtTransaction {
@@ -276,16 +276,18 @@ export interface NotebookPanelProps {
 export interface DailyBalanceStripProps {
   balances: Balances
   inventoryCost: UsdtInventoryCost
-  /** POS 頁顯示 A/B/C；交易明細頁可不傳 */
+  /** P 底下顯示 A/B/C 分倉 */
   usdtCabinBalances?: { a: number; b: number; c: number }
   totalAssets: TotalAssetsTwd
   vnTwdRate: number | null
   vnUsdtRate: number | null
-  /** POS 頁：出倉→收倉互轉後，套用新的 A/B 目標數量（C 由總量推得） */
-  onRebalanceCabins?: (targetCabinA: number, targetCabinB: number) => void
-  /** POS 頁：從正式站唯讀拉取 state 覆寫本機（僅開發環境） */
-  onPullProdState?: () => void
-  pullProdBusy?: boolean
+}
+
+export interface CabinRebalanceModalProps {
+  open: boolean
+  cabins: { a: number; b: number; c: number }
+  onCancel: () => void
+  onConfirm: (targetCabinA: number, targetCabinB: number) => void
 }
 
 
@@ -486,7 +488,10 @@ export interface MonthlyClosesListProps {
   onExpandedChange: (id: string | null) => void
   onStartClose: () => void
   onOpeningBalance: () => void
+  onCabinRebalance: () => void
   onResetAll: () => void
+  onPullProdState?: () => void
+  pullProdBusy?: boolean
 }
 
 

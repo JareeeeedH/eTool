@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import type {
   AppNavProps,
   CabinAllocModalProps,
+  CabinRebalanceModalProps,
   ConfirmModalProps,
   DailyBalanceStripProps,
   DailyTradeSettleBarProps,
@@ -316,12 +317,12 @@ export function SettlementDayProfit({
           <p className={profitColorClass(usdtProfit!)}>P {formatProfit(usdtProfit!)}</p>
           <p className={profitColorClass(vnProfit!)}>VN {formatProfit(vnProfit!)}</p>
           <p className={`font-semibold ${profitColorClass(totalProfit)}`}>
-            毛利 {formatProfit(totalProfit)}
+            {formatProfit(totalProfit)}
           </p>
         </>
       ) : (
         <p className={`font-semibold ${profitColorClass(totalProfit)}`}>
-          毛利 {formatProfit(totalProfit)}
+          {formatProfit(totalProfit)}
         </p>
       )}
       {showNet && (
@@ -448,13 +449,23 @@ export function DailyPageHeader({
 export function DailyBalanceStrip({
   balances,
   inventoryCost,
+  usdtCabinBalances,
   totalAssets,
   vnTwdRate,
   vnUsdtRate,
 }: DailyBalanceStripProps) {
+  const cabins = usdtCabinBalances ?? { a: 0, b: 0, c: 0 }
   const showUsdtCost = balances.usdt > 0 && inventoryCost.twd !== null
   const showVnRates =
     balances.vn > 0 && (vnTwdRate !== null || vnUsdtRate !== null)
+  const showCabinSplit = balances.usdt > 0
+  const cabinTone: Record<UsdtCabin, string> = {
+    A: 'bg-sky-50 text-sky-800 ring-sky-200',
+    B: 'bg-violet-50 text-violet-800 ring-violet-200',
+    C: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
+  }
+  const cabinBalance = (cabin: UsdtCabin) =>
+    cabin === 'A' ? cabins.a : cabin === 'B' ? cabins.b : cabins.c
 
   return (
     <div className="mb-0.5 grid grid-cols-2 items-stretch gap-0.5 sm:mb-1.5 sm:grid-cols-4 sm:gap-1.5">
@@ -471,6 +482,19 @@ export function DailyBalanceStrip({
         <p className={BALANCE_VALUE_CLASS}>{formatNumber(balances.usdt)}</p>
         {showUsdtCost && (
           <p className={BALANCE_SUB_CLASS}>@{formatUsdtCostRateDisplay(inventoryCost.twd!)}</p>
+        )}
+        {showCabinSplit && (
+          <div className="mt-1 flex w-full flex-wrap items-center justify-center gap-1">
+            {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
+              <span
+                key={cabin}
+                className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-semibold tabular-nums ring-1 ring-inset sm:text-[10px] ${cabinTone[cabin]}`}
+              >
+                <span className="opacity-70">{cabin}</span>
+                <AnimatedCabinAmount value={cabinBalance(cabin)} />
+              </span>
+            ))}
+          </div>
         )}
       </div>
       <div className={BALANCE_CARD_CLASS}>
@@ -570,25 +594,14 @@ function AnimatedCabinAmount({ value }: { value: number }) {
   )
 }
 
-/** 資產艙位管理總覽（獨立頁簽）— 總覽 + 部位調度 */
-export function AssetsCabinOverview({
-  balances,
-  inventoryCost,
-  usdtCabinBalances,
-  totalAssets,
-  vnTwdRate,
-  vnUsdtRate,
-  onRebalanceCabins,
-  onPullProdState,
-  pullProdBusy,
-}: DailyBalanceStripProps) {
-  const cabins = usdtCabinBalances ?? { a: 0, b: 0, c: 0 }
-  const showUsdtCost = balances.usdt > 0 && inventoryCost.twd !== null
-  const showVnRates =
-    balances.vn > 0 && (vnTwdRate !== null || vnUsdtRate !== null)
-  const showCabinSplit = balances.usdt > 0
-  const totalP = Math.max(0, balances.usdt)
-
+/** A/B/C 內部調度（月結頁 modal） */
+export function CabinRebalanceModal({
+  open,
+  cabins,
+  onCancel,
+  onConfirm,
+}: CabinRebalanceModalProps) {
+  const totalP = Math.max(0, cabins.a + cabins.b + cabins.c)
   const [fromCabin, setFromCabin] = useState<UsdtCabin>('A')
   const [toCabin, setToCabin] = useState<UsdtCabin>('C')
   const [amountStr, setAmountStr] = useState('')
@@ -600,11 +613,27 @@ export function AssetsCabinOverview({
     next: { a: number; b: number; c: number }
   } | null>(null)
 
+  useEffect(() => {
+    if (!open) {
+      setFromCabin('A')
+      setToCabin('C')
+      setAmountStr('')
+      setRebalanceError('')
+      setPendingTransfer(null)
+    }
+  }, [open])
+
+  if (!open) return null
+
   const cabinBalance = (cabin: UsdtCabin) =>
     cabin === 'A' ? cabins.a : cabin === 'B' ? cabins.b : cabins.c
 
+  const cabinSelectClass =
+    'w-full rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-900/10'
+  const cabinOptionLabel = (cabin: UsdtCabin) =>
+    `${cabin}（${formatNumber(cabinBalance(cabin))}）`
+
   const handleTransferClick = () => {
-    if (!onRebalanceCabins) return
     const trimmed = amountStr.trim()
     const amount = trimmed === '' ? NaN : Number(trimmed)
     const result = transferUsdtBetweenCabins(cabins, fromCabin, toCabin, amount)
@@ -622,195 +651,21 @@ export function AssetsCabinOverview({
   }
 
   const confirmPendingTransfer = () => {
-    if (!onRebalanceCabins || !pendingTransfer) return
-    onRebalanceCabins(pendingTransfer.next.a, pendingTransfer.next.b)
-    setAmountStr('')
+    if (!pendingTransfer) return
+    onConfirm(pendingTransfer.next.a, pendingTransfer.next.b)
     setPendingTransfer(null)
   }
 
-  const cabinTone: Record<UsdtCabin, string> = {
-    A: 'bg-sky-50 text-sky-800 ring-sky-200',
-    B: 'bg-violet-50 text-violet-800 ring-violet-200',
-    C: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
-  }
-
-  const cabinSelectClass =
-    'w-full rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-900/10'
-  const cabinOptionLabel = (cabin: UsdtCabin) =>
-    `${cabin}（${formatNumber(cabinBalance(cabin))}）`
-
-  const cardClass =
-    'relative flex min-h-[7rem] flex-col items-center justify-center overflow-hidden rounded-2xl border border-slate-200/80 bg-white px-3 py-4 text-center shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.04)] sm:min-h-[8rem] sm:px-4 sm:py-5'
-  const labelClass =
-    'text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400 sm:text-[11px]'
-  const valueClass =
-    'mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-slate-900 sm:text-[1.75rem]'
-  const subClass = 'mt-1.5 text-[11px] tabular-nums leading-tight text-slate-500 sm:text-xs'
-
   return (
-    <div className="relative flex min-h-0 w-full flex-1 flex-col bg-[radial-gradient(ellipse_at_top,_#f8fafc_0%,_#f1f5f9_45%,_#eef2ff_100%)]">
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-4 px-1 py-5 sm:max-w-lg sm:gap-5 sm:py-8">
-        <div className="grid grid-cols-2 gap-3 sm:gap-3.5">
-          <div className={cardClass}>
-            <p className={labelClass}>T</p>
-            <p className={valueClass} title={formatTwd(balances.twd)}>
-              {formatTwdTableCompact(balances.twd)}
-            </p>
-          </div>
-
-          <div className={cardClass}>
-            <p className={labelClass}>P</p>
-            <p className={valueClass}>{formatNumber(balances.usdt)}</p>
-            {showUsdtCost && (
-              <p className={subClass}>@{formatUsdtCostRateDisplay(inventoryCost.twd!)}</p>
-            )}
-            {showCabinSplit && (
-              <div className="mt-2.5 flex flex-wrap items-center justify-center gap-1.5">
-                {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
-                  <span
-                    key={cabin}
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ring-1 ring-inset sm:text-[11px] ${cabinTone[cabin]}`}
-                  >
-                    <span className="opacity-70">{cabin}</span>
-                    <AnimatedCabinAmount value={cabinBalance(cabin)} />
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className={cardClass}>
-            <p className={labelClass}>V</p>
-            <p className={valueClass} title={formatNumber(balances.vn)}>
-              {formatVnTableCompact(balances.vn)}
-            </p>
-            {showVnRates && (
-              <div className={`${subClass} flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5`}>
-                {vnTwdRate !== null && <span>{formatVnNtdCostRateCompact(vnTwdRate)}</span>}
-                {vnUsdtRate !== null && <span>{formatVnUsdtCostRateCompact(vnUsdtRate)}</span>}
-              </div>
-            )}
-          </div>
-
-          <div
-            className={`${cardClass} border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50`}
-          >
-            <p className={labelClass}>Total</p>
-            <p
-              className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-indigo-900 sm:text-[1.75rem]"
-              title={formatTwd(totalAssets.total)}
-            >
-              {formatTwdTableCompact(totalAssets.total)}
-              {!totalAssets.isComplete && (
-                <span className="ml-1.5 align-middle rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800">
-                  部分
-                </span>
-              )}
-            </p>
-            {totalAssets.missingNotes.length > 0 && (
-              <p className="mt-1.5 text-[10px] leading-tight text-amber-700">
-                {totalAssets.missingNotes.join('；')}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {onRebalanceCabins && totalP > 0 && (
-          <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:p-5">
-            <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2.5">
-              <label className="block">
-                <span className="mb-1 block text-[10px] font-semibold tracking-[0.12em] text-slate-400">
-                  O
-                </span>
-                <select
-                  value={fromCabin}
-                  onChange={(e) => {
-                    setFromCabin(e.target.value as UsdtCabin)
-                    setRebalanceError('')
-                  }}
-                  className={cabinSelectClass}
-                >
-                  <option value="A">{cabinOptionLabel('A')}</option>
-                  <option value="B">{cabinOptionLabel('B')}</option>
-                  <option value="C">{cabinOptionLabel('C')}</option>
-                </select>
-              </label>
-              <span
-                className="mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-medium text-slate-500"
-                aria-hidden
-              >
-                →
-              </span>
-              <label className="block">
-                <span className="mb-1 block text-[10px] font-semibold tracking-[0.12em] text-slate-400">
-                  I
-                </span>
-                <select
-                  value={toCabin}
-                  onChange={(e) => {
-                    setToCabin(e.target.value as UsdtCabin)
-                    setRebalanceError('')
-                  }}
-                  className={cabinSelectClass}
-                >
-                  <option value="A">{cabinOptionLabel('A')}</option>
-                  <option value="B">{cabinOptionLabel('B')}</option>
-                  <option value="C">{cabinOptionLabel('C')}</option>
-                </select>
-              </label>
-            </div>
-            <label className="mt-3 block">
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="any"
-                value={amountStr}
-                onChange={(e) => {
-                  setAmountStr(e.target.value)
-                  setRebalanceError('')
-                }}
-                className="w-full rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 text-sm tabular-nums text-slate-900 outline-none transition placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-900/10"
-              />
-            </label>
-            {rebalanceError && (
-              <p className="mt-2 text-[11px] text-rose-600">{rebalanceError}</p>
-            )}
-            <button
-              type="button"
-              onClick={handleTransferClick}
-              className="mt-3.5 w-full rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold tracking-wide text-white transition hover:bg-slate-800 active:scale-[0.99]"
-            >
-              OK
-            </button>
-          </div>
-        )}
-
-        {onPullProdState && (
-          <div className="rounded-2xl border border-dashed border-amber-300/80 bg-amber-50/70 px-4 py-3.5">
-            <p className="text-[11px] leading-relaxed text-amber-950/75 sm:text-xs">
-              從正式站唯讀拉取整包資料覆寫本機；之後在本機操作只會改本地，不會寫回正式站。
-            </p>
-            <button
-              type="button"
-              disabled={pullProdBusy}
-              onClick={onPullProdState}
-              className="mt-2.5 w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-950 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {pullProdBusy ? '拉取中…' : '拉取正式站資料到本機'}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {pendingTransfer && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${pendingTransfer.from} → ${pendingTransfer.to}`}
-        >
-          <div className="w-full max-w-sm rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="艙位調度"
+    >
+      <div className="w-full max-w-sm rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xl">
+        {pendingTransfer ? (
+          <>
             <div className="space-y-3 text-sm text-slate-600">
               <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-center text-base font-semibold tabular-nums text-slate-900">
                 {pendingTransfer.from}
@@ -830,10 +685,7 @@ export function AssetsCabinOverview({
                 )
                   .filter(([, before, after]) => before !== after)
                   .map(([label, before, after]) => (
-                    <p
-                      key={label}
-                      className="flex justify-between gap-3 tabular-nums"
-                    >
+                    <p key={label} className="flex justify-between gap-3 tabular-nums">
                       <span className="text-slate-400">{label}</span>
                       <span>
                         {formatNumber(before)}
@@ -860,9 +712,98 @@ export function AssetsCabinOverview({
                 OK
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-slate-900">艙位調度</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              P 合計 {formatNumber(totalP)}
+            </p>
+            {totalP <= 0 ? (
+              <p className="mt-4 text-center text-sm text-slate-400">目前無 P 可調度</p>
+            ) : (
+              <div className="mt-4">
+                <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2.5">
+                  <label className="block">
+                    <span className="mb-1 block text-[10px] font-semibold tracking-[0.12em] text-slate-400">
+                      O
+                    </span>
+                    <select
+                      value={fromCabin}
+                      onChange={(e) => {
+                        setFromCabin(e.target.value as UsdtCabin)
+                        setRebalanceError('')
+                      }}
+                      className={cabinSelectClass}
+                    >
+                      <option value="A">{cabinOptionLabel('A')}</option>
+                      <option value="B">{cabinOptionLabel('B')}</option>
+                      <option value="C">{cabinOptionLabel('C')}</option>
+                    </select>
+                  </label>
+                  <span
+                    className="mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-medium text-slate-500"
+                    aria-hidden
+                  >
+                    →
+                  </span>
+                  <label className="block">
+                    <span className="mb-1 block text-[10px] font-semibold tracking-[0.12em] text-slate-400">
+                      I
+                    </span>
+                    <select
+                      value={toCabin}
+                      onChange={(e) => {
+                        setToCabin(e.target.value as UsdtCabin)
+                        setRebalanceError('')
+                      }}
+                      className={cabinSelectClass}
+                    >
+                      <option value="A">{cabinOptionLabel('A')}</option>
+                      <option value="B">{cabinOptionLabel('B')}</option>
+                      <option value="C">{cabinOptionLabel('C')}</option>
+                    </select>
+                  </label>
+                </div>
+                <label className="mt-3 block">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="any"
+                    value={amountStr}
+                    onChange={(e) => {
+                      setAmountStr(e.target.value)
+                      setRebalanceError('')
+                    }}
+                    className="w-full rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 text-sm tabular-nums text-slate-900 outline-none transition placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-900/10"
+                  />
+                </label>
+                {rebalanceError && (
+                  <p className="mt-2 text-[11px] text-rose-600">{rebalanceError}</p>
+                )}
+              </div>
+            )}
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={totalP <= 0}
+                onClick={handleTransferClick}
+                className="flex-1 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                OK
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -3155,7 +3096,7 @@ export function SettlementRecordBody({
             className="mt-0.5 text-[10px] tabular-nums text-sky-600/80"
             title={formatTwd(displayAssets.usdtInTwd)}
           >
-            估值 {formatTwdTableCompact(displayAssets.usdtInTwd)}
+            ({formatTwdTableCompact(displayAssets.usdtInTwd)})
           </p>
         )}
       </div>
@@ -3182,13 +3123,13 @@ export function SettlementRecordBody({
             className="mt-0.5 text-[10px] tabular-nums text-amber-600/80"
             title={formatTwd(displayAssets.vnInTwd)}
           >
-            估值 {formatTwdTableCompact(displayAssets.vnInTwd)}
+            ({formatTwdTableCompact(displayAssets.vnInTwd)})
           </p>
         )}
       </div>
       {showProfit && (
         <div className={`${SETTLEMENT_METRIC_CLASS} bg-slate-50/80`}>
-          <p className="text-[10px] font-medium text-slate-500">當日PF</p>
+          <p className="text-[10px] font-medium text-slate-500">PF</p>
           <div className="mt-0.5">
             <SettlementDayProfit
               compact
@@ -3255,13 +3196,11 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
   const renderSettlementCard = ({
     id,
     title,
-    transactionCount,
     totalProfit,
     body,
   }: {
     id: string
     title: string
-    transactionCount: number
     totalProfit: number
     body: SettlementRecordBodyProps
   }) => {
@@ -3274,10 +3213,7 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
           className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-slate-50"
         >
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0">
-              <h3 className="text-sm font-semibold tabular-nums text-slate-800">{title}</h3>
-              <span className="text-[10px] text-slate-400">{transactionCount} 筆</span>
-            </div>
+            <h3 className="text-sm font-semibold tabular-nums text-slate-800">{title}</h3>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <p className={`text-xs font-bold tabular-nums ${profitColorClass(totalProfit)}`}>
@@ -3309,13 +3245,20 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
   return (
     <div className="space-y-2">
       <div className="rounded-lg border border-indigo-200 bg-indigo-50/80 px-3 py-2 shadow-sm">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0">
-          <p className="text-xs font-medium text-indigo-900">
-            累計總PF
-            <span className="ml-1.5 text-[10px] font-normal text-indigo-700/70">
-              共 {settlements.length} 次
-            </span>
-          </p>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-0 text-[10px] tabular-nums">
+            <span className="font-normal text-indigo-700/70">共 {settlements.length} 次</span>
+            {showCumulativeSplit && (
+              <>
+                <span className={profitColorClass(cumulativeUsdtProfit)}>
+                  P: {formatProfit(cumulativeUsdtProfit)}
+                </span>
+                <span className={profitColorClass(cumulativeVnProfit)}>
+                  VN: {formatProfit(cumulativeVnProfit)}
+                </span>
+              </>
+            )}
+          </div>
           <p
             className={`text-base font-bold tabular-nums ${
               cumulativeTotalProfit > 0
@@ -3328,23 +3271,12 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
             {formatProfit(cumulativeTotalProfit)}
           </p>
         </div>
-        {showCumulativeSplit && (
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0 text-[10px] tabular-nums">
-            <span className={profitColorClass(cumulativeUsdtProfit)}>
-              P 累計 {formatProfit(cumulativeUsdtProfit)}
-            </span>
-            <span className={profitColorClass(cumulativeVnProfit)}>
-              VN 累計 {formatProfit(cumulativeVnProfit)}
-            </span>
-          </div>
-        )}
       </div>
 
       {settlements.map((item) =>
         renderSettlementCard({
           id: item.id,
           title: formatSettlementDateTime(item.settledAt),
-          transactionCount: item.transactionCount,
           totalProfit: item.dayTotalProfit,
           body: {
             twdBalance: item.twdBalance,
@@ -3852,7 +3784,10 @@ export function MonthlyClosesList({
   onExpandedChange,
   onStartClose,
   onOpeningBalance,
+  onCabinRebalance,
   onResetAll,
+  onPullProdState,
+  pullProdBusy,
 }: MonthlyClosesListProps) {
   const toggleExpanded = (id: string) => {
     onExpandedChange(expandedId === id ? null : id)
@@ -3860,14 +3795,21 @@ export function MonthlyClosesList({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-end gap-2">
-        <div className="flex shrink-0 items-center gap-1">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
           <button
             type="button"
             onClick={onOpeningBalance}
             className="rounded border border-slate-200 bg-white px-1.5 py-px text-[10px] font-medium text-slate-600 transition hover:bg-slate-50 sm:text-xs"
           >
             期初
+          </button>
+          <button
+            type="button"
+            onClick={onCabinRebalance}
+            className="rounded border border-slate-200 bg-white px-1.5 py-px text-[10px] font-medium text-slate-600 transition hover:bg-slate-50 sm:text-xs"
+          >
+            調度
           </button>
           <button
             type="button"
@@ -3879,6 +3821,21 @@ export function MonthlyClosesList({
           <MonthCloseButton onClick={onStartClose} />
         </div>
       </div>
+      {onPullProdState && (
+        <div className="rounded-lg border border-dashed border-amber-300/80 bg-amber-50/70 px-3 py-2.5">
+          <p className="text-[10px] leading-relaxed text-amber-950/75 sm:text-[11px]">
+            從正式站唯讀拉取整包資料覆寫本機；之後只改本地，不會寫回正式站。
+          </p>
+          <button
+            type="button"
+            disabled={pullProdBusy}
+            onClick={onPullProdState}
+            className="mt-1.5 w-full rounded-md border border-amber-300 bg-white px-2 py-1.5 text-[11px] font-medium text-amber-950 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 sm:text-xs"
+          >
+            {pullProdBusy ? '拉取中…' : '拉取正式站資料到本機'}
+          </button>
+        </div>
+      )}
 
       {closes.length === 0 ? (
         <p className="rounded-lg border border-slate-200 bg-white py-8 text-center text-xs text-slate-400 shadow-sm">
@@ -3969,15 +3926,6 @@ export function AppNav({
     label: string
     icon: (active: boolean) => ReactNode
   }[] = [
-    {
-      tab: 'cabins',
-      label: 'POS',
-      icon: (_active) => (
-        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-        </svg>
-      ),
-    },
     {
       tab: 'daily',
       label: 'TRANS',

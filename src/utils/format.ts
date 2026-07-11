@@ -261,11 +261,13 @@ export function formatSettlementDate(date: Date): string {
 }
 
 export function formatSettlementDateTime(date: Date): string {
-  return `${formatSettlementDate(date)} ${date.toLocaleTimeString('zh-TW', {
+  const day = String(date.getDate())
+  const time = date.toLocaleTimeString('zh-TW', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-  })}`
+  })
+  return `${day} ${time}`
 }
 
 export function formatTableDateTime(date: Date): string {

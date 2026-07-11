@@ -103,8 +103,8 @@ import {
 import { formCardClass, recordCardClass } from './utils/uiClasses'
 import {
   AppNav,
-  AssetsCabinOverview,
   CabinAllocModal,
+  CabinRebalanceModal,
   ConfirmModal,
   DailyBalanceStrip,
   DailyPageHeader,
@@ -133,7 +133,6 @@ import {
 const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'expenses' | 'notes'>, string> = {
   settlements: 'SET.',
   monthly: 'MONTH',
-  cabins: 'POS',
 }
 
 type PendingCabinAlloc =
@@ -243,6 +242,7 @@ function App() {
   const [expenseError, setExpenseError] = useState('')
 
   const [openingBalanceModalOpen, setOpeningBalanceModalOpen] = useState(false)
+  const [cabinRebalanceModalOpen, setCabinRebalanceModalOpen] = useState(false)
   const [openingBalanceForm, setOpeningBalanceForm] = useState<OpeningBalanceForm>(() =>
     openingBalanceToForm({ ...EMPTY_USDT_COST }, null, null),
   )
@@ -1820,6 +1820,7 @@ function App() {
     )
     setOpeningUsdtCabinA(next.a)
     setOpeningUsdtCabinB(next.b)
+    setCabinRebalanceModalOpen(false)
     // 戶轉分倉後立刻寫入 A/B/C 絕對數量，避免 debounce 內重整遺失
     void (async () => {
       const ok = await savePersistedAppStateAsync({
@@ -2053,6 +2054,12 @@ function App() {
         }}
         onConfirm={handleSaveOpeningBalance}
       />
+      <CabinRebalanceModal
+        open={cabinRebalanceModalOpen}
+        cabins={usdtCabinBalances}
+        onCancel={() => setCabinRebalanceModalOpen(false)}
+        onConfirm={handleRebalanceCabins}
+      />
       <div className="flex h-full w-full">
         <aside className="hidden w-[6rem] shrink-0 border-r border-slate-200 bg-white px-1 py-3 lg:block">
           <AppNav
@@ -2143,6 +2150,7 @@ function App() {
               <DailyBalanceStrip
                 balances={balances}
                 inventoryCost={inventoryCost}
+                usdtCabinBalances={usdtCabinBalances}
                 totalAssets={totalAssets}
                 vnTwdRate={vnTradeAnalytics.currentVnTwdRate}
                 vnUsdtRate={vnTradeAnalytics.currentVnUsdtRate}
@@ -2429,20 +2437,6 @@ function App() {
                 onDelete={handleDeleteNote}
               />
             </div>
-          ) : activeTab === 'cabins' ? (
-            <AssetsCabinOverview
-              balances={balances}
-              inventoryCost={inventoryCost}
-              usdtCabinBalances={usdtCabinBalances}
-              totalAssets={totalAssets}
-              vnTwdRate={vnTradeAnalytics.currentVnTwdRate}
-              vnUsdtRate={vnTradeAnalytics.currentVnUsdtRate}
-              onRebalanceCabins={handleRebalanceCabins}
-              onPullProdState={
-                canPullProdStateToLocal() ? handlePullProdState : undefined
-              }
-              pullProdBusy={pullProdBusy}
-            />
           ) : activeTab === 'settlements' ? (
             <>
               <SettlementsPanel settlements={settlements} />
@@ -2455,7 +2449,12 @@ function App() {
                 onExpandedChange={setSelectedMonthlyCloseId}
                 onStartClose={handleOpenMonthlyClose}
                 onOpeningBalance={handleOpenOpeningBalance}
+                onCabinRebalance={() => setCabinRebalanceModalOpen(true)}
                 onResetAll={handleResetAll}
+                onPullProdState={
+                  canPullProdStateToLocal() ? handlePullProdState : undefined
+                }
+                pullProdBusy={pullProdBusy}
               />
             </>
           )}

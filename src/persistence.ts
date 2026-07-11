@@ -36,7 +36,6 @@ type PageTab =
   | 'settlements'
   | 'monthly'
   | 'notes'
-  | 'cabins'
 type DailyWorkTab = 'usdt' | 'vn'
 type FiatCurrency = 'twd' | 'vn'
 type TransactionType = 'buy' | 'sell'
@@ -552,7 +551,7 @@ function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
             : parsed.activeTab === 'notes'
               ? 'notes'
               : parsed.activeTab === 'cabins'
-                ? 'cabins'
+                ? 'daily'
                 : 'daily'
   const dailyWorkTab: DailyWorkTab = parsed.dailyWorkTab === 'vn' ? 'vn' : 'usdt'
 
