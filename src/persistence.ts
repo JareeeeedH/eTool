@@ -14,6 +14,11 @@ export function getPersistenceConfigError(): string | null {
   return null
 }
 
+/** 開發環境且本機 API 已設定時，可顯示「從正式站拉取」按鈕 */
+export function canPullProdStateToLocal(): boolean {
+  return Boolean(import.meta.env.DEV && !getPersistenceConfigError())
+}
+
 function apiHeaders(): HeadersInit {
   return {
     Authorization: `Bearer ${API_TOKEN}`,
@@ -36,7 +41,7 @@ type DailyWorkTab = 'usdt' | 'vn'
 type FiatCurrency = 'twd' | 'vn'
 type TransactionType = 'buy' | 'sell'
 type VnPayCurrency = 'twd' | 'usdt'
-type UsdtCabin = 'A' | 'B'
+type UsdtCabin = 'A' | 'B' | 'C'
 type ExpenseType = 'fuel' | 'parking' | 'meal' | 'traffic' | 'other'
 
 interface Balances {
@@ -60,6 +65,7 @@ interface UsdtTransaction {
   fiatAmount: number
   rate: number
   cabinAAmount?: number
+  cabinBAmount?: number
   cabin?: UsdtCabin
 }
 
@@ -74,6 +80,7 @@ interface VnTradeTransaction {
   usdtAmount: number
   rate: number
   cabinAAmount?: number
+  cabinBAmount?: number
   cabin?: UsdtCabin
 }
 
@@ -162,8 +169,15 @@ export interface PersistedAppState {
   dailyWorkTab?: DailyWorkTab
   openingBalances: Balances
   openingUsdtCost: UsdtInventoryCost
-  /** 期初 P 歸 A 艙數量；B = openingBalances.usdt - openingUsdtCabinA */
+  /** 期初 P 歸 A 艙數量 */
   openingUsdtCabinA?: number
+  /** 期初 P 歸 B 艙數量；C = openingBalances.usdt − A − B（可含互轉偏移） */
+  openingUsdtCabinB?: number
+  /**
+   * 目前 A/B/C 絕對數量快照（戶轉分倉／日常存檔都會更新）。
+   * 重整後用來校正期初分倉，避免互轉結果遺失。
+   */
+  usdtCabinSnapshot?: { a: number; b: number; c: number }
   /** 期初 VN 庫存的 VN/TWD 成本均價（來自上次結算） */
   openingVnTwdRate?: number | null
   /** 期初 VN 庫存的 VN/USDT 成本均價（來自上次結算） */
@@ -189,12 +203,23 @@ function parseNullableNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+function parseUsdtCabinSnapshot(
+  value: unknown,
+): { a: number; b: number; c: number } | undefined {
+  if (!isRecord(value)) return undefined
+  const a = parseNumber(value.a, NaN)
+  const b = parseNumber(value.b, NaN)
+  const c = parseNumber(value.c, NaN)
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) return undefined
+  return { a, b, c }
+}
+
 function parseVnPayCurrency(value: unknown): VnPayCurrency {
   return value === 'usdt' ? 'usdt' : 'twd'
 }
 
 function parseUsdtCabin(value: unknown): UsdtCabin | undefined {
-  return value === 'A' || value === 'B' ? value : undefined
+  return value === 'A' || value === 'B' || value === 'C' ? value : undefined
 }
 
 function parseExpenseType(value: unknown): ExpenseType {
@@ -230,6 +255,7 @@ function parseVnTradeRecord(
       rate: parseNumber(value.rate),
       cabin: parseUsdtCabin(value.cabin),
       cabinAAmount: parseNullableNumber(value.cabinAAmount) ?? undefined,
+      cabinBAmount: parseNullableNumber(value.cabinBAmount) ?? undefined,
     }
   }
 
@@ -287,6 +313,7 @@ function parseTransaction(value: unknown): Transaction | null {
     rate: parseNumber(value.rate),
     cabin: parseUsdtCabin(value.cabin),
     cabinAAmount: parseNullableNumber(value.cabinAAmount) ?? undefined,
+    cabinBAmount: parseNullableNumber(value.cabinBAmount) ?? undefined,
   }
 }
 
@@ -538,6 +565,11 @@ function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
       parsed.openingUsdtCabinA === undefined || parsed.openingUsdtCabinA === null
         ? undefined
         : parseNumber(parsed.openingUsdtCabinA),
+    openingUsdtCabinB:
+      parsed.openingUsdtCabinB === undefined || parsed.openingUsdtCabinB === null
+        ? undefined
+        : parseNumber(parsed.openingUsdtCabinB),
+    usdtCabinSnapshot: parseUsdtCabinSnapshot(parsed.usdtCabinSnapshot),
     openingVnTwdRate: parseNullableNumber(parsed.openingVnTwdRate),
     openingVnUsdtRate: parseNullableNumber(parsed.openingVnUsdtRate),
     transactions,
@@ -599,6 +631,46 @@ export async function savePersistedAppStateAsync(state: PersistedAppState): Prom
   } catch (err) {
     console.error('[persistence] PUT /api/state error:', err)
     return false
+  }
+}
+
+/**
+ * 請本機後端從正式站唯讀拉取 /api/state 並寫入本機 DB。
+ * 前端不會直接連正式站；正式站金鑰只放在本機 ex_back .env。
+ */
+export async function pullProdStateToLocalAsync(): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  if (!import.meta.env.DEV) {
+    return { ok: false, error: '僅本機開發環境可用' }
+  }
+  const configError = getPersistenceConfigError()
+  if (configError) return { ok: false, error: configError }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/dev/pull-prod`, {
+      method: 'POST',
+      headers: apiHeaders(),
+    })
+    if (res.ok) return { ok: true }
+
+    let message = `拉取失敗（HTTP ${res.status}）`
+    try {
+      const body: unknown = await res.json()
+      if (
+        typeof body === 'object' &&
+        body !== null &&
+        'error' in body &&
+        typeof (body as { error: unknown }).error === 'string'
+      ) {
+        message = (body as { error: string }).error
+      }
+    } catch {
+      // ignore
+    }
+    return { ok: false, error: message }
+  } catch {
+    return { ok: false, error: '無法連線本機後端，請確認 exchange-api 是否在跑' }
   }
 }
 

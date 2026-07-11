@@ -282,12 +282,9 @@ export function todayDateInputValue(): string {
   return dateInputValueFromDate(new Date())
 }
 
-/** 交易表單預設日期：當日往前 9 年又 6 個月 */
+/** 交易表單預設日期：今天（本地） */
 export function defaultTradeDateInputValue(base: Date = new Date()): string {
-  const date = new Date(base)
-  date.setFullYear(date.getFullYear() - 9)
-  date.setMonth(date.getMonth() - 6)
-  return dateInputValueFromDate(date)
+  return dateInputValueFromDate(base)
 }
 
 export function dateInputValueFromDate(date: Date): string {
@@ -322,6 +319,27 @@ export function timestampFromDateInput(dateStr: string, timeSource: Date = new D
     timeSource.getSeconds(),
     timeSource.getMilliseconds(),
   )
+}
+
+/**
+ * 新增交易時間戳：
+ * - 盡量落在所選曆日
+ * - 但必須晚於所有既有流水，避免日期偏舊（或同日時刻較早）導致驗證誤判庫存不足
+ */
+export function timestampForNewTrade(
+  dateStr: string,
+  existingTimestamps: Iterable<Date>,
+  timeSource: Date = new Date(),
+): Date {
+  const base = timestampFromDateInput(dateStr, timeSource)
+  let latestOverall = Number.NEGATIVE_INFINITY
+  for (const ts of existingTimestamps) {
+    const t = ts.getTime()
+    if (t > latestOverall) latestOverall = t
+  }
+  if (!Number.isFinite(latestOverall)) return base
+  if (base.getTime() > latestOverall) return base
+  return new Date(latestOverall + 1)
 }
 
 export function formatArchiveDateRange(start: Date | null, end: Date | null): string {

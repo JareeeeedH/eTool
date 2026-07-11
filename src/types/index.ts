@@ -9,7 +9,7 @@ export type DailyMobileTradePane = 'buy_u' | 'sell_u' | 'buy_vn' | 'sell_vn'
 export type FiatCurrency = 'twd' | 'vn'
 export type VnPayCurrency = 'twd' | 'usdt'
 /** P（USDT）艙別：共用成本池，僅拆數量 */
-export type UsdtCabin = 'A' | 'B'
+export type UsdtCabin = 'A' | 'B' | 'C'
 export type ExpenseType = 'fuel' | 'parking' | 'meal' | 'traffic' | 'other'
 export type PageTab = 'daily' | 'expenses' | 'settlements' | 'monthly' | 'notes' | 'cabins'
 export type AccentColor = 'emerald' | 'rose' | 'violet' | 'orange'
@@ -24,9 +24,11 @@ export interface UsdtTransaction {
   fiatAmount: number
   /** 匯率 = 法幣金額 / USDT 金額 */
   rate: number
-  /** 歸 A 艙的 USDT 數量；B = usdtAmount − cabinAAmount。成本仍共用 */
+  /** 歸 A 艙的 USDT 數量；成本仍共用 */
   cabinAAmount?: number
-  /** 舊資料單艙標籤；有 cabinAAmount 時以數量為準 */
+  /** 歸 B 艙的 USDT 數量；C = usdtAmount − A − B */
+  cabinBAmount?: number
+  /** 舊資料單艙標籤；有 cabinA/BAmount 時以數量為準 */
   cabin?: UsdtCabin
 }
 
@@ -43,7 +45,9 @@ export interface VnTradeTransaction {
   rate: number
   /** 支付／收入為 USDT 時：歸 A 艙數量 */
   cabinAAmount?: number
-  /** 舊資料單艙標籤；有 cabinAAmount 時以數量為準 */
+  /** 支付／收入為 USDT 時：歸 B 艙數量；C = usdtAmount − A − B */
+  cabinBAmount?: number
+  /** 舊資料單艙標籤；有 cabinA/BAmount 時以數量為準 */
   cabin?: UsdtCabin
 }
 
@@ -244,6 +248,7 @@ export interface AppSnapshot {
   openingBalances: Balances
   openingUsdtCost: UsdtInventoryCost
   openingUsdtCabinA: number
+  openingUsdtCabinB: number
   openingVnTwdRate: number | null
   openingVnUsdtRate: number | null
   settlements: DailySettlement[]
@@ -271,12 +276,16 @@ export interface NotebookPanelProps {
 export interface DailyBalanceStripProps {
   balances: Balances
   inventoryCost: UsdtInventoryCost
-  usdtCabinBalances: { a: number; b: number }
+  /** POS 頁顯示 A/B/C；交易明細頁可不傳 */
+  usdtCabinBalances?: { a: number; b: number; c: number }
   totalAssets: TotalAssetsTwd
   vnTwdRate: number | null
   vnUsdtRate: number | null
-  /** POS 頁：套用 A/B 內部互轉（只改分倉，總 P 不變） */
-  onRebalanceCabins?: (targetCabinA: number) => void
+  /** POS 頁：出倉→收倉互轉後，套用新的 A/B 目標數量（C 由總量推得） */
+  onRebalanceCabins?: (targetCabinA: number, targetCabinB: number) => void
+  /** POS 頁：從正式站唯讀拉取 state 覆寫本機（僅開發環境） */
+  onPullProdState?: () => void
+  pullProdBusy?: boolean
 }
 
 
@@ -508,8 +517,11 @@ export interface CabinAllocModalProps {
   /** 買入為 +、賣出／付 U 為 −（僅顯示用） */
   direction: 'in' | 'out'
   initialCabinA: number
-  cabinBalances: { a: number; b: number }
+  initialCabinB: number
+  cabinBalances: { a: number; b: number; c: number }
   error: string
   onCancel: () => void
-  onConfirm: (cabinAAmount: number) => void
+  onConfirm: (cabinAAmount: number, cabinBAmount: number) => void
+  /** 使用者改分配時清除外層錯誤（避免殘留舊訊息） */
+  onDismissError?: () => void
 }

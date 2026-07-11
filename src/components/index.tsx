@@ -28,6 +28,7 @@ import type {
   TotalAssetsTwd,
   UsdtTransaction,
   VnPayCurrency,
+  UsdtCabin,
 } from '../types'
 import {
   EXPENSE_INPUT_CLASS,
@@ -102,6 +103,7 @@ import {
   normalizeMonthlyCloseRecord,
   settlementHasSplitProfit,
   totalAssetsFromSettlement,
+  transferUsdtBetweenCabins,
 } from '../domain'
 
 export function VnPoolCostLines({
@@ -446,7 +448,6 @@ export function DailyPageHeader({
 export function DailyBalanceStrip({
   balances,
   inventoryCost,
-  usdtCabinBalances,
   totalAssets,
   vnTwdRate,
   vnUsdtRate,
@@ -454,7 +455,6 @@ export function DailyBalanceStrip({
   const showUsdtCost = balances.usdt > 0 && inventoryCost.twd !== null
   const showVnRates =
     balances.vn > 0 && (vnTwdRate !== null || vnUsdtRate !== null)
-  const showCabinSplit = balances.usdt > 0
 
   return (
     <div className="mb-1 grid grid-cols-2 items-stretch gap-1 sm:mb-1.5 sm:grid-cols-4 sm:gap-1.5">
@@ -471,13 +471,6 @@ export function DailyBalanceStrip({
         <p className={BALANCE_VALUE_CLASS}>{formatNumber(balances.usdt)}</p>
         {showUsdtCost && (
           <p className={BALANCE_SUB_CLASS}>@{formatUsdtCostRateDisplay(inventoryCost.twd!)}</p>
-        )}
-        {showCabinSplit && (
-          <p className={`${BALANCE_SUB_CLASS} w-full text-[9px] sm:text-[10px]`}>
-            A {formatNumber(usdtCabinBalances.a)}
-            <span className="mx-0.5 text-slate-300">·</span>
-            B {formatNumber(usdtCabinBalances.b)}
-          </p>
         )}
       </div>
       <div className={BALANCE_CARD_CLASS}>
@@ -520,71 +513,42 @@ export function AssetsCabinOverview({
   vnTwdRate,
   vnUsdtRate,
   onRebalanceCabins,
+  onPullProdState,
+  pullProdBusy,
 }: DailyBalanceStripProps) {
+  const cabins = usdtCabinBalances ?? { a: 0, b: 0, c: 0 }
   const showUsdtCost = balances.usdt > 0 && inventoryCost.twd !== null
   const showVnRates =
     balances.vn > 0 && (vnTwdRate !== null || vnUsdtRate !== null)
   const showCabinSplit = balances.usdt > 0
   const totalP = Math.max(0, balances.usdt)
 
-  const [cabinAStr, setCabinAStr] = useState(
-    usdtCabinBalances.a === 0 ? '' : String(usdtCabinBalances.a),
-  )
-  const [cabinBStr, setCabinBStr] = useState(
-    usdtCabinBalances.b === 0 ? '' : String(usdtCabinBalances.b),
-  )
+  const [fromCabin, setFromCabin] = useState<UsdtCabin>('A')
+  const [toCabin, setToCabin] = useState<UsdtCabin>('C')
+  const [amountStr, setAmountStr] = useState('')
   const [rebalanceError, setRebalanceError] = useState('')
-  const [draftKey, setDraftKey] = useState(
-    `${usdtCabinBalances.a}|${usdtCabinBalances.b}|${totalP}`,
-  )
-  const liveKey = `${usdtCabinBalances.a}|${usdtCabinBalances.b}|${totalP}`
-  if (liveKey !== draftKey) {
-    setDraftKey(liveKey)
-    setCabinAStr(usdtCabinBalances.a === 0 ? '' : String(usdtCabinBalances.a))
-    setCabinBStr(usdtCabinBalances.b === 0 ? '' : String(usdtCabinBalances.b))
-    setRebalanceError('')
-  }
 
-  const parseAmt = (value: string): number | null => {
-    const trimmed = value.trim()
-    if (!trimmed) return 0
-    const n = Number(trimmed)
-    if (!Number.isFinite(n) || n < 0) return null
-    return n
-  }
+  const cabinBalance = (cabin: UsdtCabin) =>
+    cabin === 'A' ? cabins.a : cabin === 'B' ? cabins.b : cabins.c
 
-  const applyA = (raw: string) => {
-    setCabinAStr(raw)
-    const a = parseAmt(raw)
-    if (a === null) return
-    const clamped = Math.min(a, totalP)
-    setCabinBStr(String(Math.max(0, totalP - clamped)))
-    setRebalanceError('')
-  }
-
-  const applyB = (raw: string) => {
-    setCabinBStr(raw)
-    const b = parseAmt(raw)
-    if (b === null) return
-    const clamped = Math.min(b, totalP)
-    setCabinAStr(String(Math.max(0, totalP - clamped)))
-    setRebalanceError('')
-  }
-
-  const handleRebalance = () => {
+  const handleTransfer = () => {
     if (!onRebalanceCabins) return
-    const a = parseAmt(cabinAStr)
-    const b = parseAmt(cabinBStr)
-    if (a === null || b === null) {
-      setRebalanceError('請輸入有效的非負數量')
+    const trimmed = amountStr.trim()
+    const amount = trimmed === '' ? NaN : Number(trimmed)
+    const result = transferUsdtBetweenCabins(cabins, fromCabin, toCabin, amount)
+    if (!result.ok) {
+      setRebalanceError(result.error)
       return
     }
-    if (Math.abs(a + b - totalP) > 1e-9) {
-      setRebalanceError(`A+B 須等於 ${formatNumber(totalP)}`)
-      return
-    }
-    onRebalanceCabins(a)
+    setRebalanceError('')
+    setAmountStr('')
+    onRebalanceCabins(result.next.a, result.next.b)
   }
+
+  const cabinSelectClass =
+    'w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm font-semibold outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-500/15'
+  const cabinOptionLabel = (cabin: UsdtCabin) =>
+    `${cabin}（${formatNumber(cabinBalance(cabin))}）`
 
   const cardClass =
     'flex min-h-[6.25rem] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-4 text-center shadow-sm sm:min-h-[7.5rem] sm:px-4 sm:py-5'
@@ -613,9 +577,11 @@ export function AssetsCabinOverview({
             )}
             {showCabinSplit && (
               <p className={`${subClass} mt-1`}>
-                A {formatNumber(usdtCabinBalances.a)}
+                A {formatNumber(cabins.a)}
                 <span className="mx-1 text-slate-300">·</span>
-                B {formatNumber(usdtCabinBalances.b)}
+                B {formatNumber(cabins.b)}
+                <span className="mx-1 text-slate-300">·</span>
+                C {formatNumber(cabins.c)}
               </p>
             )}
           </div>
@@ -653,44 +619,85 @@ export function AssetsCabinOverview({
         {onRebalanceCabins && totalP > 0 && (
           <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm sm:px-4 sm:py-4">
             <p className="text-[11px] font-medium text-slate-500 sm:text-xs">
-              A/B 內部互轉
+              A/B/C 內部互轉
               <span className="ml-1 font-normal text-slate-400">總 P 與成本不變</span>
             </p>
-            <div className="mt-2.5 grid grid-cols-2 gap-2">
+            <div className="mt-2.5 grid grid-cols-[1fr_auto_1fr] items-end gap-2">
               <label className="block">
-                <span className="mb-0.5 block text-[10px] font-semibold text-sky-600">A</span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="any"
-                  value={cabinAStr}
-                  onChange={(e) => applyA(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm tabular-nums outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20"
-                />
+                <span className="mb-0.5 block text-[10px] font-semibold text-slate-500">出倉</span>
+                <select
+                  value={fromCabin}
+                  onChange={(e) => {
+                    setFromCabin(e.target.value as UsdtCabin)
+                    setRebalanceError('')
+                  }}
+                  className={cabinSelectClass}
+                >
+                  <option value="A">{cabinOptionLabel('A')}</option>
+                  <option value="B">{cabinOptionLabel('B')}</option>
+                  <option value="C">{cabinOptionLabel('C')}</option>
+                </select>
               </label>
+              <span className="pb-2 text-sm font-medium text-slate-400" aria-hidden>
+                →
+              </span>
               <label className="block">
-                <span className="mb-0.5 block text-[10px] font-semibold text-violet-600">B</span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="any"
-                  value={cabinBStr}
-                  onChange={(e) => applyB(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm tabular-nums outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
-                />
+                <span className="mb-0.5 block text-[10px] font-semibold text-slate-500">收倉</span>
+                <select
+                  value={toCabin}
+                  onChange={(e) => {
+                    setToCabin(e.target.value as UsdtCabin)
+                    setRebalanceError('')
+                  }}
+                  className={cabinSelectClass}
+                >
+                  <option value="A">{cabinOptionLabel('A')}</option>
+                  <option value="B">{cabinOptionLabel('B')}</option>
+                  <option value="C">{cabinOptionLabel('C')}</option>
+                </select>
               </label>
             </div>
+            <label className="mt-2.5 block">
+              <span className="mb-0.5 block text-[10px] font-semibold text-slate-500">轉出數量</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                value={amountStr}
+                placeholder="例如 5000"
+                onChange={(e) => {
+                  setAmountStr(e.target.value)
+                  setRebalanceError('')
+                }}
+                className="w-full rounded-lg border border-slate-300 px-2.5 py-2 text-sm tabular-nums outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-500/15"
+              />
+            </label>
             {rebalanceError && (
               <p className="mt-2 text-[11px] text-rose-600">{rebalanceError}</p>
             )}
             <button
               type="button"
-              onClick={handleRebalance}
+              onClick={handleTransfer}
               className="mt-3 w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
             >
               套用分倉
+            </button>
+          </div>
+        )}
+
+        {onPullProdState && (
+          <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50/60 px-3 py-3 sm:px-4">
+            <p className="text-[11px] text-amber-900/80 sm:text-xs">
+              從正式站唯讀拉取整包資料覆寫本機；之後在本機操作只會改本地，不會寫回正式站。
+            </p>
+            <button
+              type="button"
+              disabled={pullProdBusy}
+              onClick={onPullProdState}
+              className="mt-2.5 w-full rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-medium text-amber-950 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {pullProdBusy ? '拉取中…' : '拉取正式站資料到本機'}
             </button>
           </div>
         )}
@@ -704,15 +711,19 @@ export function CabinAllocModal({
   totalUsdt,
   direction,
   initialCabinA,
+  initialCabinB,
   cabinBalances,
   error,
   onCancel,
   onConfirm,
+  onDismissError,
 }: CabinAllocModalProps) {
   const seedA = Math.min(Math.max(0, initialCabinA), totalUsdt)
-  const seedB = Math.max(0, totalUsdt - seedA)
+  const seedB = Math.min(Math.max(0, initialCabinB), Math.max(0, totalUsdt - seedA))
+  const seedC = Math.max(0, totalUsdt - seedA - seedB)
   const [cabinAStr, setCabinAStr] = useState(seedA === 0 ? '' : String(seedA))
   const [cabinBStr, setCabinBStr] = useState(seedB === 0 ? '' : String(seedB))
+  const [cabinCStr, setCabinCStr] = useState(seedC === 0 ? '' : String(seedC))
   const [localError, setLocalError] = useState('')
 
   if (!open) return null
@@ -725,48 +736,73 @@ export function CabinAllocModal({
     return n
   }
 
+  const clearErrors = () => {
+    setLocalError('')
+    onDismissError?.()
+  }
+
+  const syncFromAB = (a: number, b: number) => {
+    const clampedA = Math.min(Math.max(0, a), totalUsdt)
+    const clampedB = Math.min(Math.max(0, b), Math.max(0, totalUsdt - clampedA))
+    const c = Math.max(0, totalUsdt - clampedA - clampedB)
+    setCabinAStr(String(clampedA))
+    setCabinBStr(String(clampedB))
+    setCabinCStr(String(c))
+    clearErrors()
+  }
+
   const applyA = (raw: string) => {
     setCabinAStr(raw)
     const a = parseAmt(raw)
-    if (a === null) return
-    const clamped = Math.min(a, totalUsdt)
-    setCabinBStr(String(Math.max(0, totalUsdt - clamped)))
-    setLocalError('')
+    const b = parseAmt(cabinBStr)
+    if (a === null || b === null) return
+    syncFromAB(a, b)
   }
 
   const applyB = (raw: string) => {
     setCabinBStr(raw)
+    const a = parseAmt(cabinAStr)
     const b = parseAmt(raw)
-    if (b === null) return
-    const clamped = Math.min(b, totalUsdt)
-    setCabinAStr(String(Math.max(0, totalUsdt - clamped)))
-    setLocalError('')
+    if (a === null || b === null) return
+    syncFromAB(a, b)
   }
 
-  const setPreset = (a: number) => {
-    const clamped = Math.min(Math.max(0, a), totalUsdt)
-    setCabinAStr(clamped === 0 ? '0' : String(clamped))
-    setCabinBStr(String(Math.max(0, totalUsdt - clamped)))
-    setLocalError('')
+  const applyC = (raw: string) => {
+    setCabinCStr(raw)
+    const a = parseAmt(cabinAStr)
+    const c = parseAmt(raw)
+    if (a === null || c === null) return
+    const clampedC = Math.min(Math.max(0, c), totalUsdt)
+    const clampedA = Math.min(Math.max(0, a), Math.max(0, totalUsdt - clampedC))
+    const b = Math.max(0, totalUsdt - clampedA - clampedC)
+    setCabinAStr(String(clampedA))
+    setCabinBStr(String(b))
+    setCabinCStr(String(clampedC))
+    clearErrors()
+  }
+
+  const setPreset = (a: number, b: number) => {
+    syncFromAB(a, b)
   }
 
   const handleConfirm = () => {
     const a = parseAmt(cabinAStr)
     const b = parseAmt(cabinBStr)
-    if (a === null || b === null) {
+    const c = parseAmt(cabinCStr)
+    if (a === null || b === null || c === null) {
       setLocalError('請輸入有效的非負數量')
       return
     }
-    const sum = a + b
-    if (Math.abs(sum - totalUsdt) > 1e-9) {
-      setLocalError(`A+B 須等於 ${formatNumber(totalUsdt)}`)
+    if (Math.abs(a + b + c - totalUsdt) > 1e-9) {
+      setLocalError(`A+B+C 須等於 ${formatNumber(totalUsdt)}`)
       return
     }
-    onConfirm(a)
+    onConfirm(a, b)
   }
 
   const signLabel = direction === 'in' ? '+' : '−'
   const displayError = localError || error
+  const third = totalUsdt / 3
 
   return (
     <div
@@ -780,20 +816,18 @@ export function CabinAllocModal({
           分倉配置
         </h2>
         <p className="mt-1 text-xs text-slate-500">
-          本筆 P {formatNumber(totalUsdt)} · 請分配至 A / B（成本共用）
+          本筆 P {formatNumber(totalUsdt)} · 請分配至 A / B / C（成本共用）
         </p>
 
-        <div className="mt-3 flex gap-2 text-[10px] tabular-nums text-slate-500">
-          <span>
-            目前 A {formatNumber(cabinBalances.a)}
-          </span>
+        <div className="mt-3 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] tabular-nums text-slate-500">
+          <span>目前 A {formatNumber(cabinBalances.a)}</span>
           <span className="text-slate-300">·</span>
-          <span>
-            B {formatNumber(cabinBalances.b)}
-          </span>
+          <span>B {formatNumber(cabinBalances.b)}</span>
+          <span className="text-slate-300">·</span>
+          <span>C {formatNumber(cabinBalances.c)}</span>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="mt-3 grid grid-cols-3 gap-2">
           <label className="block">
             <span className="mb-0.5 block text-[10px] font-semibold text-sky-600">
               A{signLabel}
@@ -823,29 +857,50 @@ export function CabinAllocModal({
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm tabular-nums outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
             />
           </label>
+          <label className="block">
+            <span className="mb-0.5 block text-[10px] font-semibold text-emerald-600">
+              C{signLabel}
+            </span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="any"
+              value={cabinCStr}
+              onChange={(e) => applyC(e.target.value)}
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm tabular-nums outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+            />
+          </label>
         </div>
 
         <div className="mt-2 flex flex-wrap gap-1.5">
           <button
             type="button"
-            onClick={() => setPreset(totalUsdt)}
+            onClick={() => setPreset(totalUsdt, 0)}
             className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 hover:bg-sky-100"
           >
             全 A
           </button>
           <button
             type="button"
-            onClick={() => setPreset(0)}
+            onClick={() => setPreset(0, totalUsdt)}
             className="rounded border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 hover:bg-violet-100"
           >
             全 B
           </button>
           <button
             type="button"
-            onClick={() => setPreset(totalUsdt / 2)}
+            onClick={() => setPreset(0, 0)}
+            className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100"
+          >
+            全 C
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreset(third, third)}
             className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-100"
           >
-            各半
+            均分
           </button>
         </div>
 

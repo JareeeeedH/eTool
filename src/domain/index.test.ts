@@ -19,8 +19,11 @@ import {
   computeVnSellProfitPreview,
   computeVnTradeAnalytics,
   migrateUsdtCabinAttribution,
-  openingUsdtCabinAAfterRebalance,
+  alignOpeningUsdtCabinsToSnapshot,
+  openingUsdtCabinsAfterRebalance,
   recalculateBalances,
+  transferUsdtBetweenCabins,
+  validateTransactions,
 } from './index'
 
 const EMPTY_COST: UsdtInventoryCost = { twd: null, vn: null }
@@ -746,10 +749,12 @@ describe('usdt cabin quantity (shared cost)', () => {
       opening,
       migrated.openingUsdtCabinA,
       migrated.transactions,
+      null,
+      migrated.openingUsdtCabinB,
     )
-    expect(cabins.a + cabins.b).toBe(20_000 + 16_000 - 625)
+    expect(cabins.a + cabins.b + cabins.c).toBe(20_000 + 16_000 - 625)
     expect(cabins.a).toBeGreaterThanOrEqual(30_000)
-    expect(cabins.b).toBe(cabins.a + cabins.b - cabins.a)
+    expect(cabins.c).toBe(0)
   })
 
   it('keeps shared inventory cost unchanged by cabin tags', () => {
@@ -775,22 +780,83 @@ describe('usdt cabin quantity (shared cost)', () => {
     const cabins = computeUsdtCabinBalances(opening, 0, txs)
     expect(cabins.a).toBe(6_000)
     expect(cabins.b).toBe(4_000)
+    expect(cabins.c).toBe(0)
     const inventory = computeInventoryCost(opening, { twd: null, vn: null }, txs)
     expect(inventory.twd).toBe(roundUsdtCostRate(320_000 / 10_000))
   })
 
-  it('rebalances A/B by adjusting opening cabin A only', () => {
+  it('splits one buy across A/B/C with shared cost', () => {
+    const opening: Balances = { twd: 1_000_000, usdt: 0, vn: 0 }
+    const txs: Transaction[] = [
+      {
+        ...usdtBuy('b1', at(1), 10_000, 320_000),
+        cabinAAmount: 4_000,
+        cabinBAmount: 3_000,
+        cabin: 'A',
+      },
+    ]
+    const cabins = computeUsdtCabinBalances(opening, 0, txs)
+    expect(cabins).toEqual({ a: 4_000, b: 3_000, c: 3_000 })
+    const inventory = computeInventoryCost(opening, { twd: null, vn: null }, txs)
+    expect(inventory.twd).toBe(roundUsdtCostRate(320_000 / 10_000))
+  })
+
+  it('allows paying VN buy fully from C when B is empty', () => {
+    const opening: Balances = { twd: 0, usdt: 36_325, vn: 0 }
+    const tx: Transaction = {
+      id: 'vn1',
+      timestamp: at(1),
+      category: 'vn_trade',
+      type: 'buy',
+      payCurrency: 'usdt',
+      vnAmount: 52_000_000,
+      twdAmount: 0,
+      usdtAmount: 1_900,
+      rate: 1,
+      cabinAAmount: 0,
+      cabinBAmount: 0,
+      cabin: 'C',
+    }
+    const err = validateTransactions([tx], opening, null, 33_325, 0)
+    expect(err).toBeNull()
+  })
+
+  it('rebalances A/B/C by adjusting opening cabin A/B', () => {
     const opening: Balances = { twd: 0, usdt: 0, vn: 0 }
     const txs: Transaction[] = [
-      { ...usdtBuy('b1', at(1), 30_000, 960_000), cabinAAmount: 30_000, cabin: 'A' },
-      { ...usdtBuy('b2', at(2), 100_000, 3_200_000), cabinAAmount: 0, cabin: 'B' },
+      { ...usdtBuy('b1', at(1), 30_000, 960_000), cabinAAmount: 30_000, cabinBAmount: 0, cabin: 'A' },
+      { ...usdtBuy('b2', at(2), 100_000, 3_200_000), cabinAAmount: 0, cabinBAmount: 100_000, cabin: 'B' },
     ]
     const before = computeUsdtCabinBalances(opening, 0, txs)
-    expect(before).toEqual({ a: 30_000, b: 100_000 })
+    expect(before).toEqual({ a: 30_000, b: 100_000, c: 0 })
 
-    const nextOpeningA = openingUsdtCabinAAfterRebalance(0, before.a, 50_000, 130_000)
-    const after = computeUsdtCabinBalances(opening, nextOpeningA, txs)
-    expect(after).toEqual({ a: 50_000, b: 80_000 })
-    expect(after.a + after.b).toBe(130_000)
+    const next = openingUsdtCabinsAfterRebalance(0, 0, before, 50_000, 40_000, 130_000)
+    const after = computeUsdtCabinBalances(opening, next.a, txs, null, next.b)
+    expect(after).toEqual({ a: 50_000, b: 40_000, c: 40_000 })
+    expect(after.a + after.b + after.c).toBe(130_000)
+  })
+
+  it('restores A/B/C from absolute snapshot after reload-like drift', () => {
+    const opening: Balances = { twd: 0, usdt: 0, vn: 0 }
+    const txs: Transaction[] = [
+      { ...usdtBuy('b1', at(1), 30_000, 960_000), cabinAAmount: 30_000, cabinBAmount: 0, cabin: 'A' },
+      { ...usdtBuy('b2', at(2), 100_000, 3_200_000), cabinAAmount: 0, cabinBAmount: 100_000, cabin: 'B' },
+    ]
+    const snapshot = { a: 50_000, b: 40_000, c: 40_000 }
+    const drifted = computeUsdtCabinBalances(opening, 0, txs, null, 0)
+    const aligned = alignOpeningUsdtCabinsToSnapshot(0, 0, drifted, snapshot, 130_000)
+    const restored = computeUsdtCabinBalances(opening, aligned.a, txs, null, aligned.b)
+    expect(restored).toEqual(snapshot)
+  })
+
+  it('transfers amount from one cabin to another', () => {
+    const before = { a: 10_000, b: 20_000, c: 500 }
+    const result = transferUsdtBetweenCabins(before, 'A', 'C', 5_000)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.next).toEqual({ a: 5_000, b: 20_000, c: 5_500 })
+    }
+    expect(transferUsdtBetweenCabins(before, 'A', 'A', 1).ok).toBe(false)
+    expect(transferUsdtBetweenCabins(before, 'A', 'C', 20_000).ok).toBe(false)
   })
 })
