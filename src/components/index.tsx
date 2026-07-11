@@ -1678,10 +1678,12 @@ function TradeMetaDateInput({
   className?: string
 }) {
   return (
-    <label className={`relative block min-w-0 ${className}`}>
+    <label
+      className={`relative inline-flex h-[1.75rem] w-9 shrink-0 items-center justify-center overflow-hidden rounded border border-slate-300 bg-white transition has-[:focus-visible]:border-slate-400 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-slate-300/40 sm:h-auto sm:w-10 sm:py-0.5 ${className}`}
+    >
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-1 flex items-center text-[11px] leading-none tabular-nums text-slate-700 sm:left-1.5 sm:text-xs"
+        className="pointer-events-none text-[11px] leading-none tabular-nums text-slate-700 sm:text-xs"
       >
         {formatTradeMetaDateDisplay(value)}
       </span>
@@ -1692,7 +1694,7 @@ function TradeMetaDateInput({
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         aria-label="交易日期"
-        className="w-[2.85rem] max-w-full rounded border border-slate-300 py-0.5 pl-1 pr-0 text-xs leading-tight tabular-nums text-transparent outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-300/40 disabled:bg-slate-50 sm:w-[3.5rem] sm:py-0.5 sm:pl-1.5 sm:pr-0.5 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
       />
     </label>
   )
@@ -1724,7 +1726,6 @@ function TradeFormMetaCell({
         value={tradeDate}
         onChange={onTradeDateChange}
         disabled={disabled}
-        className="shrink-0 sm:min-w-0 sm:flex-1"
       />
       {!isEditing && (
         <button
@@ -1887,7 +1888,7 @@ export function TradeForm({
               className={`w-full py-0.5 ${inputClass}`}
             />
           </label>
-          <div className="col-start-2 row-start-2 sm:order-4">
+          <div className="col-start-2 row-start-2 min-w-0 sm:order-4">
             <TradeFormMetaCell
               dateId={`${prefix}Date`}
               tradeDate={tradeDate}
@@ -2328,7 +2329,7 @@ export function VnTradeForm({
               className={`w-full py-0.5 ${inputClass}`}
             />
           </label>
-          <div className="col-start-2 row-start-2 sm:order-4">
+          <div className="col-start-2 row-start-2 min-w-0 sm:order-4">
             <TradeFormMetaCell
               dateId={`${prefix}Date`}
               tradeDate={tradeDate}

@@ -34,20 +34,20 @@ export const EXPENSE_INPUT_CLASS =
 export const TRADE_INPUT_CLASS =
   'w-full rounded border border-slate-300 px-1.5 py-0.5 text-base tabular-nums leading-tight placeholder:text-slate-400 outline-none transition disabled:bg-slate-50 sm:py-1 sm:text-xs sm:leading-normal'
 
-/** 買賣表單：手機 2×2（P/R/T + 日期按鈕格）；右欄略寬以容納日期 */
+/** 買賣表單：手機 2×2（P/R · T + 日期按鈕）；兩欄等寬避免歪斜 */
 export const TRADE_FORM_GRID_CLASS =
-  'grid grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] grid-rows-2 gap-1 sm:flex sm:grid-cols-none sm:items-center sm:gap-1'
+  'grid grid-cols-2 grid-rows-2 gap-1 sm:flex sm:grid-cols-none sm:items-center sm:gap-1'
 
-/** 第四格：日期 + Cancel / Add 同一行併排 */
+/** 第四格：日期固定窄寬 + Cancel / Add */
 export const TRADE_FORM_META_CELL_CLASS =
-  'flex min-h-0 min-w-0 items-center gap-0.5 sm:gap-1 sm:shrink-0'
+  'flex min-h-0 min-w-0 w-full items-center gap-0.5 sm:w-auto sm:gap-1 sm:shrink-0'
 
 /** 買賣表單按鈕（第四格內與日期併排） */
 export const TRADE_FORM_ACTIONS_CLASS =
-  'min-w-[2rem] max-sm:min-h-[1.75rem] max-sm:flex-1 shrink-0 rounded border border-slate-300 bg-white px-2 py-0.5 text-center text-[10px] leading-none text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:min-w-0 sm:min-h-0 sm:flex-none sm:px-2 sm:py-1 sm:text-xs sm:leading-tight'
+  'min-w-0 max-sm:min-h-[1.75rem] max-sm:flex-1 shrink-0 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-center text-[10px] leading-none text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:min-w-0 sm:min-h-0 sm:flex-none sm:px-2 sm:py-1 sm:text-xs sm:leading-tight'
 
 export const TRADE_FORM_SUBMIT_CLASS =
-  'min-w-[2rem] max-sm:min-h-[1.75rem] max-sm:flex-1 shrink-0 rounded px-2 py-0.5 text-center text-[10px] font-medium leading-none text-white transition focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:min-h-0 sm:flex-none sm:px-3 sm:py-1 sm:text-xs sm:leading-tight'
+  'min-w-0 max-sm:min-h-[1.75rem] max-sm:flex-1 shrink-0 rounded px-1.5 py-0.5 text-center text-[10px] font-medium leading-none text-white transition focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-0 sm:min-h-0 sm:flex-none sm:px-3 sm:py-1 sm:text-xs sm:leading-tight'
 
 /** 買賣表單匯率欄容器：桌面版略寬 */
 export const TRADE_RATE_FIELD_CLASS = 'block min-w-0 sm:w-[7rem] sm:shrink-0'
