@@ -1032,17 +1032,16 @@ export function CabinAllocModal({
 }
 
 export function DailyTradeSettleBar({ tradeCount, onSettle }: DailyTradeSettleBarProps) {
-  const canSettle = tradeCount > 0
+  if (tradeCount <= 0) return null
 
   return (
     <div className="mt-1 flex justify-end sm:mt-1.5">
       <button
         type="button"
         onClick={onSettle}
-        disabled={!canSettle}
-        className="w-full rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 sm:w-auto sm:bg-indigo-600 sm:py-0.5 sm:text-xs sm:text-white sm:shadow-sm sm:hover:bg-indigo-700 sm:disabled:bg-slate-300 sm:disabled:text-slate-500"
+        className="w-full rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 transition hover:bg-indigo-100 sm:w-auto sm:bg-indigo-600 sm:py-0.5 sm:text-xs sm:text-white sm:shadow-sm sm:hover:bg-indigo-700"
       >
-        {canSettle ? 'AL' : '尚無可結交易'}
+        AL
       </button>
     </div>
   )
