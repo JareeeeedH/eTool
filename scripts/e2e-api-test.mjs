@@ -55,6 +55,10 @@ function serializeState(s) {
     transactions: s.transactions.map(serializeTx),
     settlements: s.settlements.map(serializeSettlement),
     expenseSettlements: s.expenseSettlements.map(serializeExpenseSettlement),
+    cumulativeExpenses: s.cumulativeExpenses.map((entry) => ({
+      ...entry,
+      timestamp: iso(entry.timestamp),
+    })),
     monthlyCloses: s.monthlyCloses.map(serializeMonthlyClose),
   }
 }
@@ -102,6 +106,10 @@ function parseLoaded(raw) {
     transactions: (raw.transactions ?? []).map(parseTx),
     settlements: (raw.settlements ?? []).map(parseSettlement),
     expenseSettlements: (raw.expenseSettlements ?? []).map(parseExpenseSettlement),
+    cumulativeExpenses: (raw.cumulativeExpenses ?? []).map((entry) => ({
+      ...entry,
+      timestamp: new Date(entry.timestamp),
+    })),
     monthlyCloses: (raw.monthlyCloses ?? []).map(parseMonthlyClose),
   }
 }
@@ -144,6 +152,7 @@ function freshState() {
     transactions: [],
     settlements: [],
     expenseSettlements: [],
+    cumulativeExpenses: [],
     monthlyCloses: [],
   }
 }
@@ -436,6 +445,8 @@ function fingerprint(state) {
     monthly: state.monthlyCloses.length,
     archivedTrades: countArchivedTrades(state),
     archivedExpenses: countArchivedExpenses(state),
+    cumulativeExpenses: state.cumulativeExpenses.length,
+    cumulativeExpenseTotal: state.cumulativeExpenses.reduce((sum, entry) => sum + entry.amountTwd, 0),
     twd: state.openingBalances.twd,
     usdt: state.openingBalances.usdt,
     vn: state.openingBalances.vn,
@@ -452,6 +463,13 @@ async function main() {
 
   const state = freshState()
   simulate100(state)
+  state.activeTab = 'cumulative_expenses'
+  state.cumulativeExpenses.push({
+    id: uuid(),
+    timestamp: new Date(),
+    amountTwd: 164_900,
+    note: 'e2e-cumulative-expense',
+  })
 
   // 月结（打包日结 + 剩余开销）
   monthlyClose(state, 'E2E測試月')
@@ -485,6 +503,11 @@ async function main() {
   checks.push(['1 monthly close', stats.monthlyCloses === 1])
   checks.push(['archived trades = 80', countArchivedTrades(get1) === 80])
   checks.push(['archived expenses = 20', countArchivedExpenses(get1) === 20])
+  checks.push([
+    'cumulative expense preserved',
+    get1.cumulativeExpenses[0]?.amountTwd === 164_900 &&
+      get1.cumulativeExpenses[0]?.note === 'e2e-cumulative-expense',
+  ])
   checks.push([
     'monthly has 5 tradeSettlements',
     get1.monthlyCloses[0]?.tradeSettlements?.length === 5,

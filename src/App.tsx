@@ -12,6 +12,7 @@ import type {
   AppSnapshot,
   Balances,
   ConfirmDialogState,
+  CumulativeExpenseEntry,
   DailySettlement,
   DailyWorkTab,
   DailyMobileTradePane,
@@ -85,6 +86,7 @@ import {
   dateInputValueFromDate,
   defaultTradeDateInputValue,
   formatExpenseTwdInput,
+  formatNumber,
   formatSettlementDateTime,
   formatTwdCompactInput,
   formatVnCompactInput,
@@ -102,6 +104,7 @@ import {
   CabinAllocModal,
   CabinRebalanceModal,
   ConfirmModal,
+  CumulativeExpensesPanel,
   DailyBalanceStrip,
   DailyPageHeader,
   DailyTradeSettleBar,
@@ -126,6 +129,7 @@ import {
 } from './components'
 
 const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'expenses' | 'notes'>, string> = {
+  cumulative_expenses: 'EXP.SUM',
   settlements: 'SET.',
   monthly: 'SETUP',
 }
@@ -190,6 +194,7 @@ function App() {
   const [openingVnUsdtRate, setOpeningVnUsdtRate] = useState<number | null>(null)
   const [settlements, setSettlements] = useState<DailySettlement[]>([])
   const [expenseSettlements, setExpenseSettlements] = useState<ExpenseSettlement[]>([])
+  const [cumulativeExpenses, setCumulativeExpenses] = useState<CumulativeExpenseEntry[]>([])
   const [monthlyCloses, setMonthlyCloses] = useState<MonthlyClose[]>([])
   const [selectedMonthlyCloseId, setSelectedMonthlyCloseId] = useState<string | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -279,6 +284,7 @@ function App() {
           setOpeningVnUsdtRate(data.openingVnUsdtRate ?? null)
           setSettlements(data.settlements.map(normalizeLoadedSettlement))
           setExpenseSettlements(data.expenseSettlements ?? [])
+          setCumulativeExpenses(data.cumulativeExpenses ?? [])
           // 月結功能暫不使用：不載入、並在下次存檔時清掉本機月結
           setMonthlyCloses([])
           setSelectedMonthlyCloseId(null)
@@ -429,6 +435,7 @@ function App() {
       transactions,
       settlements,
       expenseSettlements,
+      cumulativeExpenses,
       monthlyCloses,
     }
 
@@ -448,6 +455,7 @@ function App() {
     transactions,
     settlements,
     expenseSettlements,
+    cumulativeExpenses,
     monthlyCloses,
     balances.usdt,
     usdtCabinBalances.a,
@@ -500,6 +508,7 @@ function App() {
     openingVnUsdtRate,
     settlements,
     expenseSettlements,
+    cumulativeExpenses,
     monthlyCloses,
     selectedMonthlyCloseId,
     activeTab,
@@ -517,6 +526,7 @@ function App() {
     setOpeningVnUsdtRate(snapshot.openingVnUsdtRate ?? null)
     setSettlements(snapshot.settlements.map(normalizeLoadedSettlement))
     setExpenseSettlements(snapshot.expenseSettlements ?? [])
+    setCumulativeExpenses(snapshot.cumulativeExpenses ?? [])
     setMonthlyCloses((snapshot.monthlyCloses ?? []).map((item) => normalizeMonthlyClose(item)))
     setSelectedMonthlyCloseId(snapshot.selectedMonthlyCloseId ?? null)
     setActiveTab(snapshot.activeTab)
@@ -859,6 +869,28 @@ function App() {
 
     setTransactions(updatedTransactions)
     resetExpenseForm()
+  }
+
+  const handleAddCumulativeExpense = (timestamp: Date, amountTwd: number, note: string) => {
+    setCumulativeExpenses((prev) => [
+      { id: crypto.randomUUID(), timestamp, amountTwd, note },
+      ...prev,
+    ])
+  }
+
+  const handleUpdateCumulativeExpense = (
+    id: string,
+    timestamp: Date,
+    amountTwd: number,
+    note: string,
+  ) => {
+    setCumulativeExpenses((prev) =>
+      prev.map((entry) => (entry.id === id ? { ...entry, timestamp, amountTwd, note } : entry)),
+    )
+  }
+
+  const handleDeleteCumulativeExpense = (id: string) => {
+    setCumulativeExpenses((prev) => prev.filter((entry) => entry.id !== id))
   }
 
   const handleSubmit = (type: TransactionType, e: FormEvent) => {
@@ -1451,10 +1483,12 @@ function App() {
     const tx = transactions.find((item) => item.id === id)
     if (!tx) return
 
+    const isExpense = isExpenseTransaction(tx)
     setConfirmDialog({
-      title: isExpenseTransaction(tx) ? '確定刪除以下開銷？' : '確定刪除以下交易？',
+      title: isExpense ? '' : '確定刪除以下交易？',
       lines: buildDeleteConfirmLines(tx),
-      confirmLabel: '刪除',
+      cancelLabel: isExpense ? 'Cancel' : undefined,
+      confirmLabel: isExpense ? 'Delete' : '刪除',
       variant: 'danger',
       onConfirm: () => {
         setConfirmDialog(null)
@@ -1618,6 +1652,7 @@ function App() {
     setTransactions([])
     setSettlements([])
     setExpenseSettlements([])
+    setCumulativeExpenses([])
     setMonthlyCloses([])
     setSelectedMonthlyCloseId(null)
     setOpeningBalances({ ...INITIAL_BALANCES })
@@ -1798,6 +1833,7 @@ function App() {
         transactions,
         settlements,
         expenseSettlements,
+        cumulativeExpenses,
         monthlyCloses,
       })
       if (!ok) {
@@ -1843,7 +1879,8 @@ function App() {
   }
 
   const handleSaveOpeningBalance = () => {
-    if (!parseOpeningBalanceForm()) return
+    const parsed = parseOpeningBalanceForm()
+    if (!parsed) return
 
     const hasActivity =
       transactions.length > 0 ||
@@ -1856,13 +1893,33 @@ function App() {
       return
     }
 
+    const changes: string[] = []
+    if (parsed.balances.twd !== openingBalances.twd) {
+      changes.push(
+        `T ${formatTwdCompactInput(openingBalances.twd)} → ${formatTwdCompactInput(parsed.balances.twd)}`,
+      )
+    }
+    if (parsed.balances.usdt !== openingBalances.usdt) {
+      changes.push(`P ${formatNumber(openingBalances.usdt)} → ${formatNumber(parsed.balances.usdt)}`)
+    }
+    if (parsed.balances.vn !== openingBalances.vn) {
+      changes.push(
+        `VN ${formatVnCompactInput(openingBalances.vn)} → ${formatVnCompactInput(parsed.balances.vn)}`,
+      )
+    }
+    const addRateChange = (label: string, before: number | null, after: number | null) => {
+      if (before !== after) changes.push(`${label} ${before ?? '—'} → ${after ?? '—'}`)
+    }
+    addRateChange('P成本(T)', openingUsdtCost.twd, parsed.usdtCost.twd)
+    addRateChange('P成本(VN)', openingUsdtCost.vn, parsed.usdtCost.vn)
+    addRateChange('VN池(T)', openingVnTwdRate, parsed.vnTwdRate)
+    addRateChange('VN池(P)', openingVnUsdtRate, parsed.vnUsdtRate)
+
+    setOpeningBalanceModalOpen(false)
     setConfirmDialog({
-      title: '確定調整期初餘額？',
-      lines: [
-        '將在目前期初基礎上套用增減調整。',
-        '既有流水與日結紀錄不會刪除，顯示餘額會依新期初重算。',
-      ],
-      confirmLabel: '確認儲存',
+      title: '確認調整',
+      lines: changes,
+      confirmLabel: '確認',
       variant: 'primary',
       onConfirm: () => {
         setConfirmDialog(null)
@@ -2291,6 +2348,13 @@ function App() {
                 </div>
               </section>
             </div>
+          ) : activeTab === 'cumulative_expenses' ? (
+            <CumulativeExpensesPanel
+              entries={cumulativeExpenses}
+              onAdd={handleAddCumulativeExpense}
+              onUpdate={handleUpdateCumulativeExpense}
+              onDelete={handleDeleteCumulativeExpense}
+            />
           ) : activeTab === 'notes' ? (
             <div className="flex flex-col">
               {editingBannerLabel && (

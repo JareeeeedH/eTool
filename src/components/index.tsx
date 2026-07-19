@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react'
 import type {
   AppNavProps,
   CabinAllocModalProps,
@@ -6,6 +6,8 @@ import type {
   ConfirmModalProps,
   DailyBalanceStripProps,
   DailyTradeSettleBarProps,
+  CumulativeExpensesPanelProps,
+  CumulativeExpenseEntry,
   ExpenseFormProps,
   ExpensePageSummaryProps,
   ExpenseTableProps,
@@ -78,15 +80,21 @@ import {
   formatTradeMetaDateDisplay,
   formatTransactionTableDate,
   formatTwd,
+  formatExpenseTwdInput,
   formatTwdCompactInput,
   formatTwdTableCompact,
   formatVnCompactInput,
   formatVnTableCompact,
   parseTwdAdjustInput,
+  parseExpenseTwdInput,
   parseUsdtAdjustInput,
   parseVnAdjustInput,
   formatVnNtdCostRateCompact,
   formatVnUsdtCostRateCompact,
+  dateInputValueFromDate,
+  defaultTradeDateInputValue,
+  isValidDateInputValue,
+  timestampFromDateInput,
   profitColorClass,
 } from '../utils/format'
 import { resolveUsdtTradeFields, resolveVnTradeFields } from '../utils/form'
@@ -150,7 +158,7 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
         <h2
           id="confirm-dialog-title"
           className={
-            isTradeSettle || isCompactConfirm
+            isTradeSettle || isCompactConfirm || !dialog.title
               ? 'sr-only'
               : 'text-base font-semibold text-slate-900'
           }
@@ -185,7 +193,7 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
                   : 'px-3 py-1.5 text-sm'
               }`}
             >
-              {isTradeSettle || isCompactConfirm ? 'C' : '取消'}
+              {dialog.cancelLabel ?? (isTradeSettle || isCompactConfirm ? 'C' : '取消')}
             </button>
           )}
           <button
@@ -3395,6 +3403,174 @@ export function ExpenseSettlementsPanel({ settlements }: ExpenseSettlementsPanel
   )
 }
 
+export function CumulativeExpensesPanel({
+  entries,
+  onAdd,
+  onUpdate,
+  onDelete,
+}: CumulativeExpensesPanelProps) {
+  const [date, setDate] = useState(defaultTradeDateInputValue)
+  const [amount, setAmount] = useState('')
+  const [note, setNote] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const rows = useMemo(
+    () => [...entries].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()),
+    [entries],
+  )
+  const total = rows.reduce((sum, row) => sum + row.amountTwd, 0)
+
+  const resetForm = () => {
+    setDate(defaultTradeDateInputValue())
+    setAmount('')
+    setNote('')
+    setEditingId(null)
+    setError('')
+  }
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault()
+    const amountTwd = parseExpenseTwdInput(amount)
+    if (!isValidDateInputValue(date)) {
+      setError('請輸入有效日期')
+      return
+    }
+    if (amountTwd === null) {
+      setError('請輸入有效的正數金額')
+      return
+    }
+    const timestamp = timestampFromDateInput(date)
+    if (editingId) onUpdate(editingId, timestamp, amountTwd, note.trim())
+    else onAdd(timestamp, amountTwd, note.trim())
+    resetForm()
+  }
+
+  const handleEdit = (entry: CumulativeExpenseEntry) => {
+    setEditingId(entry.id)
+    setDate(dateInputValueFromDate(entry.timestamp))
+    setAmount(formatExpenseTwdInput(entry.amountTwd))
+    setNote(entry.note)
+    setError('')
+  }
+
+  return (
+    <section className="mx-auto flex w-full max-w-2xl flex-col gap-2">
+      <form
+        onSubmit={handleSubmit}
+        className="grid grid-cols-[7.5rem_7rem_minmax(0,1fr)_auto] gap-1 rounded-lg border-l-4 border-orange-500 bg-white p-1.5 shadow-sm max-sm:grid-cols-[auto_2.25rem_minmax(0,1fr)]"
+      >
+        <div className="max-sm:col-start-2 max-sm:row-start-1">
+          <TradeMetaDateInput
+            id="cumulativeExpenseDateMobile"
+            value={date}
+            onChange={setDate}
+            className="sm:hidden"
+          />
+          <input
+            type="date"
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+            aria-label="日期"
+            className="hidden min-w-0 rounded border border-slate-300 px-1.5 py-1 text-xs outline-none focus:border-orange-500 sm:block"
+          />
+        </div>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={amount}
+          onChange={(event) => setAmount(event.target.value)}
+          aria-label="金額"
+          className="min-w-0 rounded border border-slate-300 px-1.5 py-1 text-xs outline-none focus:border-orange-500 max-sm:col-start-3 max-sm:row-start-1"
+        />
+        <input
+          type="text"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder="備註"
+          aria-label="備註"
+          className="min-w-0 rounded border border-slate-300 px-1.5 py-1 text-xs outline-none focus:border-orange-500 max-sm:col-span-2 max-sm:col-start-2 max-sm:row-start-2"
+        />
+        <div className="flex gap-1 max-sm:col-start-1 max-sm:row-span-2 max-sm:row-start-1">
+          <button
+            type="submit"
+            className="rounded bg-orange-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-orange-700"
+          >
+            {editingId ? 'Save' : 'Add'}
+          </button>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600"
+            >
+              取消
+            </button>
+          )}
+        </div>
+        {error && <p className="col-span-full text-[10px] text-rose-600">{error}</p>}
+      </form>
+
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        {rows.length === 0 ? (
+          <p className="py-8 text-center text-xs text-slate-400">no data</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[300px] table-fixed text-left text-xs">
+              <colgroup>
+                <col className="w-[5.5rem]" />
+                <col className="w-[7rem]" />
+                <col />
+                <col className="w-[4.5rem]" />
+              </colgroup>
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-slate-500">
+                  <th className="px-3 py-2 font-medium">日期</th>
+                  <th aria-label="金額" />
+                  <th className="px-3 py-2 font-medium">備註</th>
+                  <th aria-label="操作" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id} className="border-b border-slate-100 last:border-b-0">
+                    <td className="px-3 py-2 tabular-nums text-slate-600">
+                      {formatTableDateTime(row.timestamp)}
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium tabular-nums text-rose-600">
+                      −{formatTwd(row.amountTwd)}
+                    </td>
+                    <td className="truncate px-3 py-2 text-slate-700">
+                      {row.note.trim() || '—'}
+                    </td>
+                    <td className="px-1 py-1">
+                      <RowActionButtons
+                        compact
+                        onEdit={() => handleEdit(row)}
+                        onDelete={() => onDelete(row.id)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-orange-200 bg-orange-50/80 px-3 py-2 shadow-sm">
+        <div className="flex items-baseline justify-between gap-3">
+          <div>
+            <p className="text-[10px] text-orange-700/70">共 {rows.length} 筆</p>
+          </div>
+          <p className="text-base font-bold tabular-nums text-rose-600">
+            −{formatTwd(total)} TWD
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export function OpeningBalanceModal({
   open,
   currentBalances,
@@ -3661,6 +3837,15 @@ export function AppNav({
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a4.5 4.5 0 0 0 4.5 4.5h10.5a4.5 4.5 0 0 0 4.5-4.5v-9a4.5 4.5 0 0 0-4.5-4.5H6.75a4.5 4.5 0 0 0-4.5 4.5v9Z" />
           <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 9h7.5M8.25 12.75h4.5" />
+        </svg>
+      ),
+    },
+    {
+      tab: 'cumulative_expenses',
+      label: 'EXP.SUM',
+      icon: (_active) => (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18M7.5 15.75l3.75-4.5 3 2.25L19.5 7.5" />
         </svg>
       ),
     },

@@ -8,6 +8,7 @@ import type {
 } from '../types'
 import { roundUsdtCostRate } from '../utils/format'
 import {
+  adjustOpeningUsdtCabins,
   buildMonthlyClose,
   buildTradeSettleConfirmSummary,
   computeInventoryCost,
@@ -871,5 +872,14 @@ describe('usdt cabin quantity (shared cost)', () => {
       cabinBAmount: 0,
     })
     expect(err).toBeNull()
+  })
+
+  it('assigns opening P increases to cabin A', () => {
+    expect(adjustOpeningUsdtCabins(100, 30, 40, 120)).toEqual({ a: 50, b: 40 })
+  })
+
+  it('deducts opening P decreases from cabin A before B and C', () => {
+    expect(adjustOpeningUsdtCabins(100, 30, 40, 80)).toEqual({ a: 10, b: 40 })
+    expect(adjustOpeningUsdtCabins(100, 30, 40, 50)).toEqual({ a: 0, b: 20 })
   })
 })

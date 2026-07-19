@@ -81,8 +81,8 @@ export const EMPTY_EXPENSE_BY_CATEGORY: Record<ExpenseType, number> = {
   other: 0,
 }
 
-export const TRANSACTION_VISIBLE_ROWS_MOBILE = 8
-export const TRANSACTION_VISIBLE_ROWS_DESKTOP = 12
+export const TRANSACTION_VISIBLE_ROWS_MOBILE = 16
+export const TRANSACTION_VISIBLE_ROWS_DESKTOP = 16
 
 export const TRANSACTION_ROW_HEIGHT_REM = 2.5
 export const TRANSACTION_HEAD_REM = 2

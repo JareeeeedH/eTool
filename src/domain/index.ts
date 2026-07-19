@@ -514,7 +514,7 @@ export function migrateUsdtCabinAttribution(
   }
 }
 
-/** 期初 USDT 增減時，同步調整 A/B 艙期初（優先動 C，再 B，再 A） */
+/** 期初 USDT 增減時，同步調整 A/B 艙期初（優先動 A，再 B，再 C） */
 export function adjustOpeningUsdtCabinA(
   prevOpeningUsdt: number,
   prevCabinA: number,
@@ -535,21 +535,17 @@ export function adjustOpeningUsdtCabins(
   const start = initialUsdtCabinSplit(prev, prevCabinA, prevCabinB)
   const delta = next - prev
   if (delta >= 0) {
-    // 新增庫存歸 C，A/B 維持
-    return {
-      a: Math.min(start.a, next),
-      b: Math.min(start.b, Math.max(0, next - Math.min(start.a, next))),
-    }
+    // 新增庫存歸 A
+    return { a: start.a + delta, b: start.b }
   }
   let reduce = -delta
   let a = start.a
   let b = start.b
-  const fromC = Math.min(start.c, reduce)
-  reduce -= fromC
+  const fromA = Math.min(a, reduce)
+  a -= fromA
+  reduce -= fromA
   const fromB = Math.min(b, reduce)
   b -= fromB
-  reduce -= fromB
-  a = Math.max(0, a - reduce)
   return { a, b }
 }
 
@@ -1667,9 +1663,8 @@ export function getBusinessDayLabel(transactions: Transaction[]): string {
 export function buildDeleteConfirmLines(tx: Transaction): string[] {
   if (isExpenseTransaction(tx)) {
     return [
-      `類型：開銷（${expenseTypeLabel(tx.expenseType)}）`,
-      `金額：${formatTwd(tx.amountTwd)} TWD`,
-      `備註：${tx.note.trim() || '—'}`,
+      formatTwd(tx.amountTwd),
+      tx.note.trim() || '—',
     ]
   }
 

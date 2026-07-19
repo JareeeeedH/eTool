@@ -38,6 +38,7 @@ export type LoadPersistedResult =
 type PageTab =
   | 'daily'
   | 'expenses'
+  | 'cumulative_expenses'
   | 'settlements'
   | 'monthly'
   | 'notes'
@@ -145,6 +146,13 @@ interface ExpenseSettlement {
   items: ExpenseSettlementItem[]
 }
 
+interface CumulativeExpenseEntry {
+  id: string
+  timestamp: Date
+  amountTwd: number
+  note: string
+}
+
 interface MonthlyClose {
   id: string
   periodLabel: string
@@ -189,6 +197,7 @@ export interface PersistedAppState {
   transactions: Transaction[]
   settlements: DailySettlement[]
   expenseSettlements?: ExpenseSettlement[]
+  cumulativeExpenses?: CumulativeExpenseEntry[]
   monthlyCloses?: MonthlyClose[]
 }
 
@@ -318,6 +327,21 @@ function parseTransaction(value: unknown): Transaction | null {
     cabin: parseUsdtCabin(value.cabin),
     cabinAAmount: parseNullableNumber(value.cabinAAmount) ?? undefined,
     cabinBAmount: parseNullableNumber(value.cabinBAmount) ?? undefined,
+  }
+}
+
+function parseCumulativeExpenseEntry(value: unknown): CumulativeExpenseEntry | null {
+  if (!isRecord(value) || typeof value.id !== 'string') return null
+  const timestamp = new Date(String(value.timestamp))
+  if (Number.isNaN(timestamp.getTime())) return null
+  const amountTwd = parseNumber(value.amountTwd)
+  if (amountTwd <= 0) return null
+
+  return {
+    id: value.id,
+    timestamp,
+    amountTwd,
+    note: typeof value.note === 'string' ? value.note : '',
   }
 }
 
@@ -538,6 +562,12 @@ function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
         .filter((item): item is ExpenseSettlement => item !== null)
     : []
 
+  const cumulativeExpenses = Array.isArray(parsed.cumulativeExpenses)
+    ? parsed.cumulativeExpenses
+        .map(parseCumulativeExpenseEntry)
+        .filter((item): item is CumulativeExpenseEntry => item !== null)
+    : []
+
   const monthlyCloses = Array.isArray(parsed.monthlyCloses)
     ? parsed.monthlyCloses
         .map(parseMonthlyClose)
@@ -549,6 +579,8 @@ function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
       ? 'settlements'
       : parsed.activeTab === 'expenses'
         ? 'expenses'
+        : parsed.activeTab === 'cumulative_expenses'
+          ? 'cumulative_expenses'
         : parsed.activeTab === 'expense_settlements'
           ? 'expenses'
           : parsed.activeTab === 'monthly'
@@ -579,6 +611,7 @@ function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
     transactions,
     settlements,
     expenseSettlements,
+    cumulativeExpenses,
     monthlyCloses,
   }
 }

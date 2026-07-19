@@ -11,7 +11,13 @@ export type VnPayCurrency = 'twd' | 'usdt'
 /** P（USDT）艙別：共用成本池，僅拆數量 */
 export type UsdtCabin = 'A' | 'B' | 'C'
 export type ExpenseType = 'fuel' | 'parking' | 'meal' | 'traffic' | 'other'
-export type PageTab = 'daily' | 'expenses' | 'settlements' | 'monthly' | 'notes'
+export type PageTab =
+  | 'daily'
+  | 'expenses'
+  | 'cumulative_expenses'
+  | 'settlements'
+  | 'monthly'
+  | 'notes'
 export type AccentColor = 'emerald' | 'rose' | 'violet' | 'orange'
 
 export interface UsdtTransaction {
@@ -112,6 +118,13 @@ export interface ExpenseSettlement {
   items: ExpenseSettlementItem[]
 }
 
+export interface CumulativeExpenseEntry {
+  id: string
+  timestamp: Date
+  amountTwd: number
+  note: string
+}
+
 export interface MonthlyClose {
   id: string
   periodLabel: string
@@ -176,6 +189,7 @@ export interface ConfirmDialogState {
   title: string
   lines: string[]
   tradeSettleSummary?: TradeSettleConfirmSummary
+  cancelLabel?: string
   confirmLabel: string
   variant: 'danger' | 'primary'
   alertOnly?: boolean
@@ -253,6 +267,7 @@ export interface AppSnapshot {
   openingVnUsdtRate: number | null
   settlements: DailySettlement[]
   expenseSettlements: ExpenseSettlement[]
+  cumulativeExpenses: CumulativeExpenseEntry[]
   monthlyCloses: MonthlyClose[]
   selectedMonthlyCloseId: string | null
   activeTab: PageTab
@@ -447,6 +462,13 @@ export interface SettlementRecordBodyProps {
 
 export interface ExpenseSettlementsPanelProps {
   settlements: ExpenseSettlement[]
+}
+
+export interface CumulativeExpensesPanelProps {
+  entries: CumulativeExpenseEntry[]
+  onAdd: (timestamp: Date, amountTwd: number, note: string) => void
+  onUpdate: (id: string, timestamp: Date, amountTwd: number, note: string) => void
+  onDelete: (id: string) => void
 }
 
 
