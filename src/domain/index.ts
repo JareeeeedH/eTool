@@ -32,6 +32,8 @@ import {
   formatSettlementDate,
   formatUsdtTradeRateDisplay,
   formatTwd,
+  formatTwdTableCompact,
+  formatVnTableCompact,
   formatVnTradeRateDisplay,
   roundUsdtCostRate,
   roundVnPoolCostRate,
@@ -1669,27 +1671,21 @@ export function buildDeleteConfirmLines(tx: Transaction): string[] {
   }
 
   if (isVnTradeTransaction(tx)) {
-    const typeLabel = tx.type === 'buy' ? '買入 VN' : '賣出 VN'
-    const payLabel = tx.payCurrency === 'usdt' ? 'USDT' : 'TWD'
-    const payAmount =
+    const pay =
       tx.payCurrency === 'usdt'
-        ? formatNumber(tx.usdtAmount)
-        : formatTwd(tx.twdAmount)
-    const rateUnit = tx.payCurrency === 'usdt' ? 'VN/USDT' : 'VN/TWD'
+        ? `P ${formatNumber(tx.usdtAmount)}`
+        : `T ${formatTwdTableCompact(tx.twdAmount)}`
     return [
-      `類型：${typeLabel}（${payLabel}）`,
-      `VN：${formatNumber(tx.vnAmount)}`,
-      `${payLabel}：${payAmount}`,
-      `匯率 (${rateUnit})：${formatVnTradeRateDisplay(tx.rate)}`,
+      `VN ${formatVnTableCompact(tx.vnAmount)}`,
+      pay,
+      `@${formatVnTradeRateDisplay(tx.rate)}`,
     ]
   }
 
-  const typeLabel = tx.type === 'buy' ? '買入' : '賣出'
   return [
-    `類型：${typeLabel}（TWD）`,
-    `USDT：${formatNumber(tx.usdtAmount)}`,
-    `金額：${formatTwd(tx.fiatAmount)}`,
-    `匯率 (TWD/USDT)：${formatUsdtTradeRateDisplay(tx.rate)}`,
+    `P ${formatNumber(tx.usdtAmount)}`,
+    `T ${formatTwdTableCompact(tx.fiatAmount)}`,
+    `@${formatUsdtTradeRateDisplay(tx.rate)}`,
   ]
 }
 

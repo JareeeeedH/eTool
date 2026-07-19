@@ -138,10 +138,16 @@ export function VnPoolCostLines({
   )
 }
 export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
+  const [note, setNote] = useState('')
+
+  useEffect(() => {
+    setNote('')
+  }, [dialog])
+
   if (!dialog) return null
 
   const isTradeSettle = Boolean(dialog.tradeSettleSummary)
-  const isCompactConfirm = !isTradeSettle && dialog.lines.length === 0
+  const isCompactConfirm = !isTradeSettle && dialog.lines.length === 0 && !dialog.noteInput
 
   return (
     <div
@@ -168,7 +174,7 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
         {dialog.tradeSettleSummary ? (
           <TradeSettleConfirmBody summary={dialog.tradeSettleSummary} />
         ) : dialog.lines.length > 0 ? (
-          <div className="mt-3 space-y-1 text-sm text-slate-600">
+          <div className={`${dialog.title ? 'mt-3' : 'mt-0'} space-y-1 text-sm text-slate-600`}>
             {dialog.lines.map((line, i) =>
               line === '' ? (
                 <div key={i} className="h-1" />
@@ -178,6 +184,17 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
             )}
           </div>
         ) : null}
+        {dialog.noteInput && (
+          <input
+            type="text"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="NOTE"
+            aria-label="備註"
+            autoFocus
+            className="mt-3 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+          />
+        )}
         <div
           className={`flex justify-end gap-2 ${
             isTradeSettle || isCompactConfirm ? 'mt-0' : 'mt-5'
@@ -198,7 +215,7 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
           )}
           <button
             type="button"
-            onClick={dialog.onConfirm}
+            onClick={() => dialog.onConfirm(note.trim())}
             className={`rounded-md font-medium text-white ${
               isTradeSettle || isCompactConfirm
                 ? 'min-w-[2.5rem] px-2.5 py-1.5 text-xs'
@@ -2825,41 +2842,46 @@ export function VnTradeTable({
 export function ExpenseForm({
   amount,
   note,
+  expenseDate,
   error,
   isEditing,
   disabled,
   onAmountChange,
   onNoteChange,
+  onExpenseDateChange,
   onSubmit,
   onCancel,
 }: ExpenseFormProps) {
   return (
     <form onSubmit={onSubmit}>
-      <div className="flex items-center gap-1">
-        <label className="flex w-[5.5rem] shrink-0 items-center gap-0.5 text-[10px] text-slate-500">
-          <span className="shrink-0">AMT</span>
-          <input
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="any"
-            value={amount}
-            disabled={disabled}
-            onChange={(e) => onAmountChange(e.target.value)}
-            className={`min-w-0 flex-1 ${EXPENSE_INPUT_CLASS}`}
-            placeholder="0"
-          />
-        </label>
-        <label className="flex min-w-0 flex-1 items-center gap-0.5 text-[10px] text-slate-500">
-          <span className="shrink-0">NOTE</span>
-          <input
-            type="text"
-            value={note}
-            disabled={disabled}
-            onChange={(e) => onNoteChange(e.target.value)}
-            className={`min-w-0 flex-1 ${EXPENSE_INPUT_CLASS}`}
-          />
-        </label>
+      <div className="flex min-w-0 items-center gap-1">
+        <TradeMetaDateInput
+          id="expenseDate"
+          value={expenseDate}
+          onChange={onExpenseDateChange}
+          disabled={disabled}
+        />
+        <input
+          type="number"
+          inputMode="decimal"
+          min="0"
+          step="any"
+          value={amount}
+          disabled={disabled}
+          onChange={(e) => onAmountChange(e.target.value)}
+          className={`w-[4.75rem] shrink-0 ${EXPENSE_INPUT_CLASS}`}
+          placeholder="AMT"
+          aria-label="AMT"
+        />
+        <input
+          type="text"
+          value={note}
+          disabled={disabled}
+          onChange={(e) => onNoteChange(e.target.value)}
+          className={`min-w-0 flex-1 ${EXPENSE_INPUT_CLASS}`}
+          placeholder="NOTE"
+          aria-label="NOTE"
+        />
         <div className="flex shrink-0 gap-0.5">
           <button
             type="submit"
@@ -2874,7 +2896,7 @@ export function ExpenseForm({
               onClick={onCancel}
               className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-600 hover:bg-slate-50"
             >
-              取消
+              Cancel
             </button>
           )}
         </div>
@@ -2884,13 +2906,24 @@ export function ExpenseForm({
   )
 }
 
-export function ExpensePageSummary({ transactions }: ExpensePageSummaryProps) {
+export function ExpensePageSummary({ transactions, onReconcile }: ExpensePageSummaryProps) {
   const totalAmount = transactions.reduce((sum, tx) => sum + tx.amountTwd, 0)
 
   return (
-    <div className="mt-1 flex items-baseline justify-between gap-2 border-t border-orange-100 pt-1">
+    <div className="mt-1 flex items-center justify-between gap-2 border-t border-orange-100 pt-1">
       <span className="text-[10px] tabular-nums text-slate-400">#{transactions.length}</span>
-      <span className="text-xs font-bold tabular-nums text-rose-600">−{formatTwd(totalAmount)}</span>
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-bold tabular-nums text-rose-600">−{formatTwd(totalAmount)}</span>
+        {onReconcile && transactions.length > 0 && (
+          <button
+            type="button"
+            onClick={onReconcile}
+            className="rounded bg-orange-600 px-2 py-0.5 text-[10px] font-medium text-white transition hover:bg-orange-700"
+          >
+            RECON
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -3414,6 +3447,7 @@ export function CumulativeExpensesPanel({
   const [note, setNote] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [detailEntry, setDetailEntry] = useState<CumulativeExpenseEntry | null>(null)
   const rows = useMemo(
     () => [...entries].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()),
     [entries],
@@ -3453,61 +3487,56 @@ export function CumulativeExpensesPanel({
     setError('')
   }
 
+  const detailItems = detailEntry?.items
+    ? [...detailEntry.items].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+    : []
+
   return (
     <section className="mx-auto flex w-full max-w-2xl flex-col gap-2">
       <form
         onSubmit={handleSubmit}
-        className="grid grid-cols-[7.5rem_7rem_minmax(0,1fr)_auto] gap-1 rounded-lg border-l-4 border-orange-500 bg-white p-1.5 shadow-sm max-sm:grid-cols-[auto_2.25rem_minmax(0,1fr)]"
+        className="rounded-lg border border-slate-200 border-l-4 border-l-orange-500 bg-white p-1.5 shadow-sm"
       >
-        <div className="max-sm:col-start-2 max-sm:row-start-1">
+        <div className="flex items-center gap-1">
           <TradeMetaDateInput
-            id="cumulativeExpenseDateMobile"
+            id="cumulativeExpenseDate"
             value={date}
             onChange={setDate}
-            className="sm:hidden"
           />
           <input
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-            aria-label="日期"
-            className="hidden min-w-0 rounded border border-slate-300 px-1.5 py-1 text-xs outline-none focus:border-orange-500 sm:block"
+            type="text"
+            inputMode="numeric"
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+            placeholder="AMT"
+            aria-label="金額"
+            className="w-[5.5rem] shrink-0 rounded border border-slate-300 px-1.5 py-1 text-xs tabular-nums outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
           />
-        </div>
-        <input
-          type="text"
-          inputMode="numeric"
-          value={amount}
-          onChange={(event) => setAmount(event.target.value)}
-          aria-label="金額"
-          className="min-w-0 rounded border border-slate-300 px-1.5 py-1 text-xs outline-none focus:border-orange-500 max-sm:col-start-3 max-sm:row-start-1"
-        />
-        <input
-          type="text"
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          placeholder="備註"
-          aria-label="備註"
-          className="min-w-0 rounded border border-slate-300 px-1.5 py-1 text-xs outline-none focus:border-orange-500 max-sm:col-span-2 max-sm:col-start-2 max-sm:row-start-2"
-        />
-        <div className="flex gap-1 max-sm:col-start-1 max-sm:row-span-2 max-sm:row-start-1">
-          <button
-            type="submit"
-            className="rounded bg-orange-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-orange-700"
-          >
-            {editingId ? 'Save' : 'Add'}
-          </button>
+          <input
+            type="text"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="NOTE"
+            aria-label="備註"
+            className="min-w-0 flex-1 rounded border border-slate-300 px-1.5 py-1 text-xs outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+          />
           {editingId && (
             <button
               type="button"
               onClick={resetForm}
-              className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600"
+              className="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
             >
-              取消
+              Cancel
             </button>
           )}
+          <button
+            type="submit"
+            className="shrink-0 rounded bg-orange-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-orange-700"
+          >
+            {editingId ? 'Save' : 'Add'}
+          </button>
         </div>
-        {error && <p className="col-span-full text-[10px] text-rose-600">{error}</p>}
+        {error && <p className="mt-1 text-[10px] text-rose-600">{error}</p>}
       </form>
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -3531,26 +3560,42 @@ export function CumulativeExpensesPanel({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-b border-slate-100 last:border-b-0">
-                    <td className="px-3 py-2 tabular-nums text-slate-600">
-                      {formatTableDateTime(row.timestamp)}
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums text-rose-600">
-                      −{formatTwd(row.amountTwd)}
-                    </td>
-                    <td className="truncate px-3 py-2 text-slate-700">
-                      {row.note.trim() || '—'}
-                    </td>
-                    <td className="px-1 py-1">
-                      <RowActionButtons
-                        compact
-                        onEdit={() => handleEdit(row)}
-                        onDelete={() => onDelete(row.id)}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((row) => {
+                  const hasItems = Boolean(row.items && row.items.length > 0)
+                  return (
+                    <tr
+                      key={row.id}
+                      className={`border-b border-slate-100 last:border-b-0 ${
+                        hasItems
+                          ? 'cursor-pointer border-l-2 border-l-orange-400 bg-orange-50/40 hover:bg-orange-50'
+                          : ''
+                      }`}
+                      onClick={() => {
+                        if (hasItems) setDetailEntry(row)
+                      }}
+                    >
+                      <td className="px-3 py-2 tabular-nums text-slate-600">
+                        {formatTableDateTime(row.timestamp)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums text-rose-600">
+                        −{formatTwd(row.amountTwd)}
+                      </td>
+                      <td className="truncate px-3 py-2 text-slate-700">
+                        {row.note.trim() || '—'}
+                      </td>
+                      <td
+                        className="px-1 py-1"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <RowActionButtons
+                          compact
+                          onEdit={() => handleEdit(row)}
+                          onDelete={() => onDelete(row.id)}
+                        />
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -3563,10 +3608,71 @@ export function CumulativeExpensesPanel({
             <p className="text-[10px] text-orange-700/70">共 {rows.length} 筆</p>
           </div>
           <p className="text-base font-bold tabular-nums text-rose-600">
-            −{formatTwd(total)} TWD
+            −{formatTwd(total)}
           </p>
         </div>
       </div>
+
+      {detailEntry && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cumulative-expense-detail-title"
+          onClick={() => setDetailEntry(null)}
+        >
+          <div
+            className="max-h-[80vh] w-full max-w-md overflow-hidden rounded-xl bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 px-4 py-3">
+              <div>
+                <h2
+                  id="cumulative-expense-detail-title"
+                  className="text-sm font-semibold tabular-nums text-slate-800"
+                >
+                  {formatTableDateTime(detailEntry.timestamp)}
+                </h2>
+                <p className="mt-0.5 text-[10px] text-slate-500">
+                  #{detailItems.length}
+                  {detailEntry.note.trim() ? ` · ${detailEntry.note.trim()}` : ''}
+                </p>
+              </div>
+              <p className="text-sm font-bold tabular-nums text-rose-600">
+                −{formatTwd(detailEntry.amountTwd)}
+              </p>
+            </div>
+            <div className="max-h-[50vh] overflow-y-auto px-4 py-2">
+              <table className="w-full text-left text-xs">
+                <tbody>
+                  {detailItems.map((item, index) => (
+                    <tr key={`${detailEntry.id}-${index}`} className="border-b border-slate-50 last:border-b-0">
+                      <td className="py-1.5 tabular-nums text-slate-600">
+                        {formatTableDateTime(item.timestamp)}
+                      </td>
+                      <td className="py-1.5 text-right font-medium tabular-nums text-rose-600">
+                        −{formatTwd(item.amountTwd)}
+                      </td>
+                      <td className="max-w-[8rem] truncate py-1.5 pl-2 text-slate-600">
+                        {item.note.trim() || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end border-t border-slate-100 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setDetailEntry(null)}
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }

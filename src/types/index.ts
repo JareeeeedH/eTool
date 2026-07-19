@@ -118,11 +118,19 @@ export interface ExpenseSettlement {
   items: ExpenseSettlementItem[]
 }
 
+export interface CumulativeExpenseItem {
+  amountTwd: number
+  note: string
+  timestamp: Date
+}
+
 export interface CumulativeExpenseEntry {
   id: string
   timestamp: Date
   amountTwd: number
   note: string
+  /** EXP RECON 封存明細；手動新增無此欄 */
+  items?: CumulativeExpenseItem[]
 }
 
 export interface MonthlyClose {
@@ -193,7 +201,9 @@ export interface ConfirmDialogState {
   confirmLabel: string
   variant: 'danger' | 'primary'
   alertOnly?: boolean
-  onConfirm: () => void
+  /** 顯示備註輸入（如 EXP RECON） */
+  noteInput?: boolean
+  onConfirm: (note?: string) => void
 }
 
 
@@ -416,11 +426,13 @@ export interface VnTradeTableProps {
 export interface ExpenseFormProps {
   amount: string
   note: string
+  expenseDate: string
   error: string
   isEditing: boolean
   disabled: boolean
   onAmountChange: (value: string) => void
   onNoteChange: (value: string) => void
+  onExpenseDateChange: (value: string) => void
   onSubmit: (e: FormEvent) => void
   onCancel: () => void
 }
@@ -428,6 +440,7 @@ export interface ExpenseFormProps {
 
 export interface ExpensePageSummaryProps {
   transactions: ExpenseTransaction[]
+  onReconcile?: () => void
 }
 
 

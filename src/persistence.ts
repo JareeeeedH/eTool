@@ -146,11 +146,18 @@ interface ExpenseSettlement {
   items: ExpenseSettlementItem[]
 }
 
+interface CumulativeExpenseItem {
+  amountTwd: number
+  note: string
+  timestamp: Date
+}
+
 interface CumulativeExpenseEntry {
   id: string
   timestamp: Date
   amountTwd: number
   note: string
+  items?: CumulativeExpenseItem[]
 }
 
 interface MonthlyClose {
@@ -330,6 +337,19 @@ function parseTransaction(value: unknown): Transaction | null {
   }
 }
 
+function parseCumulativeExpenseItem(value: unknown): CumulativeExpenseItem | null {
+  if (!isRecord(value)) return null
+  const timestamp = new Date(String(value.timestamp))
+  if (Number.isNaN(timestamp.getTime())) return null
+  const amountTwd = parseNumber(value.amountTwd)
+  if (amountTwd <= 0) return null
+  return {
+    amountTwd,
+    note: typeof value.note === 'string' ? value.note : '',
+    timestamp,
+  }
+}
+
 function parseCumulativeExpenseEntry(value: unknown): CumulativeExpenseEntry | null {
   if (!isRecord(value) || typeof value.id !== 'string') return null
   const timestamp = new Date(String(value.timestamp))
@@ -337,11 +357,18 @@ function parseCumulativeExpenseEntry(value: unknown): CumulativeExpenseEntry | n
   const amountTwd = parseNumber(value.amountTwd)
   if (amountTwd <= 0) return null
 
+  const items = Array.isArray(value.items)
+    ? value.items
+        .map(parseCumulativeExpenseItem)
+        .filter((item): item is CumulativeExpenseItem => item !== null)
+    : undefined
+
   return {
     id: value.id,
     timestamp,
     amountTwd,
     note: typeof value.note === 'string' ? value.note : '',
+    items: items && items.length > 0 ? items : undefined,
   }
 }
 

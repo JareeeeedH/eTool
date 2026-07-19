@@ -29,7 +29,7 @@ export const EXPENSE_QUICK_TYPES: ExpenseType[] = ['fuel', 'parking', 'meal']
 export const EMPTY_DATA_LABEL = 'no data'
 
 export const EXPENSE_INPUT_CLASS =
-  'w-full rounded border border-slate-300 px-1.5 py-0.5 text-base sm:text-xs outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50'
+  'rounded border border-slate-300 px-1.5 py-0.5 text-base sm:text-xs outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50'
 
 export const TRADE_INPUT_CLASS =
   'w-full rounded border border-slate-300 px-1.5 py-0.5 text-base tabular-nums leading-tight placeholder:text-slate-400 outline-none transition disabled:bg-slate-50 sm:py-1 sm:text-xs sm:leading-normal'

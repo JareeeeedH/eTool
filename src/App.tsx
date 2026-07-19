@@ -88,6 +88,7 @@ import {
   formatExpenseTwdInput,
   formatNumber,
   formatSettlementDateTime,
+  formatTwd,
   formatTwdCompactInput,
   formatVnCompactInput,
   isValidDateInputValue,
@@ -128,7 +129,8 @@ import {
   useTransactionVisibleRows,
 } from './components'
 
-const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'expenses' | 'notes'>, string> = {
+const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'notes'>, string> = {
+  expenses: 'EXP',
   cumulative_expenses: 'EXP.SUM',
   settlements: 'SET.',
   monthly: 'SETUP',
@@ -236,6 +238,7 @@ function App() {
 
   const [expenseAmount, setExpenseAmount] = useState('')
   const [expenseNote, setExpenseNote] = useState('')
+  const [expenseDate, setExpenseDate] = useState(defaultTradeDateInputValue)
   const [expenseError, setExpenseError] = useState('')
 
   const [openingBalanceModalOpen, setOpeningBalanceModalOpen] = useState(false)
@@ -694,6 +697,7 @@ function App() {
   const resetExpenseForm = () => {
     setExpenseAmount('')
     setExpenseNote('')
+    setExpenseDate(defaultTradeDateInputValue())
     setExpenseError('')
     if (editingCategory === 'expense') {
       setEditingId(null)
@@ -827,6 +831,10 @@ function App() {
       setExpenseError('請輸入有效的正數金額')
       return
     }
+    if (!isValidDateInputValue(expenseDate)) {
+      setExpenseError('請輸入有效日期')
+      return
+    }
 
     const isEditing = editingId !== null && editingCategory === 'expense'
 
@@ -836,6 +844,7 @@ function App() {
           tx.id === editingId && isExpenseTransaction(tx)
             ? {
                 ...tx,
+                timestamp: timestampFromDateInput(expenseDate, tx.timestamp),
                 expenseType: 'other',
                 amountTwd: amount,
                 note: expenseNote.trim(),
@@ -845,7 +854,7 @@ function App() {
       }
       const newTransaction: ExpenseTransaction = {
         id: crypto.randomUUID(),
-        timestamp: new Date(),
+        timestamp: timestampFromDateInput(expenseDate),
         category: 'expense',
         expenseType: 'other',
         amountTwd: amount,
@@ -889,8 +898,72 @@ function App() {
     )
   }
 
-  const handleDeleteCumulativeExpense = (id: string) => {
+  const executeDeleteCumulativeExpense = (id: string) => {
     setCumulativeExpenses((prev) => prev.filter((entry) => entry.id !== id))
+  }
+
+  const handleDeleteCumulativeExpense = (id: string) => {
+    const entry = cumulativeExpenses.find((item) => item.id === id)
+    if (!entry) return
+
+    setConfirmDialog({
+      title: '',
+      lines: [formatTwd(entry.amountTwd), entry.note.trim() || '—'],
+      cancelLabel: 'Cancel',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+      onConfirm: () => {
+        setConfirmDialog(null)
+        executeDeleteCumulativeExpense(id)
+      },
+    })
+  }
+
+  const executeExpenseReconcile = (note = '') => {
+    const pending = filterExpenseTransactions(transactions)
+    if (pending.length === 0) return
+
+    const total = pending.reduce((sum, tx) => sum + tx.amountTwd, 0)
+    if (total <= 0) return
+
+    const snapshot = createSnapshot()
+    setTransactions((prev) => prev.filter((tx) => !isExpenseTransaction(tx)))
+    setCumulativeExpenses((prev) => [
+      {
+        id: crypto.randomUUID(),
+        timestamp: new Date(),
+        amountTwd: total,
+        note: note.trim(),
+        items: pending.map((tx) => ({
+          amountTwd: tx.amountTwd,
+          note: tx.note,
+          timestamp: tx.timestamp,
+        })),
+      },
+      ...prev,
+    ])
+    resetExpenseForm()
+    setUndoSnapshot(snapshot)
+    setUndoMessage('已對帳並寫入 EXP.SUM')
+  }
+
+  const handleExpenseReconcile = () => {
+    const pending = filterExpenseTransactions(transactions)
+    if (pending.length === 0) return
+
+    const total = pending.reduce((sum, tx) => sum + tx.amountTwd, 0)
+    setConfirmDialog({
+      title: '',
+      lines: [`#${pending.length}`, formatTwd(total)],
+      noteInput: true,
+      cancelLabel: 'Cancel',
+      confirmLabel: 'RECON',
+      variant: 'primary',
+      onConfirm: (note) => {
+        setConfirmDialog(null)
+        executeExpenseReconcile(note)
+      },
+    })
   }
 
   const handleSubmit = (type: TransactionType, e: FormEvent) => {
@@ -1459,6 +1532,7 @@ function App() {
     setExpenseError('')
     setExpenseAmount(formatExpenseTwdInput(tx.amountTwd))
     setExpenseNote(tx.note)
+    setExpenseDate(dateInputValueFromDate(tx.timestamp))
   }
 
   const executeDelete = (id: string) => {
@@ -1483,12 +1557,11 @@ function App() {
     const tx = transactions.find((item) => item.id === id)
     if (!tx) return
 
-    const isExpense = isExpenseTransaction(tx)
     setConfirmDialog({
-      title: isExpense ? '' : '確定刪除以下交易？',
+      title: '',
       lines: buildDeleteConfirmLines(tx),
-      cancelLabel: isExpense ? 'Cancel' : undefined,
-      confirmLabel: isExpense ? 'Delete' : '刪除',
+      cancelLabel: 'Cancel',
+      confirmLabel: 'Delete',
       variant: 'danger',
       onConfirm: () => {
         setConfirmDialog(null)
@@ -2056,7 +2129,7 @@ function App() {
             >
               {mobileNavOpen ? <MobileNavCloseIcon /> : <MobileNavMenuIcon />}
             </button>
-            {activeTab !== 'daily' && activeTab !== 'expenses' && activeTab !== 'notes' && (
+            {activeTab !== 'daily' && activeTab !== 'notes' && (
               <p className="min-w-0 flex-1 text-xs font-medium text-slate-800">
                 {MOBILE_TAB_LABEL[activeTab]}
               </p>
@@ -2322,21 +2395,23 @@ function App() {
                   筆
                 </p>
               </div>
-              <section className="mx-auto w-full max-w-sm shrink-0 space-y-1">
-                <div className={`${formCardClass('orange', isEditingExpense)} !p-1.5`}>
+              <section className="mx-auto w-full max-w-sm min-w-0 shrink-0 space-y-1">
+                <div className={`${formCardClass('orange', isEditingExpense)} min-w-0 !p-1.5`}>
                   <ExpenseForm
                     amount={expenseAmount}
                     note={expenseNote}
+                    expenseDate={expenseDate}
                     error={expenseError}
                     isEditing={isEditingExpense}
                     disabled={isEditingAny && !isEditingExpense}
                     onAmountChange={setExpenseAmount}
                     onNoteChange={setExpenseNote}
+                    onExpenseDateChange={setExpenseDate}
                     onSubmit={handleExpenseSubmit}
                     onCancel={resetExpenseForm}
                   />
                 </div>
-                <div className={`${recordCardClass('orange')} flex flex-col !p-1.5`}>
+                <div className={`${recordCardClass('orange')} flex min-w-0 flex-col !p-1.5`}>
                   <ExpenseTable
                     transactions={expenseTransactions}
                     editingId={editingId}
@@ -2344,7 +2419,10 @@ function App() {
                     onDelete={handleDelete}
                     visibleRows={tableVisibleRows}
                   />
-                  <ExpensePageSummary transactions={expenseTransactions} />
+                  <ExpensePageSummary
+                    transactions={expenseTransactions}
+                    onReconcile={handleExpenseReconcile}
+                  />
                 </div>
               </section>
             </div>
