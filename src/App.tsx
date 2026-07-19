@@ -2310,6 +2310,7 @@ function App() {
                       onDelete={handleDelete}
                       accent="buy"
                       sideLabel="買入"
+                      showDayAverage
                       visibleRows={tableVisibleRows}
                       bodyScrollRef={vnBuyBodyScrollRef}
                       onBodyScroll={(scrollTop) => syncVnBodyScroll('buy', scrollTop)}

@@ -409,6 +409,7 @@ export interface VnTradeTableProps {
   onDelete: (id: string) => void
   accent: 'buy' | 'sell'
   sideLabel: string
+  showDayAverage?: boolean
   showCostAverage?: boolean
   showSellAverage?: boolean
   openingBalances?: Balances
