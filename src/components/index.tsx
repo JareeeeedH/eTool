@@ -785,51 +785,49 @@ function CabinRebalanceModalContent({
       aria-modal="true"
       aria-label="艙位調度"
     >
-      <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+      <div
+        className={`w-full rounded-xl bg-white shadow-xl ${
+          pendingTransfer ? 'max-w-[13.5rem] px-3 py-2.5' : 'max-w-sm p-5'
+        }`}
+      >
         {pendingTransfer ? (
           <>
-            <div className="space-y-3 text-sm text-slate-600">
-              <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-center text-base font-semibold tabular-nums text-slate-900">
-                {pendingTransfer.from}
-                <span className="mx-2 font-normal text-slate-400">→</span>
-                {pendingTransfer.to}
-                <span className="ml-2 text-slate-500">
-                  {formatNumber(pendingTransfer.amount)}
-                </span>
-              </p>
-              <div className="space-y-1.5 rounded-xl border border-slate-100 px-3 py-2.5 text-[13px]">
-                {(
-                  [
-                    ['A', cabins.a, pendingTransfer.next.a],
-                    ['B', cabins.b, pendingTransfer.next.b],
-                    ['C', cabins.c, pendingTransfer.next.c],
-                  ] as const
-                )
-                  .filter(([, before, after]) => before !== after)
-                  .map(([label, before, after]) => (
-                    <p key={label} className="flex justify-between gap-3 tabular-nums">
-                      <span className="text-slate-400">{label}</span>
-                      <span>
-                        {formatNumber(before)}
-                        <span className="mx-1.5 text-slate-300">→</span>
-                        {formatNumber(after)}
-                      </span>
-                    </p>
-                  ))}
-              </div>
+            <h2 className="sr-only">確認調度</h2>
+            <p className="text-[13px] font-semibold tabular-nums text-slate-900">
+              {pendingTransfer.from}
+              <span className="mx-1.5 font-normal text-slate-400">→</span>
+              {pendingTransfer.to}
+              <span className="ml-1.5">{formatNumber(pendingTransfer.amount)}</span>
+            </p>
+            <div className="mt-1 space-y-0.5 text-[12px] tabular-nums text-slate-500">
+              {(
+                [
+                  ['A', cabins.a, pendingTransfer.next.a],
+                  ['B', cabins.b, pendingTransfer.next.b],
+                  ['C', cabins.c, pendingTransfer.next.c],
+                ] as const
+              )
+                .filter(([, before, after]) => before !== after)
+                .map(([label, before, after]) => (
+                  <p key={label}>
+                    {label} {formatNumber(before)}
+                    <span className="mx-1 text-slate-300">→</span>
+                    {formatNumber(after)}
+                  </p>
+                ))}
             </div>
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-2.5 flex justify-end gap-1.5">
               <button
                 type="button"
                 onClick={() => setPendingTransfer(null)}
-                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
               >
-                取消
+                C
               </button>
               <button
                 type="button"
                 onClick={confirmPendingTransfer}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+                className="rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-indigo-700"
               >
                 OK
               </button>

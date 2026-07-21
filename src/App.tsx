@@ -1674,9 +1674,9 @@ function App() {
   const handleTradeSettle = () => {
     if (tradeTransactions.length === 0) {
       setConfirmDialog({
-        title: '無法結算',
-        lines: ['尚無交易紀錄，無法結算。'],
-        confirmLabel: '知道了',
+        title: '',
+        lines: ['無交易'],
+        confirmLabel: 'OK',
         variant: 'primary',
         alertOnly: true,
         onConfirm: () => setConfirmDialog(null),
@@ -1685,7 +1685,7 @@ function App() {
     }
 
     setConfirmDialog({
-      title: '確定結算今日交易？',
+      title: '',
       lines: [],
       tradeSettleSummary: buildTradeSettleConfirmSummary(
         transactions,
@@ -1694,6 +1694,7 @@ function App() {
         openingVnTwdRate,
         openingVnUsdtRate,
       ),
+      cancelLabel: 'C',
       confirmLabel: 'OK',
       variant: 'primary',
       onConfirm: () => {
@@ -1964,17 +1965,6 @@ function App() {
     const parsed = parseOpeningBalanceForm()
     if (!parsed) return
 
-    const hasActivity =
-      transactions.length > 0 ||
-      settlements.length > 0 ||
-      expenseSettlements.length > 0 ||
-      monthlyCloses.length > 0
-
-    if (!hasActivity) {
-      executeApplyOpeningBalance()
-      return
-    }
-
     const changes: string[] = []
     if (parsed.balances.twd !== openingBalances.twd) {
       changes.push(
@@ -1992,16 +1982,23 @@ function App() {
     const addRateChange = (label: string, before: number | null, after: number | null) => {
       if (before !== after) changes.push(`${label} ${before ?? '—'} → ${after ?? '—'}`)
     }
-    addRateChange('P成本(T)', openingUsdtCost.twd, parsed.usdtCost.twd)
-    addRateChange('P成本(VN)', openingUsdtCost.vn, parsed.usdtCost.vn)
-    addRateChange('VN池(T)', openingVnTwdRate, parsed.vnTwdRate)
-    addRateChange('VN池(P)', openingVnUsdtRate, parsed.vnUsdtRate)
+    addRateChange('P@T', openingUsdtCost.twd, parsed.usdtCost.twd)
+    addRateChange('P@VN', openingUsdtCost.vn, parsed.usdtCost.vn)
+    addRateChange('VN@T', openingVnTwdRate, parsed.vnTwdRate)
+    addRateChange('VN@P', openingVnUsdtRate, parsed.vnUsdtRate)
+
+    if (changes.length === 0) {
+      setOpeningBalanceModalOpen(false)
+      setOpeningBalanceError('')
+      return
+    }
 
     setOpeningBalanceModalOpen(false)
     setConfirmDialog({
-      title: '確認調整',
+      title: '',
       lines: changes,
-      confirmLabel: '確認',
+      cancelLabel: 'C',
+      confirmLabel: 'OK',
       variant: 'primary',
       onConfirm: () => {
         setConfirmDialog(null)
