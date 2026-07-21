@@ -92,6 +92,7 @@ import {
   formatTwdCompactInput,
   formatVnCompactInput,
   isValidDateInputValue,
+  coerceDisplayZeroBalance,
   parseExpenseTwdInput,
   parseTwdAdjustInput,
   parseUsdtAdjustInput,
@@ -107,7 +108,6 @@ import {
   ConfirmModal,
   CumulativeExpensesPanel,
   DailyBalanceStrip,
-  DailyPageHeader,
   DailyTradeSettleBar,
   DailyMobileTradeTabBar,
   DailyWorkTabBar,
@@ -494,11 +494,6 @@ function App() {
   const businessDayLabel = useMemo(
     () => getBusinessDayLabel(tradeTransactions),
     [tradeTransactions],
-  )
-
-  const expenseBusinessDayLabel = useMemo(
-    () => getBusinessDayLabel(expenseTransactions),
-    [expenseTransactions],
   )
 
   const createSnapshot = (): AppSnapshot => ({
@@ -909,8 +904,8 @@ function App() {
     setConfirmDialog({
       title: '',
       lines: [formatTwd(entry.amountTwd), entry.note.trim() || '—'],
-      cancelLabel: 'Cancel',
-      confirmLabel: 'Delete',
+      cancelLabel: 'C',
+      confirmLabel: 'Del',
       variant: 'danger',
       onConfirm: () => {
         setConfirmDialog(null)
@@ -1560,8 +1555,8 @@ function App() {
     setConfirmDialog({
       title: '',
       lines: buildDeleteConfirmLines(tx),
-      cancelLabel: 'Cancel',
-      confirmLabel: 'Delete',
+      cancelLabel: 'C',
+      confirmLabel: 'Del',
       variant: 'danger',
       onConfirm: () => {
         setConfirmDialog(null)
@@ -1795,12 +1790,26 @@ function App() {
       return null
     }
 
-    const twd = openingBalances.twd + twdAdjust
-    const usdt = openingBalances.usdt + usdtAdjust
-    const vn = openingBalances.vn + vnAdjust
+    const twd = coerceDisplayZeroBalance(openingBalances.twd, 'twd') + twdAdjust
+    const usdt = coerceDisplayZeroBalance(openingBalances.usdt, 'usdt') + usdtAdjust
+    const vn = coerceDisplayZeroBalance(openingBalances.vn, 'vn') + vnAdjust
 
-    if (twd < 0 || usdt < 0 || vn < 0) {
-      setOpeningBalanceError('調整後庫存不可為負數')
+    // 以「目前水位」判斷夠不夠扣（賣出換來的現金也可歸零）
+    const nextLiveTwd = coerceDisplayZeroBalance(balances.twd, 'twd') + twdAdjust
+    const nextLiveUsdt = coerceDisplayZeroBalance(balances.usdt, 'usdt') + usdtAdjust
+    const nextLiveVn = coerceDisplayZeroBalance(balances.vn, 'vn') + vnAdjust
+    const parts: string[] = []
+    if (twdAdjust !== 0 && nextLiveTwd < 0) {
+      parts.push(`T 最多可扣至 0（目前 ${formatTwdCompactInput(balances.twd)}）`)
+    }
+    if (usdtAdjust !== 0 && nextLiveUsdt < 0) {
+      parts.push(`P 最多可扣 ${formatNumber(coerceDisplayZeroBalance(balances.usdt, 'usdt'))}`)
+    }
+    if (vnAdjust !== 0 && nextLiveVn < 0) {
+      parts.push(`VN 最多可扣至 0（目前 ${formatVnCompactInput(balances.vn)}）`)
+    }
+    if (parts.length > 0) {
+      setOpeningBalanceError(parts.join('；'))
       return null
     }
 
@@ -2051,12 +2060,13 @@ function App() {
       />
       <OpeningBalanceModal
         open={openingBalanceModalOpen}
-        currentBalances={openingBalances}
+        liveBalances={balances}
         form={openingBalanceForm}
         error={openingBalanceError}
-        onFieldChange={(field, value) =>
+        onFieldChange={(field, value) => {
+          setOpeningBalanceError('')
           setOpeningBalanceForm((prev) => ({ ...prev, [field]: value }))
-        }
+        }}
         onCancel={() => {
           setOpeningBalanceModalOpen(false)
           setOpeningBalanceError('')
@@ -2150,10 +2160,6 @@ function App() {
               {editingBannerLabel && (
                 <EditingBanner label={editingBannerLabel} onCancel={cancelEditing} />
               )}
-              <DailyPageHeader
-                businessDayLabel={businessDayLabel}
-                pendingCount={tradeTransactions.length}
-              />
               <DailyBalanceStrip
                 balances={balances}
                 inventoryCost={inventoryCost}
@@ -2384,42 +2390,38 @@ function App() {
               {editingBannerLabel && (
                 <EditingBanner label={editingBannerLabel} onCancel={cancelEditing} />
               )}
-              <div className="mb-0.5 hidden shrink-0 lg:block">
-                <h1 className="text-sm font-semibold text-slate-800">營業開銷</h1>
-                <p className="mt-0.5 text-[10px] leading-tight text-slate-500">
-                  <span className="font-medium text-slate-700">{expenseBusinessDayLabel}</span>
-                  {' 營業日 · '}
-                  待結{' '}
-                  <span className="tabular-nums font-medium text-slate-700">
-                    {expenseTransactions.length}
-                  </span>{' '}
-                  筆
-                </p>
-              </div>
-              <section className="mx-auto w-full max-w-sm min-w-0 shrink-0 space-y-1">
-                <div className={`${formCardClass('orange', isEditingExpense)} min-w-0 !p-1.5`}>
-                  <ExpenseForm
-                    amount={expenseAmount}
-                    note={expenseNote}
-                    expenseDate={expenseDate}
-                    error={expenseError}
-                    isEditing={isEditingExpense}
-                    disabled={isEditingAny && !isEditingExpense}
-                    onAmountChange={setExpenseAmount}
-                    onNoteChange={setExpenseNote}
-                    onExpenseDateChange={setExpenseDate}
-                    onSubmit={handleExpenseSubmit}
-                    onCancel={resetExpenseForm}
-                  />
-                </div>
-                <div className={`${recordCardClass('orange')} flex min-w-0 flex-col !p-1.5`}>
-                  <ExpenseTable
-                    transactions={expenseTransactions}
-                    editingId={editingId}
-                    onEdit={handleEditExpense}
-                    onDelete={handleDelete}
-                    visibleRows={tableVisibleRows}
-                  />
+              <section className="mx-auto w-full max-w-sm min-w-0 shrink-0">
+                <div
+                  className={`overflow-hidden rounded-xl border bg-white shadow-sm ${
+                    isEditingExpense
+                      ? 'border-amber-300 ring-1 ring-amber-100'
+                      : 'border-slate-200/90'
+                  }`}
+                >
+                  <div className="border-b border-slate-100 px-3 py-2.5">
+                    <ExpenseForm
+                      amount={expenseAmount}
+                      note={expenseNote}
+                      expenseDate={expenseDate}
+                      error={expenseError}
+                      isEditing={isEditingExpense}
+                      disabled={isEditingAny && !isEditingExpense}
+                      onAmountChange={setExpenseAmount}
+                      onNoteChange={setExpenseNote}
+                      onExpenseDateChange={setExpenseDate}
+                      onSubmit={handleExpenseSubmit}
+                      onCancel={resetExpenseForm}
+                    />
+                  </div>
+                  <div className="px-2.5 py-1">
+                    <ExpenseTable
+                      transactions={expenseTransactions}
+                      editingId={editingId}
+                      onEdit={handleEditExpense}
+                      onDelete={handleDelete}
+                      visibleRows={tableVisibleRows}
+                    />
+                  </div>
                   <ExpensePageSummary
                     transactions={expenseTransactions}
                     onReconcile={handleExpenseReconcile}

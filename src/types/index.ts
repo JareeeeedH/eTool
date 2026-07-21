@@ -462,12 +462,7 @@ export interface SettlementRecordBodyProps {
   twdBalance: number
   usdtBalance: number
   vnBalance: number
-  twdAvg: number | null
-  vnPoolRate: number | null
-  vnUsdtPoolRate: number | null
   displayAssets: TotalAssetsTwd
-  dayBuyTwd: number | null
-  dayBuyVn: number | null
   dayUsdtProfit: number | undefined
   dayVnProfit: number | undefined
   dayTotalProfit: number
@@ -508,7 +503,8 @@ export interface OpeningBalanceForm {
 
 export interface OpeningBalanceModalProps {
   open: boolean
-  currentBalances: Balances
+  /** 目前身上水位（顯示／歸零／夠不夠扣以此為準） */
+  liveBalances: Balances
   form: OpeningBalanceForm
   error: string
   onFieldChange: (field: keyof OpeningBalanceForm, value: string) => void

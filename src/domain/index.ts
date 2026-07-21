@@ -1664,10 +1664,8 @@ export function getBusinessDayLabel(transactions: Transaction[]): string {
 
 export function buildDeleteConfirmLines(tx: Transaction): string[] {
   if (isExpenseTransaction(tx)) {
-    return [
-      formatTwd(tx.amountTwd),
-      tx.note.trim() || '—',
-    ]
+    const note = tx.note.trim()
+    return note ? [formatTwd(tx.amountTwd), note] : [formatTwd(tx.amountTwd)]
   }
 
   if (isVnTradeTransaction(tx)) {

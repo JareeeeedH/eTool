@@ -139,6 +139,28 @@ function parseSignedCompactAdjust(
   return sign * magnitude
 }
 
+/**
+ * 畫面顯示為 0 的微小負數視為 0。
+ * 避免期初 T/VN 因浮點或結算殘值顯示 0.00、實際卻 < 0，進而擋住其他幣別調整。
+ */
+export function coerceDisplayZeroBalance(
+  value: number,
+  kind: 'twd' | 'vn' | 'usdt',
+): number {
+  if (!Number.isFinite(value) || value >= 0) return value >= 0 && Number.isFinite(value) ? value : 0
+  if (kind === 'twd' && roundTwdTableCompact(value) === 0) return 0
+  if (kind === 'vn' && roundVnTableCompact(value) === 0) return 0
+  if (kind === 'usdt' && Math.round(value * 100) / 100 === 0) return 0
+  return value
+}
+
+/** 產生可把目前 T 現金歸零的期初調整字串（萬位，例如 -71.41） */
+export function formatTwdAdjustToZero(liveTwd: number): string {
+  const value = coerceDisplayZeroBalance(liveTwd, 'twd')
+  if (value <= 0) return ''
+  return `-${formatTwdCompactInput(value)}`
+}
+
 /** 期初 T 增減：支援 +20（萬）格式 */
 export function parseTwdAdjustInput(value: string): ParseAdjustResult {
   return parseSignedCompactAdjust(value, parseTwdTableCompactInput)

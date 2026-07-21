@@ -91,6 +91,8 @@ import {
   parseVnAdjustInput,
   formatVnNtdCostRateCompact,
   formatVnUsdtCostRateCompact,
+  coerceDisplayZeroBalance,
+  formatTwdAdjustToZero,
   dateInputValueFromDate,
   defaultTradeDateInputValue,
   isValidDateInputValue,
@@ -147,7 +149,11 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
   if (!dialog) return null
 
   const isTradeSettle = Boolean(dialog.tradeSettleSummary)
-  const isCompactConfirm = !isTradeSettle && dialog.lines.length === 0 && !dialog.noteInput
+  /** 無標題、僅短內容：刪除確認等，用小卡 */
+  const isCompactConfirm =
+    !isTradeSettle &&
+    !dialog.noteInput &&
+    (!dialog.title.trim() || dialog.lines.length === 0)
 
   return (
     <div
@@ -157,8 +163,12 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
       aria-labelledby="confirm-dialog-title"
     >
       <div
-        className={`w-full rounded-xl bg-white shadow-xl ${
-          isTradeSettle || isCompactConfirm ? 'max-w-[16.5rem] p-3.5' : 'max-w-md p-5'
+        className={`w-full rounded-lg bg-white shadow-lg ${
+          isTradeSettle
+            ? 'max-w-[16.5rem] p-3.5'
+            : isCompactConfirm
+              ? 'max-w-[13.5rem] px-3 py-2.5'
+              : 'max-w-sm p-4'
         }`}
       >
         <h2
@@ -166,20 +176,35 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
           className={
             isTradeSettle || isCompactConfirm || !dialog.title
               ? 'sr-only'
-              : 'text-base font-semibold text-slate-900'
+              : 'text-sm font-semibold text-slate-900'
           }
         >
-          {dialog.title}
+          {dialog.title || dialog.confirmLabel}
         </h2>
         {dialog.tradeSettleSummary ? (
           <TradeSettleConfirmBody summary={dialog.tradeSettleSummary} />
         ) : dialog.lines.length > 0 ? (
-          <div className={`${dialog.title ? 'mt-3' : 'mt-0'} space-y-1 text-sm text-slate-600`}>
+          <div
+            className={`${dialog.title ? 'mt-2' : 'mt-0'} ${
+              isCompactConfirm ? 'space-y-0.5 text-[13px]' : 'space-y-1 text-sm'
+            } text-slate-700`}
+          >
             {dialog.lines.map((line, i) =>
               line === '' ? (
                 <div key={i} className="h-1" />
               ) : (
-                <p key={i}>{line}</p>
+                <p
+                  key={i}
+                  className={
+                    isCompactConfirm && i === 0
+                      ? 'font-semibold tabular-nums text-slate-900'
+                      : isCompactConfirm
+                        ? 'truncate text-[12px] text-slate-500'
+                        : undefined
+                  }
+                >
+                  {line}
+                </p>
               ),
             )}
           </div>
@@ -196,17 +221,17 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
           />
         )}
         <div
-          className={`flex justify-end gap-2 ${
-            isTradeSettle || isCompactConfirm ? 'mt-0' : 'mt-5'
+          className={`flex justify-end gap-1.5 ${
+            isTradeSettle ? 'mt-2.5' : isCompactConfirm ? 'mt-2.5' : 'mt-4'
           }`}
         >
           {!dialog.alertOnly && (
             <button
               type="button"
               onClick={onCancel}
-              className={`rounded-md border border-slate-300 bg-white font-medium text-slate-700 hover:bg-slate-50 ${
+              className={`rounded-md border border-slate-300 bg-white font-medium text-slate-600 hover:bg-slate-50 ${
                 isTradeSettle || isCompactConfirm
-                  ? 'min-w-[2.5rem] px-2.5 py-1.5 text-xs'
+                  ? 'px-2 py-1 text-[11px]'
                   : 'px-3 py-1.5 text-sm'
               }`}
             >
@@ -218,7 +243,7 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
             onClick={() => dialog.onConfirm(note.trim())}
             className={`rounded-md font-medium text-white ${
               isTradeSettle || isCompactConfirm
-                ? 'min-w-[2.5rem] px-2.5 py-1.5 text-xs'
+                ? 'px-2.5 py-1 text-[11px]'
                 : 'px-3 py-1.5 text-sm'
             } ${
               dialog.variant === 'danger'
@@ -319,6 +344,8 @@ export function SettlementDayProfit({
   expenseTotal,
   netProfit,
   compact = false,
+  /** 僅顯示 P/VN 拆分（不重複總計，總計改放卡片右上） */
+  splitOnly = false,
 }: {
   usdtProfit: number | undefined
   vnProfit: number | undefined
@@ -326,10 +353,13 @@ export function SettlementDayProfit({
   expenseTotal?: number
   netProfit?: number
   compact?: boolean
+  splitOnly?: boolean
 }) {
   const showSplit = usdtProfit !== undefined && vnProfit !== undefined
   const showNet = expenseTotal !== undefined && expenseTotal > 0
   const textClass = compact ? 'text-[11px] leading-tight' : 'text-xs leading-tight'
+  const formatSigned = (value: number) =>
+    formatProfit(value) === '0' ? '+0' : formatProfit(value)
 
   if (!showSplit && !showNet) {
     return (
@@ -340,26 +370,36 @@ export function SettlementDayProfit({
   }
 
   if (compact) {
+    const splitClass = splitOnly ? 'text-emerald-600' : null
     return (
-      <p className={`${textClass} flex flex-wrap items-baseline gap-x-1.5 gap-y-0 font-semibold tabular-nums`}>
+      <span className={`${textClass} inline whitespace-nowrap font-semibold tabular-nums`}>
         {showSplit ? (
           <>
-            <span className={profitColorClass(usdtProfit!)}>P {formatProfit(usdtProfit!)}</span>
-            <span className={profitColorClass(vnProfit!)}>VN {formatProfit(vnProfit!)}</span>
-            <span className={profitColorClass(totalProfit)}>{formatProfit(totalProfit)}</span>
+            <span className={splitClass ?? profitColorClass(usdtProfit!)}>
+              P{formatSigned(usdtProfit!)}
+            </span>
+            <span className="text-slate-300">/</span>
+            <span className={splitClass ?? profitColorClass(vnProfit!)}>
+              VN{formatSigned(vnProfit!)}
+            </span>
+            {!splitOnly && (
+              <span className={`ml-1.5 ${profitColorClass(totalProfit)}`}>
+                {formatProfit(totalProfit)}
+              </span>
+            )}
           </>
         ) : (
           <span className={profitColorClass(totalProfit)}>{formatProfit(totalProfit)}</span>
         )}
         {showNet && (
           <>
-            <span className="text-rose-600">開銷 −{formatTwd(expenseTotal!)}</span>
-            <span className={profitColorClass(netProfit ?? totalProfit - expenseTotal!)}>
+            <span className="ml-1.5 text-rose-600">開銷 −{formatTwd(expenseTotal!)}</span>
+            <span className={`ml-1.5 ${profitColorClass(netProfit ?? totalProfit - expenseTotal!)}`}>
               淨利 {formatProfit(netProfit ?? totalProfit - expenseTotal!)}
             </span>
           </>
         )}
-      </p>
+      </span>
     )
   }
 
@@ -556,24 +596,7 @@ export function TotalAssetsColumn({
   )
 }
 
-export function DailyPageHeader({
-  businessDayLabel,
-  pendingCount,
-}: {
-  businessDayLabel: string
-  pendingCount: number
-}) {
-  return (
-    <div className="mb-1 hidden items-center gap-x-2 gap-y-0 lg:flex">
-      <p className="min-w-0 flex-1 truncate text-[10px] text-slate-500">
-        <span className="font-medium text-slate-700">{businessDayLabel}</span>
-        <span className="text-slate-300"> · </span>
-        待結
-        <span className="ml-0.5 tabular-nums font-medium text-slate-700">{pendingCount}</span>
-      </p>
-    </div>
-  )
-}
+
 
 export function DailyBalanceStrip({
   balances,
@@ -2904,7 +2927,7 @@ export function ExpenseForm({
 }: ExpenseFormProps) {
   return (
     <form onSubmit={onSubmit}>
-      <div className="flex min-w-0 items-center gap-1">
+      <div className="flex min-w-0 items-center gap-1.5">
         <TradeMetaDateInput
           id="expenseDate"
           value={expenseDate}
@@ -2919,9 +2942,9 @@ export function ExpenseForm({
           value={amount}
           disabled={disabled}
           onChange={(e) => onAmountChange(e.target.value)}
-          className={`w-[4.75rem] shrink-0 ${EXPENSE_INPUT_CLASS}`}
-          placeholder="AMT"
-          aria-label="AMT"
+          className={`w-[5rem] shrink-0 ${EXPENSE_INPUT_CLASS}`}
+          placeholder="—"
+          aria-label="金額"
         />
         <input
           type="text"
@@ -2929,51 +2952,51 @@ export function ExpenseForm({
           disabled={disabled}
           onChange={(e) => onNoteChange(e.target.value)}
           className={`min-w-0 flex-1 ${EXPENSE_INPUT_CLASS}`}
-          placeholder="NOTE"
-          aria-label="NOTE"
+          placeholder="…"
+          aria-label="備註"
         />
-        <div className="flex shrink-0 gap-0.5">
+        <div className="flex shrink-0 gap-1">
           <button
             type="submit"
             disabled={disabled}
-            className="rounded bg-orange-600 px-2 py-0.5 text-[11px] font-medium text-white transition hover:bg-orange-700 focus:ring-2 focus:ring-orange-600/30 disabled:opacity-50"
+            className="rounded-md bg-orange-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-orange-700 focus:ring-2 focus:ring-orange-600/25 disabled:opacity-50"
           >
-            {isEditing ? '儲存' : 'Add'}
+            {isEditing ? 'OK' : '+'}
           </button>
           {isEditing && (
             <button
               type="button"
               onClick={onCancel}
-              className="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-600 hover:bg-slate-50"
+              className="rounded-md px-1.5 py-1 text-[11px] text-slate-400 hover:bg-slate-50 hover:text-slate-600"
             >
-              Cancel
+              ×
             </button>
           )}
         </div>
       </div>
-      {error && <p className="mt-0.5 text-[10px] leading-tight text-rose-600">{error}</p>}
+      {error && <p className="mt-1 text-[10px] leading-tight text-rose-600">{error}</p>}
     </form>
   )
 }
 
 export function ExpensePageSummary({ transactions, onReconcile }: ExpensePageSummaryProps) {
   const totalAmount = transactions.reduce((sum, tx) => sum + tx.amountTwd, 0)
+  if (transactions.length === 0) return null
 
   return (
-    <div className="mt-1 flex items-center justify-between gap-2 border-t border-orange-100 pt-1">
-      <span className="text-[10px] tabular-nums text-slate-400">#{transactions.length}</span>
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-bold tabular-nums text-rose-600">−{formatTwd(totalAmount)}</span>
-        {onReconcile && transactions.length > 0 && (
-          <button
-            type="button"
-            onClick={onReconcile}
-            className="rounded bg-orange-600 px-2 py-0.5 text-[10px] font-medium text-white transition hover:bg-orange-700"
-          >
-            RECON
-          </button>
-        )}
-      </div>
+    <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/60 px-3 py-2">
+      <span className="text-sm font-semibold tabular-nums tracking-tight text-rose-600">
+        −{formatTwd(totalAmount)}
+      </span>
+      {onReconcile && (
+        <button
+          type="button"
+          onClick={onReconcile}
+          className="rounded-md bg-orange-600/90 px-2 py-0.5 text-[10px] font-medium tracking-wide text-white transition hover:bg-orange-700"
+        >
+          RECON
+        </button>
+      )}
     </div>
   )
 }
@@ -2997,12 +3020,6 @@ export function NotebookPanel({
 
   return (
     <div className="flex flex-col">
-      <div className="mb-0.5 hidden shrink-0 lg:block">
-        <h1 className="text-sm font-semibold text-slate-800">筆記本</h1>
-        <p className="mt-0.5 text-[10px] leading-tight text-slate-500">
-          自由記錄備忘，例如資本投入、合作備註等
-        </p>
-      </div>
       <section className="mx-auto w-full max-w-2xl shrink-0 space-y-1.5">
         <div
           className={`rounded-lg border border-slate-200 border-l-4 border-l-sky-500 bg-white p-2 shadow-sm ${
@@ -3099,35 +3116,36 @@ export function ExpenseTable({
   }, [editingId])
 
   if (transactions.length === 0) {
-    return (
-      <p className="py-4 text-center text-xs text-slate-400">{EMPTY_DATA_LABEL}</p>
-    )
+    return <div className="py-6" aria-hidden="true" />
   }
 
   const rows = (
-    <ul className="divide-y divide-slate-100">
-      {transactions.map((tx) => (
-        <li
-          key={tx.id}
-          data-expense-row={tx.id}
-          className={`group flex items-center gap-1.5 py-1 text-[11px] leading-tight transition-colors hover:bg-slate-50/80 ${
-            editingId === tx.id ? 'bg-amber-50/70 hover:bg-amber-50/90' : ''
-          }`}
-        >
-          <span className="w-[2.5rem] shrink-0 tabular-nums text-slate-400">
-            {formatSettlementDate(tx.timestamp)}
-          </span>
-          <span className="w-[3.75rem] shrink-0 text-right tabular-nums text-rose-700">
-            −{formatTwd(tx.amountTwd)}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-slate-600">
-            {tx.note.trim() || '—'}
-          </span>
-          <div className="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-            <RowActionButtons onEdit={() => onEdit(tx)} onDelete={() => onDelete(tx.id)} />
-          </div>
-        </li>
-      ))}
+    <ul className="divide-y divide-slate-100/80">
+      {transactions.map((tx) => {
+        const note = tx.note.trim()
+        return (
+          <li
+            key={tx.id}
+            data-expense-row={tx.id}
+            className={`group flex items-center gap-2 px-0.5 py-1.5 text-[12px] leading-none transition-colors hover:bg-slate-50/90 ${
+              editingId === tx.id ? 'bg-amber-50/80 hover:bg-amber-50' : ''
+            }`}
+          >
+            <span className="w-[2.75rem] shrink-0 tabular-nums text-[11px] text-slate-400">
+              {formatSettlementDate(tx.timestamp)}
+            </span>
+            <span className="w-[4.25rem] shrink-0 text-right font-medium tabular-nums text-rose-600">
+              −{formatTwd(tx.amountTwd)}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
+              {note}
+            </span>
+            <div className="shrink-0 opacity-70 transition-opacity group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+              <RowActionButtons onEdit={() => onEdit(tx)} onDelete={() => onDelete(tx.id)} />
+            </div>
+          </li>
+        )
+      })}
     </ul>
   )
 
@@ -3143,21 +3161,6 @@ export function ExpenseTable({
   )
 }
 
-function SettlementMetricRow({
-  label,
-  children,
-}: {
-  label: string
-  children: ReactNode
-}) {
-  return (
-    <div className="flex items-baseline gap-2 text-[11px] leading-tight">
-      <span className="w-5 shrink-0 text-[10px] font-medium text-slate-400">{label}</span>
-      <div className="min-w-0 flex-1">{children}</div>
-    </div>
-  )
-}
-
 export function SettlementRecordBody({
   twdBalance,
   usdtBalance,
@@ -3166,59 +3169,110 @@ export function SettlementRecordBody({
   dayUsdtProfit,
   dayVnProfit,
   dayTotalProfit,
-}: SettlementRecordBodyProps) {
+  heading,
+}: SettlementRecordBodyProps & { heading?: string }) {
   const showProfit =
     dayUsdtProfit !== undefined || dayVnProfit !== undefined || dayTotalProfit !== 0
 
-  return (
-    <div className="space-y-1">
-      <SettlementMetricRow label="T">
-        <p className="font-semibold tabular-nums text-emerald-600" title={formatTwd(twdBalance)}>
+  const totalBadge = (
+    <span
+      className={`shrink-0 rounded-md px-1.5 py-0.5 text-[12px] font-bold tabular-nums tracking-tight ${
+        dayTotalProfit > 0
+          ? 'bg-emerald-100 text-emerald-800'
+          : dayTotalProfit < 0
+            ? 'bg-rose-100 text-rose-800'
+            : 'bg-slate-100 text-slate-600'
+      }`}
+      title="當日總 PF"
+    >
+      {formatProfit(dayTotalProfit)}
+    </span>
+  )
+
+  const splitBlock = showProfit ? (
+    <span className="whitespace-nowrap font-semibold tabular-nums text-emerald-600">
+      <SettlementDayProfit
+        compact
+        splitOnly
+        usdtProfit={dayUsdtProfit}
+        vnProfit={dayVnProfit}
+        totalProfit={dayTotalProfit}
+      />
+    </span>
+  ) : null
+
+  const balanceBlock = (
+    <>
+      <span className="tabular-nums">
+        <span className="text-slate-400">T </span>
+        <span className="font-semibold text-emerald-600" title={formatTwd(twdBalance)}>
           {formatTwdTableCompact(twdBalance)}
-        </p>
-      </SettlementMetricRow>
-      <SettlementMetricRow label="P">
-        <p className="font-semibold tabular-nums text-sky-600">
-          {formatNumber(usdtBalance)}
-          {usdtBalance > 0 && displayAssets.usdtInTwd !== null && (
-            <span className="ml-1.5 font-normal text-sky-600/75" title={formatTwd(displayAssets.usdtInTwd)}>
-              ({formatTwdTableCompact(displayAssets.usdtInTwd)})
-            </span>
-          )}
-        </p>
-      </SettlementMetricRow>
-      <SettlementMetricRow label="VN">
-        <p className="font-semibold tabular-nums text-amber-600" title={formatNumber(vnBalance)}>
+        </span>
+      </span>
+      <span className="tabular-nums">
+        <span className="text-slate-400">P </span>
+        <span className="font-semibold text-sky-600">{formatNumber(usdtBalance)}</span>
+      </span>
+      <span className="tabular-nums">
+        <span className="text-slate-400">VN </span>
+        <span className="font-semibold text-amber-600" title={formatNumber(vnBalance)}>
           {formatVnTableCompact(vnBalance)}
-          {vnBalance > 0 && displayAssets.vnInTwd !== null && (
-            <span className="ml-1.5 font-normal text-amber-600/75" title={formatTwd(displayAssets.vnInTwd)}>
-              ({formatTwdTableCompact(displayAssets.vnInTwd)})
-            </span>
-          )}
-        </p>
-      </SettlementMetricRow>
-      {showProfit && (
-        <SettlementMetricRow label="PF">
-          <SettlementDayProfit
-            compact
-            usdtProfit={dayUsdtProfit}
-            vnProfit={dayVnProfit}
-            totalProfit={dayTotalProfit}
-          />
-        </SettlementMetricRow>
+        </span>
+      </span>
+    </>
+  )
+
+  const assetsBlock = (
+    <span
+      className="shrink-0 font-bold tabular-nums text-indigo-800"
+      title={formatTwd(displayAssets.total)}
+    >
+      {formatTwdTableCompact(displayAssets.total)}
+      {!displayAssets.isComplete && (
+        <span className="ml-1 text-[9px] font-medium text-amber-700">部分</span>
       )}
-      <div className="flex items-baseline justify-end border-t border-slate-100 pt-1">
-        <p
-          className="text-xs font-bold tabular-nums text-indigo-800"
-          title={formatTwd(displayAssets.total)}
-        >
-          {formatTwdTableCompact(displayAssets.total)}
-          {!displayAssets.isComplete && (
-            <span className="ml-1 text-[9px] font-medium text-amber-700">部分</span>
-          )}
-        </p>
+    </span>
+  )
+
+  return (
+    <>
+      {/* 手機：兩行，避免擠爆／重疊 */}
+      <div className="space-y-1.5 text-[12px] leading-none sm:hidden">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+            {heading ? (
+              <span className="shrink-0 tabular-nums text-[11px] text-slate-400">{heading}</span>
+            ) : null}
+            {splitBlock}
+          </div>
+          {totalBadge}
+        </div>
+        <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-1.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5">
+            {balanceBlock}
+          </div>
+          {assetsBlock}
+        </div>
       </div>
-    </div>
+
+      {/* 桌面：單列＋豎線分區 */}
+      <div className="hidden items-center gap-3 text-[12px] leading-none sm:flex">
+        {heading ? (
+          <span className="shrink-0 tabular-nums text-[11px] text-slate-400">{heading}</span>
+        ) : null}
+
+        <div className="flex shrink-0 items-center gap-2">
+          {splitBlock}
+          {totalBadge}
+        </div>
+
+        <span className="h-3.5 w-px shrink-0 bg-slate-300" aria-hidden />
+
+        <div className="flex min-w-0 flex-1 items-center gap-x-3.5">{balanceBlock}</div>
+
+        {assetsBlock}
+      </div>
+    </>
   )
 }
 
@@ -3241,17 +3295,6 @@ export function CollapsibleSection({
 }
 
 export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
-
-  const toggleExpanded = (id: string) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
   const cumulativeTotalProfit = settlements.reduce((sum, item) => sum + item.dayTotalProfit, 0)
   const cumulativeUsdtProfit = settlements.reduce(
     (sum, item) => sum + (item.dayUsdtProfit ?? 0),
@@ -3261,114 +3304,57 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
   const showCumulativeSplit = settlements.some(settlementHasSplitProfit)
 
   if (settlements.length === 0) {
-    return (
-      <p className="rounded-lg border border-slate-200 bg-white py-8 text-center text-xs text-slate-400 shadow-sm">
-        {EMPTY_DATA_LABEL}
-      </p>
-    )
-  }
-
-  const renderSettlementCard = ({
-    id,
-    title,
-    totalProfit,
-    body,
-  }: {
-    id: string
-    title: string
-    totalProfit: number
-    body: SettlementRecordBodyProps
-  }) => {
-    const isExpanded = expandedIds.has(id)
-    return (
-      <article key={id} className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <button
-          type="button"
-          onClick={() => toggleExpanded(id)}
-          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-slate-50"
-        >
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold tabular-nums text-slate-800">{title}</h3>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <p className={`text-xs font-bold tabular-nums ${profitColorClass(totalProfit)}`}>
-              {formatProfit(totalProfit)}
-            </p>
-            <svg
-              className={`h-4 w-4 text-slate-400 transition-transform duration-300 ease-in-out motion-reduce:transition-none ${
-                isExpanded ? 'rotate-180' : ''
-              }`}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              aria-hidden
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
-            </svg>
-          </div>
-        </button>
-        <CollapsibleSection open={isExpanded}>
-          <div className="border-t border-slate-100 px-3 pb-2 pt-1.5">
-            <SettlementRecordBody {...body} />
-          </div>
-        </CollapsibleSection>
-      </article>
-    )
+    return <div className="py-8" aria-hidden="true" />
   }
 
   return (
-    <div className="space-y-2">
-      <div className="rounded-lg border border-indigo-200 bg-indigo-50/80 px-3 py-2 shadow-sm">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-0 text-[10px] tabular-nums">
-            <span className="font-normal text-indigo-700/70">#{settlements.length}</span>
-            {showCumulativeSplit && (
-              <>
-                <span className={profitColorClass(cumulativeUsdtProfit)}>
-                  P: {formatProfit(cumulativeUsdtProfit)}
-                </span>
-                <span className={profitColorClass(cumulativeVnProfit)}>
-                  VN: {formatProfit(cumulativeVnProfit)}
-                </span>
-              </>
-            )}
-          </div>
+    <div className="mx-auto w-full max-w-3xl space-y-2">
+      <div className="rounded-xl border-2 border-indigo-400/70 bg-gradient-to-r from-indigo-100/90 via-indigo-50 to-emerald-50/80 px-3 py-2.5 shadow-md shadow-indigo-200/40 sm:px-4">
+        <div className="flex items-center gap-3">
+          <span className="shrink-0 rounded-md bg-indigo-600/10 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-indigo-700">
+            Σ#{settlements.length}
+          </span>
+          {showCumulativeSplit ? (
+            <div className="flex min-w-0 flex-1 items-baseline justify-center gap-4 text-[13px] font-semibold tabular-nums sm:gap-5 sm:text-sm">
+              <span className={profitColorClass(cumulativeUsdtProfit)}>
+                P{formatProfit(cumulativeUsdtProfit) === '0' ? '+0' : formatProfit(cumulativeUsdtProfit)}
+              </span>
+              <span className="text-indigo-300/80">·</span>
+              <span className={profitColorClass(cumulativeVnProfit)}>
+                VN{formatProfit(cumulativeVnProfit) === '0' ? '+0' : formatProfit(cumulativeVnProfit)}
+              </span>
+            </div>
+          ) : (
+            <div className="min-w-0 flex-1" />
+          )}
           <p
-            className={`text-base font-bold tabular-nums ${
-              cumulativeTotalProfit > 0
-                ? 'text-emerald-600'
-                : cumulativeTotalProfit < 0
-                  ? 'text-rose-600'
-                  : 'text-slate-500'
-            }`}
+            className={`shrink-0 text-lg font-bold tabular-nums tracking-tight ${profitColorClass(cumulativeTotalProfit)}`}
           >
             {formatProfit(cumulativeTotalProfit)}
           </p>
         </div>
       </div>
 
-      {settlements.map((item) =>
-        renderSettlementCard({
-          id: item.id,
-          title: formatSettlementDateTime(item.settledAt),
-          totalProfit: item.dayTotalProfit,
-          body: {
-            twdBalance: item.twdBalance,
-            usdtBalance: item.usdtBalance,
-            vnBalance: item.vnBalance,
-            twdAvg: item.usdtInventoryAvgTwd,
-            vnPoolRate: item.dayVnTwdRate,
-            vnUsdtPoolRate: item.dayVnUsdtRate ?? null,
-            displayAssets: totalAssetsFromSettlement(item),
-            dayBuyTwd: item.dayBuyAvgTwd,
-            dayBuyVn: item.dayBuyAvgVn,
-            dayUsdtProfit: item.dayUsdtProfit,
-            dayVnProfit: item.dayVnProfit,
-            dayTotalProfit: item.dayTotalProfit,
-          },
-        }),
-      )}
+      {settlements.map((item) => {
+        const displayAssets = totalAssetsFromSettlement(item)
+        return (
+          <article
+            key={item.id}
+            className="w-full rounded-xl border border-slate-200/90 bg-white px-3 py-2 shadow-sm"
+          >
+            <SettlementRecordBody
+              heading={formatSettlementDateTime(item.settledAt)}
+              twdBalance={item.twdBalance}
+              usdtBalance={item.usdtBalance}
+              vnBalance={item.vnBalance}
+              displayAssets={displayAssets}
+              dayUsdtProfit={item.dayUsdtProfit}
+              dayVnProfit={item.dayVnProfit}
+              dayTotalProfit={item.dayTotalProfit}
+            />
+          </article>
+        )
+      })}
     </div>
   )
 }
@@ -3542,125 +3528,111 @@ export function CumulativeExpensesPanel({
     : []
 
   return (
-    <section className="mx-auto flex w-full max-w-2xl flex-col gap-2">
-      <form
-        onSubmit={handleSubmit}
-        className="rounded-lg border border-slate-200 border-l-4 border-l-orange-500 bg-white p-1.5 shadow-sm"
+    <section className="mx-auto w-full max-w-sm min-w-0">
+      <div
+        className={`overflow-hidden rounded-xl border bg-white shadow-sm ${
+          editingId ? 'border-amber-300 ring-1 ring-amber-100' : 'border-slate-200/90'
+        }`}
       >
-        <div className="flex items-center gap-1">
-          <TradeMetaDateInput
-            id="cumulativeExpenseDate"
-            value={date}
-            onChange={setDate}
-          />
-          <input
-            type="text"
-            inputMode="numeric"
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            placeholder="AMT"
-            aria-label="金額"
-            className="w-[5.5rem] shrink-0 rounded border border-slate-300 px-1.5 py-1 text-xs tabular-nums outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
-          />
-          <input
-            type="text"
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="NOTE"
-            aria-label="備註"
-            className="min-w-0 flex-1 rounded border border-slate-300 px-1.5 py-1 text-xs outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
-          />
-          {editingId && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-          )}
-          <button
-            type="submit"
-            className="shrink-0 rounded bg-orange-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-orange-700"
-          >
-            {editingId ? 'Save' : 'Add'}
-          </button>
-        </div>
-        {error && <p className="mt-1 text-[10px] text-rose-600">{error}</p>}
-      </form>
+        <form onSubmit={handleSubmit} className="border-b border-slate-100 px-3 py-2.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <TradeMetaDateInput
+              id="cumulativeExpenseDate"
+              value={date}
+              onChange={setDate}
+            />
+            <input
+              type="text"
+              inputMode="numeric"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              placeholder="—"
+              aria-label="金額"
+              className={`w-[5rem] shrink-0 ${EXPENSE_INPUT_CLASS}`}
+            />
+            <input
+              type="text"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="…"
+              aria-label="備註"
+              className={`min-w-0 flex-1 ${EXPENSE_INPUT_CLASS}`}
+            />
+            <div className="flex shrink-0 gap-1">
+              <button
+                type="submit"
+                className="rounded-md bg-orange-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-orange-700"
+              >
+                {editingId ? 'OK' : '+'}
+              </button>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="rounded-md px-1.5 py-1 text-[11px] text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+          {error && <p className="mt-1 text-[10px] text-rose-600">{error}</p>}
+        </form>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        {rows.length === 0 ? (
-          <p className="py-8 text-center text-xs text-slate-400">no data</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[300px] table-fixed text-left text-xs">
-              <colgroup>
-                <col className="w-[5.5rem]" />
-                <col className="w-[7rem]" />
-                <col />
-                <col className="w-[4.5rem]" />
-              </colgroup>
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-slate-500">
-                  <th className="px-3 py-2 font-medium">日期</th>
-                  <th aria-label="金額" />
-                  <th className="px-3 py-2 font-medium">備註</th>
-                  <th aria-label="操作" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => {
-                  const hasItems = Boolean(row.items && row.items.length > 0)
-                  return (
-                    <tr
-                      key={row.id}
-                      className={`border-b border-slate-100 last:border-b-0 ${
-                        hasItems
-                          ? 'cursor-pointer border-l-2 border-l-orange-400 bg-orange-50/40 hover:bg-orange-50'
-                          : ''
-                      }`}
-                      onClick={() => {
-                        if (hasItems) setDetailEntry(row)
-                      }}
+        <div className="px-2.5 py-1">
+          {rows.length === 0 ? (
+            <div className="py-6" aria-hidden="true" />
+          ) : (
+            <ul className="divide-y divide-slate-100/80">
+              {rows.map((row) => {
+                const noteText = row.note.trim()
+                const hasItems = Boolean(row.items && row.items.length > 0)
+                return (
+                  <li
+                    key={row.id}
+                    className={`group flex items-center gap-2 px-0.5 py-1.5 text-[12px] leading-none transition-colors hover:bg-slate-50/90 ${
+                      editingId === row.id ? 'bg-amber-50/80 hover:bg-amber-50' : ''
+                    } ${hasItems ? 'cursor-pointer' : ''}`}
+                    onClick={() => {
+                      if (hasItems) setDetailEntry(row)
+                    }}
+                  >
+                    <span className="w-[2.75rem] shrink-0 tabular-nums text-[11px] text-slate-400">
+                      {formatSettlementDate(row.timestamp)}
+                    </span>
+                    <span className="w-[4.25rem] shrink-0 text-right font-medium tabular-nums text-rose-600">
+                      −{formatTwd(row.amountTwd)}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
+                      {noteText}
+                      {hasItems ? (
+                        <span className="ml-1 text-orange-400/80">·</span>
+                      ) : null}
+                    </span>
+                    <div
+                      className="shrink-0 opacity-70 transition-opacity group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                      onClick={(event) => event.stopPropagation()}
                     >
-                      <td className="px-3 py-2 tabular-nums text-slate-600">
-                        {formatTableDateTime(row.timestamp)}
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium tabular-nums text-rose-600">
-                        −{formatTwd(row.amountTwd)}
-                      </td>
-                      <td className="truncate px-3 py-2 text-slate-700">
-                        {row.note.trim() || '—'}
-                      </td>
-                      <td
-                        className="px-1 py-1"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <RowActionButtons
-                          compact
-                          onEdit={() => handleEdit(row)}
-                          onDelete={() => onDelete(row.id)}
-                        />
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                      <RowActionButtons
+                        compact
+                        onEdit={() => handleEdit(row)}
+                        onDelete={() => onDelete(row.id)}
+                      />
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+
+        {rows.length > 0 && (
+          <div className="flex items-center justify-end border-t border-slate-100 bg-slate-50/60 px-3 py-2">
+            <span className="text-sm font-semibold tabular-nums tracking-tight text-rose-600">
+              −{formatTwd(total)}
+            </span>
           </div>
         )}
-      </div>
-
-      <div className="rounded-lg border border-orange-200 bg-orange-50/80 px-3 py-2 shadow-sm">
-        <div className="flex items-baseline justify-between gap-3">
-          <div>
-            <p className="text-[10px] text-orange-700/70">共 {rows.length} 筆</p>
-          </div>
-          <p className="text-base font-bold tabular-nums text-rose-600">
-            −{formatTwd(total)}
-          </p>
-        </div>
       </div>
 
       {detailEntry && (
@@ -3672,52 +3644,54 @@ export function CumulativeExpensesPanel({
           onClick={() => setDetailEntry(null)}
         >
           <div
-            className="max-h-[80vh] w-full max-w-md overflow-hidden rounded-xl bg-white shadow-xl"
+            className="max-h-[80vh] w-full max-w-sm overflow-hidden rounded-xl bg-white shadow-lg"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 px-4 py-3">
+            <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 px-3 py-2.5">
               <div>
                 <h2
                   id="cumulative-expense-detail-title"
-                  className="text-sm font-semibold tabular-nums text-slate-800"
+                  className="text-[13px] font-semibold tabular-nums text-slate-800"
                 >
-                  {formatTableDateTime(detailEntry.timestamp)}
+                  {formatSettlementDate(detailEntry.timestamp)}
                 </h2>
-                <p className="mt-0.5 text-[10px] text-slate-500">
-                  #{detailItems.length}
-                  {detailEntry.note.trim() ? ` · ${detailEntry.note.trim()}` : ''}
-                </p>
+                {detailEntry.note.trim() ? (
+                  <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                    {detailEntry.note.trim()}
+                  </p>
+                ) : null}
               </div>
-              <p className="text-sm font-bold tabular-nums text-rose-600">
+              <p className="text-sm font-semibold tabular-nums text-rose-600">
                 −{formatTwd(detailEntry.amountTwd)}
               </p>
             </div>
-            <div className="max-h-[50vh] overflow-y-auto px-4 py-2">
-              <table className="w-full text-left text-xs">
-                <tbody>
-                  {detailItems.map((item, index) => (
-                    <tr key={`${detailEntry.id}-${index}`} className="border-b border-slate-50 last:border-b-0">
-                      <td className="py-1.5 tabular-nums text-slate-600">
-                        {formatTableDateTime(item.timestamp)}
-                      </td>
-                      <td className="py-1.5 text-right font-medium tabular-nums text-rose-600">
-                        −{formatTwd(item.amountTwd)}
-                      </td>
-                      <td className="max-w-[8rem] truncate py-1.5 pl-2 text-slate-600">
-                        {item.note.trim() || '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="max-h-[50vh] overflow-y-auto px-3 py-1">
+              <ul className="divide-y divide-slate-100/80">
+                {detailItems.map((item, index) => (
+                  <li
+                    key={`${detailEntry.id}-${index}`}
+                    className="flex items-center gap-2 py-1.5 text-[12px] leading-none"
+                  >
+                    <span className="w-[2.75rem] shrink-0 tabular-nums text-[11px] text-slate-400">
+                      {formatSettlementDate(item.timestamp)}
+                    </span>
+                    <span className="w-[4.25rem] shrink-0 text-right font-medium tabular-nums text-rose-600">
+                      −{formatTwd(item.amountTwd)}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
+                      {item.note.trim()}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <div className="flex justify-end border-t border-slate-100 px-4 py-3">
+            <div className="flex justify-end border-t border-slate-100 px-3 py-2">
               <button
                 type="button"
                 onClick={() => setDetailEntry(null)}
-                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
               >
-                Close
+                C
               </button>
             </div>
           </div>
@@ -3729,18 +3703,30 @@ export function CumulativeExpensesPanel({
 
 export function OpeningBalanceModal({
   open,
-  currentBalances,
+  liveBalances,
   form,
   error,
   onFieldChange,
   onCancel,
   onConfirm,
 }: OpeningBalanceModalProps) {
+  const [zeroConfirmOpen, setZeroConfirmOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) setZeroConfirmOpen(false)
+  }, [open])
+
   if (!open) return null
 
   const fieldClass =
     'mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1.5 text-[13px] tabular-nums text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 sm:text-sm'
   const labelClass = 'text-[10px] font-medium text-slate-500'
+
+  const liveTwd = coerceDisplayZeroBalance(liveBalances.twd, 'twd')
+  const liveUsdt = coerceDisplayZeroBalance(liveBalances.usdt, 'usdt')
+  const liveVn = coerceDisplayZeroBalance(liveBalances.vn, 'vn')
+  const canZeroTwd = liveTwd > 0
+  const zeroAdjust = formatTwdAdjustToZero(liveTwd)
 
   const twdAdjust = parseTwdAdjustInput(form.twdAdjust)
   const usdtAdjust = parseUsdtAdjustInput(form.usdtAdjust)
@@ -3752,11 +3738,16 @@ export function OpeningBalanceModal({
   const previewBalances =
     twdAdjust !== 'invalid' && usdtAdjust !== 'invalid' && vnAdjust !== 'invalid'
       ? {
-          twd: currentBalances.twd + twdAdjust,
-          usdt: currentBalances.usdt + usdtAdjust,
-          vn: currentBalances.vn + vnAdjust,
+          twd: liveTwd + twdAdjust,
+          usdt: liveUsdt + usdtAdjust,
+          vn: liveVn + vnAdjust,
         }
       : null
+  const previewNegative =
+    previewBalances !== null &&
+    ((twdAdjust !== 0 && twdAdjust !== 'invalid' && previewBalances.twd < 0) ||
+      (usdtAdjust !== 0 && usdtAdjust !== 'invalid' && previewBalances.usdt < 0) ||
+      (vnAdjust !== 0 && vnAdjust !== 'invalid' && previewBalances.vn < 0))
 
   return (
     <div
@@ -3774,22 +3765,33 @@ export function OpeningBalanceModal({
           <div className="grid grid-cols-3 gap-2 text-[13px] tabular-nums text-slate-800 sm:text-sm">
             <div>
               <span className={labelClass}>T</span>
-              <p className="font-medium">{formatTwdCompactInput(currentBalances.twd)}</p>
+              <p className="font-medium">{formatTwdCompactInput(liveTwd)}</p>
             </div>
             <div>
               <span className={labelClass}>P</span>
-              <p className="font-medium">{formatNumber(currentBalances.usdt)}</p>
+              <p className="font-medium">{formatNumber(liveUsdt)}</p>
             </div>
             <div>
               <span className={labelClass}>VN</span>
-              <p className="font-medium">{formatVnCompactInput(currentBalances.vn)}</p>
+              <p className="font-medium">{formatVnCompactInput(liveVn)}</p>
             </div>
           </div>
         </div>
 
         <div className="mt-3 grid grid-cols-3 gap-2">
-          <label className={labelClass}>
-            T +/-
+          <div>
+            <div className="flex items-center justify-between gap-1">
+              <span className={labelClass}>T +/-</span>
+              <button
+                type="button"
+                disabled={!canZeroTwd}
+                title={canZeroTwd ? 'T 歸零' : 'T 已是 0'}
+                onClick={() => setZeroConfirmOpen(true)}
+                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                歸零
+              </button>
+            </div>
             <input
               type="text"
               inputMode="decimal"
@@ -3798,7 +3800,7 @@ export function OpeningBalanceModal({
               onChange={(event) => onFieldChange('twdAdjust', event.target.value)}
               className={fieldClass}
             />
-          </label>
+          </div>
           <label className={labelClass}>
             P +/-
             <input
@@ -3824,22 +3826,79 @@ export function OpeningBalanceModal({
         </div>
 
         {hasAdjustInput && previewBalances && (
-          <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2">
-            <p className="text-[10px] font-medium text-indigo-700">調整後期初</p>
-            <div className="mt-1 grid grid-cols-3 gap-2 text-[13px] tabular-nums text-indigo-900 sm:text-sm">
+          <div
+            className={`mt-3 rounded-lg border px-3 py-2 ${
+              previewNegative
+                ? 'border-rose-200 bg-rose-50/60'
+                : 'border-indigo-200 bg-indigo-50/60'
+            }`}
+          >
+            <p
+              className={`text-[10px] font-medium ${
+                previewNegative ? 'text-rose-700' : 'text-indigo-700'
+              }`}
+            >
+              調整後水位
+            </p>
+            <div
+              className={`mt-1 grid grid-cols-3 gap-2 text-[13px] tabular-nums sm:text-sm ${
+                previewNegative ? 'text-rose-900' : 'text-indigo-900'
+              }`}
+            >
               <div>
-                <span className="text-[10px] font-medium text-indigo-600">T</span>
-                <p className="font-medium">{formatTwdCompactInput(previewBalances.twd)}</p>
+                <span
+                  className={`text-[10px] font-medium ${
+                    previewBalances.twd < 0 ? 'text-rose-600' : previewNegative ? 'text-rose-600' : 'text-indigo-600'
+                  }`}
+                >
+                  T
+                </span>
+                <p className={`font-medium ${previewBalances.twd < 0 ? 'text-rose-600' : ''}`}>
+                  {formatTwdCompactInput(previewBalances.twd)}
+                </p>
               </div>
               <div>
-                <span className="text-[10px] font-medium text-indigo-600">P</span>
-                <p className="font-medium">{formatNumber(previewBalances.usdt)}</p>
+                <span
+                  className={`text-[10px] font-medium ${
+                    previewBalances.usdt < 0 ? 'text-rose-600' : previewNegative ? 'text-rose-600' : 'text-indigo-600'
+                  }`}
+                >
+                  P
+                </span>
+                <p className={`font-medium ${previewBalances.usdt < 0 ? 'text-rose-600' : ''}`}>
+                  {formatNumber(previewBalances.usdt)}
+                </p>
               </div>
               <div>
-                <span className="text-[10px] font-medium text-indigo-600">VN</span>
-                <p className="font-medium">{formatVnCompactInput(previewBalances.vn)}</p>
+                <span
+                  className={`text-[10px] font-medium ${
+                    previewBalances.vn < 0 ? 'text-rose-600' : previewNegative ? 'text-rose-600' : 'text-indigo-600'
+                  }`}
+                >
+                  VN
+                </span>
+                <p className={`font-medium ${previewBalances.vn < 0 ? 'text-rose-600' : ''}`}>
+                  {formatVnCompactInput(previewBalances.vn)}
+                </p>
               </div>
             </div>
+            {previewNegative && (
+              <p className="mt-1.5 text-[11px] text-rose-600">
+                {[
+                  twdAdjust !== 0 && previewBalances.twd < 0
+                    ? `T 不夠扣（目前 ${formatTwdCompactInput(liveTwd)}）`
+                    : null,
+                  usdtAdjust !== 0 && previewBalances.usdt < 0
+                    ? `P 不夠扣（目前 ${formatNumber(liveUsdt)}）`
+                    : null,
+                  vnAdjust !== 0 && previewBalances.vn < 0
+                    ? `VN 不夠扣（目前 ${formatVnCompactInput(liveVn)}）`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join('；')}
+              </p>
+            )}
           </div>
         )}
 
@@ -3909,6 +3968,44 @@ export function OpeningBalanceModal({
           </button>
         </div>
       </div>
+
+      {zeroConfirmOpen && (
+        <div
+          className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="zero-twd-confirm-title"
+        >
+          <div className="w-full max-w-[13.5rem] rounded-lg bg-white px-3 py-2.5 shadow-lg">
+            <h3 id="zero-twd-confirm-title" className="sr-only">
+              確認 T 歸零
+            </h3>
+            <p className="text-[13px] font-semibold tabular-nums text-slate-900">
+              T {formatTwdCompactInput(liveTwd)}
+            </p>
+            <p className="mt-0.5 text-[12px] text-slate-500">→ 0</p>
+            <div className="mt-2.5 flex justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => setZeroConfirmOpen(false)}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+              >
+                C
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onFieldChange('twdAdjust', zeroAdjust)
+                  setZeroConfirmOpen(false)
+                }}
+                className="rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-indigo-700"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

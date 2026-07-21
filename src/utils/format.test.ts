@@ -4,6 +4,8 @@ import {
   formatExpenseTwdInput,
   formatTwdCompactInput,
   formatVnCompactInput,
+  coerceDisplayZeroBalance,
+  formatTwdAdjustToZero,
   parseExpenseTwdInput,
   parseTwdTableCompactInput,
   parseVnTableCompactInput,
@@ -25,6 +27,33 @@ describe('compact input parsing', () => {
   it('allows zero for opening balance', () => {
     expect(parseTwdTableCompactInput('0', true)).toBe(0)
     expect(parseVnTableCompactInput('0', true)).toBe(0)
+  })
+})
+
+describe('coerceDisplayZeroBalance', () => {
+  it('keeps positive balances', () => {
+    expect(coerceDisplayZeroBalance(112_595, 'usdt')).toBe(112_595)
+    expect(coerceDisplayZeroBalance(20_000, 'twd')).toBe(20_000)
+  })
+
+  it('coerces tiny negative T that displays as 0.00 to 0', () => {
+    expect(coerceDisplayZeroBalance(-30, 'twd')).toBe(0)
+    expect(coerceDisplayZeroBalance(-49, 'twd')).toBe(0)
+  })
+
+  it('keeps visibly negative T', () => {
+    expect(coerceDisplayZeroBalance(-50_000, 'twd')).toBe(-50_000)
+  })
+})
+
+describe('formatTwdAdjustToZero', () => {
+  it('formats live T cash as compact negative adjust', () => {
+    expect(formatTwdAdjustToZero(714_100)).toBe('-71.41')
+  })
+
+  it('returns empty when T is already zero', () => {
+    expect(formatTwdAdjustToZero(0)).toBe('')
+    expect(formatTwdAdjustToZero(-20)).toBe('')
   })
 })
 
