@@ -248,7 +248,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
     event.preventDefault()
     if (!pin.trim() || busy) return
 
-    const submitted = pin
+    const submitted = pin.trim()
     setBusy(true)
     setError(false)
     void loginWithPinAsync(submitted).then((result) => {
@@ -258,6 +258,9 @@ export function AccessGate({ children }: { children: ReactNode }) {
         setPin('')
         setAuthed(true)
         return
+      }
+      if (result.error !== 'pin') {
+        console.warn('[access] login failed:', result.error)
       }
       setError(true)
       setPin('')
