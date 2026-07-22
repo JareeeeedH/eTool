@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { loginWithPinAsync } from '../api/auth'
 import {
   DEVICE_LOCK_MS,
   isDeviceAuthed,
@@ -6,7 +7,6 @@ import {
   markDeviceHidden,
   syncDeviceAuthState,
   touchDeviceActivity,
-  verifyAccessPin,
 } from '../auth/deviceAccess'
 
 const LOCK_CHECK_INTERVAL_MS = 30_000
@@ -165,6 +165,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
   const [authed, setAuthed] = useState(() => isDeviceAuthed())
   const [pin, setPin] = useState('')
   const [error, setError] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [focused, setFocused] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -208,10 +209,12 @@ export function AccessGate({ children }: { children: ReactNode }) {
     document.addEventListener('visibilitychange', onVisibilityChange)
     window.addEventListener('pageshow', onPageShow)
     window.addEventListener('pagehide', onPageHide)
+    window.addEventListener('pev:unauthorized', syncAuth)
     return () => {
       document.removeEventListener('visibilitychange', onVisibilityChange)
       window.removeEventListener('pageshow', onPageShow)
       window.removeEventListener('pagehide', onPageHide)
+      window.removeEventListener('pev:unauthorized', syncAuth)
     }
   }, [])
 
@@ -243,18 +246,23 @@ export function AccessGate({ children }: { children: ReactNode }) {
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
-    if (!pin.trim()) return
+    if (!pin.trim() || busy) return
 
-    if (verifyAccessPin(pin)) {
-      markDeviceAuthed()
-      setError(false)
+    const submitted = pin
+    setBusy(true)
+    setError(false)
+    void loginWithPinAsync(submitted).then((result) => {
+      setBusy(false)
+      if (result.ok) {
+        markDeviceAuthed()
+        setPin('')
+        setAuthed(true)
+        return
+      }
+      setError(true)
       setPin('')
-      setAuthed(true)
-      return
-    }
-    setError(true)
-    setPin('')
-    inputRef.current?.focus()
+      inputRef.current?.focus()
+    })
   }
 
   if (authed) {
@@ -288,6 +296,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
               autoComplete="off"
               maxLength={16}
               value={pin}
+              disabled={busy}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
               onChange={(event) => {

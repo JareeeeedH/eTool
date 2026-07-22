@@ -1,16 +1,18 @@
 /**
  * 持久化：僅 exchange-api（GET/PUT /api/state）。
- * 需在 .env 設定 VITE_API_BASE_URL、VITE_API_TOKEN。
+ * 需在 .env 設定 VITE_API_BASE_URL；Bearer 來自 PIN 登入後的短效 session。
  */
+
+import { apiAuthHeaders, noteUnauthorizedStatus } from './api/http'
+import { getApiSessionToken } from './auth/sessionToken'
 
 const STORAGE_VERSION = 1
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
-const API_TOKEN = import.meta.env.VITE_API_TOKEN ?? ''
 
 export function getPersistenceConfigError(): string | null {
   if (!API_BASE_URL) return '請在 .env 設定 VITE_API_BASE_URL'
-  if (!API_TOKEN) return '請在 .env 設定 VITE_API_TOKEN'
+  if (!getApiSessionToken()) return '請先登入'
   return null
 }
 
@@ -25,10 +27,7 @@ export function canResetAllLocally(): boolean {
 }
 
 function apiHeaders(): HeadersInit {
-  return {
-    Authorization: `Bearer ${API_TOKEN}`,
-    'Content-Type': 'application/json',
-  }
+  return apiAuthHeaders()
 }
 
 export type LoadPersistedResult =
@@ -651,9 +650,10 @@ export async function loadPersistedAppStateAsync(): Promise<LoadPersistedResult>
 
   try {
     const res = await fetch(`${API_BASE_URL}/api/state`, {
-      headers: { Authorization: `Bearer ${API_TOKEN}` },
+      headers: apiHeaders(),
     })
     if (!res.ok) {
+      noteUnauthorizedStatus(res.status)
       return { ok: false, error: `讀取失敗（HTTP ${res.status}），請確認後端已啟動` }
     }
 
@@ -682,6 +682,7 @@ export async function savePersistedAppStateAsync(state: PersistedAppState): Prom
       body: JSON.stringify(state),
     })
     if (!res.ok) {
+      noteUnauthorizedStatus(res.status)
       let detail = ''
       try {
         detail = await res.text()
@@ -718,6 +719,7 @@ export async function pullProdStateToLocalAsync(): Promise<
     })
     if (res.ok) return { ok: true }
 
+    noteUnauthorizedStatus(res.status)
     let message = `拉取失敗（HTTP ${res.status}）`
     try {
       const body: unknown = await res.json()

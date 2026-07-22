@@ -1,3 +1,5 @@
+import { clearApiSessionToken, getApiSessionToken, hasValidApiSession } from './sessionToken'
+
 const DEVICE_AUTH_KEY = 'exchange.deviceAuth'
 
 /** PIN 重新驗證間隔：背景／閒置／最長停留（毫秒） */
@@ -68,9 +70,14 @@ function isRecordExpired(record: DeviceAuthRecord): boolean {
 
 export function clearDeviceAuth(): void {
   localStorage.removeItem(DEVICE_AUTH_KEY)
+  clearApiSessionToken()
 }
 
 export function isDeviceAuthed(): boolean {
+  if (!hasValidApiSession()) {
+    localStorage.removeItem(DEVICE_AUTH_KEY)
+    return false
+  }
   const record = readRecord()
   if (!record) return false
   if (isRecordExpired(record)) {
@@ -111,9 +118,13 @@ export function markDeviceHidden(): void {
 
 /**
  * App 回到前景：若未超過鎖定時間則維持登入。
- * @returns 是否仍視為已驗證
+ * @returns 是否視為已驗證
  */
 export function resumeDeviceAuth(): boolean {
+  if (!hasValidApiSession()) {
+    clearDeviceAuth()
+    return false
+  }
   const record = readRecord()
   if (!record) return false
   if (isRecordExpired(record)) {
@@ -131,11 +142,24 @@ export function syncDeviceAuthState(): boolean {
   return resumeDeviceAuth()
 }
 
+/** @deprecated PIN 改由後端驗證；保留給舊測試轉接 */
 export function getAccessPin(): string {
-  const fromEnv = import.meta.env.VITE_ACCESS_PIN?.trim()
-  return fromEnv || 'pev0808'
+  return ''
 }
 
-export function verifyAccessPin(pin: string): boolean {
-  return pin === getAccessPin()
+/** @deprecated 請改用 loginWithPinAsync */
+export function verifyAccessPin(_pin: string): boolean {
+  return false
+}
+
+/** API 回 401 時清掉本機會話 */
+export function handleApiUnauthorized(): void {
+  clearDeviceAuth()
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('pev:unauthorized'))
+  }
+}
+
+export function peekApiSessionToken(): string | null {
+  return getApiSessionToken()
 }

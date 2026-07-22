@@ -859,18 +859,7 @@ function App() {
     }
 
     const updatedTransactions = buildUpdatedList(transactions)
-    const validationError = validateTransactions(
-      updatedTransactions,
-      openingBalances,
-      lastTradeSettledAt,
-      openingUsdtCabinA,
-      openingUsdtCabinB,
-    )
-    if (validationError) {
-      setExpenseError(validationError)
-      return
-    }
-
+    // 進行中開銷僅紀錄，不參與庫存重算／驗證（與 domain 註解一致）
     setTransactions(updatedTransactions)
     resetExpenseForm()
   }

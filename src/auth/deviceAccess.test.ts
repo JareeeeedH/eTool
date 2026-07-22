@@ -6,8 +6,8 @@ import {
   markDeviceHidden,
   resumeDeviceAuth,
   touchDeviceActivity,
-  verifyAccessPin,
 } from './deviceAccess'
+import { setApiSessionToken } from './sessionToken'
 
 const storage = new Map<string, string>()
 
@@ -24,12 +24,17 @@ function installLocalStorageMock(): void {
   })
 }
 
+function seedSession(ttlMs = DEVICE_LOCK_MS * 10): void {
+  setApiSessionToken('test-session-token', Date.now() + ttlMs)
+}
+
 describe('deviceAccess lock windows', () => {
   beforeEach(() => {
     storage.clear()
     installLocalStorageMock()
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-07-07T00:00:00Z'))
+    seedSession()
   })
 
   afterEach(() => {
@@ -87,10 +92,10 @@ describe('deviceAccess lock windows', () => {
     )
     expect(isDeviceAuthed()).toBe(false)
   })
-})
 
-describe('verifyAccessPin', () => {
-  it('accepts configured pin', () => {
-    expect(verifyAccessPin('pev0808')).toBe(true)
+  it('requires re-auth when api session is missing', () => {
+    markDeviceAuthed()
+    localStorage.removeItem('exchange.apiSession')
+    expect(isDeviceAuthed()).toBe(false)
   })
 })
