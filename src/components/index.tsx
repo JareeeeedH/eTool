@@ -3736,7 +3736,8 @@ export function OpeningBalanceModal({
   const previewBalances =
     twdAdjust !== 'invalid' && usdtAdjust !== 'invalid' && vnAdjust !== 'invalid'
       ? {
-          twd: liveTwd + twdAdjust,
+          // 顯示為 0.00 的微小誤差視為已歸零
+          twd: coerceDisplayZeroBalance(liveTwd + twdAdjust, 'twd'),
           usdt: liveUsdt + usdtAdjust,
           vn: liveVn + vnAdjust,
         }

@@ -154,16 +154,27 @@ export function coerceDisplayZeroBalance(
   return value
 }
 
-/** 產生可把目前 T 現金歸零的期初調整字串（萬位，例如 -71.41） */
+/** 產生可把目前 T 現金歸零的期初調整字串（精確萬位，不四捨五入到小數第二位） */
 export function formatTwdAdjustToZero(liveTwd: number): string {
   const value = coerceDisplayZeroBalance(liveTwd, 'twd')
   if (value <= 0) return ''
-  return `-${formatTwdCompactInput(value)}`
+  // 1 元 = 0.0001 萬；保留到小數第四位，儲存後可還原成精確台幣
+  const wan = (value / TWD_TABLE_COMPACT_UNIT).toFixed(4).replace(/\.?0+$/, '')
+  return `-${wan}`
+}
+
+/** 期初 T 增減幅度：萬位 → 台幣（保留輸入精度，供歸零精確扣盡） */
+function parseTwdAdjustMagnitude(raw: string, allowZero: boolean): number | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  const n = Number(trimmed)
+  if (Number.isNaN(n) || n < 0 || (!allowZero && n <= 0)) return null
+  return Math.round(n * TWD_TABLE_COMPACT_UNIT)
 }
 
 /** 期初 T 增減：支援 +20（萬）格式 */
 export function parseTwdAdjustInput(value: string): ParseAdjustResult {
-  return parseSignedCompactAdjust(value, parseTwdTableCompactInput)
+  return parseSignedCompactAdjust(value, parseTwdAdjustMagnitude)
 }
 
 /** 期初 VN 增減：支援 +1.2（億）格式 */

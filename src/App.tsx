@@ -1780,16 +1780,29 @@ function App() {
       return null
     }
 
-    const twd = coerceDisplayZeroBalance(openingBalances.twd, 'twd') + twdAdjust
+    const openingTwdBase = coerceDisplayZeroBalance(openingBalances.twd, 'twd')
+    const liveTwdBase = coerceDisplayZeroBalance(balances.twd, 'twd')
+    // 顯示為 0.00 的微小負數視為歸零（扣盡），避免萬位四捨五入擋住儲存
+    let effectiveTwdAdjust = twdAdjust
+    let nextLiveTwd = liveTwdBase + twdAdjust
+    if (
+      twdAdjust !== 0 &&
+      nextLiveTwd < 0 &&
+      coerceDisplayZeroBalance(nextLiveTwd, 'twd') === 0
+    ) {
+      effectiveTwdAdjust = -liveTwdBase
+      nextLiveTwd = 0
+    }
+
+    const twd = openingTwdBase + effectiveTwdAdjust
     const usdt = coerceDisplayZeroBalance(openingBalances.usdt, 'usdt') + usdtAdjust
     const vn = coerceDisplayZeroBalance(openingBalances.vn, 'vn') + vnAdjust
 
     // 以「目前水位」判斷夠不夠扣（賣出換來的現金也可歸零）
-    const nextLiveTwd = coerceDisplayZeroBalance(balances.twd, 'twd') + twdAdjust
     const nextLiveUsdt = coerceDisplayZeroBalance(balances.usdt, 'usdt') + usdtAdjust
     const nextLiveVn = coerceDisplayZeroBalance(balances.vn, 'vn') + vnAdjust
     const parts: string[] = []
-    if (twdAdjust !== 0 && nextLiveTwd < 0) {
+    if (twdAdjust !== 0 && coerceDisplayZeroBalance(nextLiveTwd, 'twd') < 0) {
       parts.push(`T 最多可扣至 0（目前 ${formatTwdCompactInput(balances.twd)}）`)
     }
     if (usdtAdjust !== 0 && nextLiveUsdt < 0) {

@@ -7,6 +7,7 @@ import {
   coerceDisplayZeroBalance,
   formatTwdAdjustToZero,
   parseExpenseTwdInput,
+  parseTwdAdjustInput,
   parseTwdTableCompactInput,
   parseVnTableCompactInput,
   timestampForNewTrade,
@@ -49,6 +50,13 @@ describe('coerceDisplayZeroBalance', () => {
 describe('formatTwdAdjustToZero', () => {
   it('formats live T cash as compact negative adjust', () => {
     expect(formatTwdAdjustToZero(714_100)).toBe('-71.41')
+  })
+
+  it('keeps exact wan precision so round-trip zeros live T', () => {
+    const live = 1_638_555
+    const adjust = formatTwdAdjustToZero(live)
+    expect(adjust).toBe('-163.8555')
+    expect(parseTwdAdjustInput(adjust)).toBe(-live)
   })
 
   it('returns empty when T is already zero', () => {
