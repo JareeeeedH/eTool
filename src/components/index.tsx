@@ -3,6 +3,7 @@ import type {
   AppNavProps,
   CabinAllocModalProps,
   CabinRebalanceModalProps,
+  OpeningUsdtCabinPickModalProps,
   ConfirmModalProps,
   DailyBalanceStripProps,
   DailyTradeSettleBarProps,
@@ -719,6 +720,129 @@ export function CabinRebalanceModal({
       onCancel={onCancel}
       onConfirm={onConfirm}
     />
+  )
+}
+
+export function OpeningUsdtCabinPickModal({
+  open,
+  adjust,
+  cabins,
+  onCancel,
+  onConfirm,
+}: OpeningUsdtCabinPickModalProps) {
+  const [selected, setSelected] = useState<UsdtCabin | null>(null)
+  const [localError, setLocalError] = useState('')
+
+  useEffect(() => {
+    if (!open) {
+      setSelected(null)
+      setLocalError('')
+    }
+  }, [open])
+
+  if (!open) return null
+
+  const isOut = adjust < 0
+  const absAdjust = Math.abs(adjust)
+  const cabinBal = (cabin: UsdtCabin) =>
+    cabin === 'A' ? cabins.a : cabin === 'B' ? cabins.b : cabins.c
+  const canUse = (cabin: UsdtCabin) => !isOut || cabinBal(cabin) + adjust >= -1e-9
+
+  const cabinTone: Record<UsdtCabin, string> = {
+    A: 'border-sky-200 bg-sky-50 text-sky-800',
+    B: 'border-violet-200 bg-violet-50 text-violet-800',
+    C: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  }
+  const cabinSelectedTone: Record<UsdtCabin, string> = {
+    A: 'border-sky-500 ring-2 ring-sky-500/30',
+    B: 'border-violet-500 ring-2 ring-violet-500/30',
+    C: 'border-emerald-500 ring-2 ring-emerald-500/30',
+  }
+
+  const handleConfirm = () => {
+    if (!selected) {
+      setLocalError('請選擇艙位')
+      return
+    }
+    if (!canUse(selected)) {
+      setLocalError(`${selected} 不夠扣（目前 ${formatNumber(cabinBal(selected))}）`)
+      return
+    }
+    onConfirm(selected)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="選擇艙位"
+    >
+      <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+        <h2 className="text-sm font-semibold text-slate-900">選擇艙位</h2>
+        <p className="mt-1 text-[13px] tabular-nums text-slate-600">
+          P {adjust > 0 ? '+' : adjust < 0 ? '−' : ''}
+          {formatNumber(absAdjust)}
+        </p>
+
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {(['A', 'B', 'C'] as const).map((cabin) => {
+            const bal = cabinBal(cabin)
+            const enabled = canUse(cabin)
+            const isSelected = selected === cabin
+            const nextBal = bal + adjust
+            return (
+              <button
+                key={cabin}
+                type="button"
+                disabled={!enabled}
+                onClick={() => {
+                  setSelected(cabin)
+                  setLocalError('')
+                }}
+                className={`rounded-lg border px-2 py-2.5 text-left transition ${
+                  enabled ? cabinTone[cabin] : 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400'
+                } ${isSelected && enabled ? cabinSelectedTone[cabin] : ''} ${
+                  enabled && !isSelected ? 'hover:brightness-[0.98]' : ''
+                }`}
+              >
+                <span className="block text-[11px] font-semibold">{cabin}</span>
+                <span className="mt-0.5 block text-[12px] font-medium tabular-nums">
+                  {formatNumber(bal)}
+                </span>
+                {enabled && (
+                  <span className="mt-0.5 block text-[10px] tabular-nums opacity-70">
+                    → {formatNumber(nextBal)}
+                  </span>
+                )}
+                {!enabled && (
+                  <span className="mt-0.5 block text-[10px] text-rose-500">不夠</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {localError && <p className="mt-2 text-[11px] text-rose-600">{localError}</p>}
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            C
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

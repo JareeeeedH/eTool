@@ -315,6 +315,16 @@ export interface CabinRebalanceModalProps {
   onConfirm: (targetCabinA: number, targetCabinB: number) => void
 }
 
+/** 期初 P 增減：挑選作用艙位 */
+export interface OpeningUsdtCabinPickModalProps {
+  open: boolean
+  /** 有號增減量，例如 +1000 / -500 */
+  adjust: number
+  cabins: { a: number; b: number; c: number }
+  onCancel: () => void
+  onConfirm: (cabin: UsdtCabin) => void
+}
+
 
 export interface DailyTradeSettleBarProps {
   tradeCount: number

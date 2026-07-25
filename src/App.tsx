@@ -25,6 +25,7 @@ import type {
   PageTab,
   Transaction,
   TransactionType,
+  UsdtCabin,
   UsdtInventoryCost,
   UsdtTransaction,
   VnPayCurrency,
@@ -43,7 +44,7 @@ import {
   formatRateDeviationConfirmTitle,
 } from './utils/rateSanity'
 import {
-  adjustOpeningUsdtCabins,
+  applyOpeningUsdtDeltaToCabin,
   buildDeleteConfirmLines,
   buildTradeSettleConfirmSummary,
   calculateBuyDayAverageRate,
@@ -120,6 +121,7 @@ import {
   MonthlyClosesList,
   NotebookPanel,
   OpeningBalanceModal,
+  OpeningUsdtCabinPickModal,
   SettlementsPanel,
   TradeForm,
   TransactionTable,
@@ -243,6 +245,7 @@ function App() {
 
   const [openingBalanceModalOpen, setOpeningBalanceModalOpen] = useState(false)
   const [cabinRebalanceModalOpen, setCabinRebalanceModalOpen] = useState(false)
+  const [openingUsdtCabinPickAdjust, setOpeningUsdtCabinPickAdjust] = useState<number | null>(null)
   const [openingBalanceForm, setOpeningBalanceForm] = useState<OpeningBalanceForm>(() =>
     openingBalanceToForm({ ...EMPTY_USDT_COST }, null, null),
   )
@@ -1864,24 +1867,97 @@ function App() {
     }
   }
 
-  const executeApplyOpeningBalance = () => {
+  const executeApplyOpeningBalance = (cabin: UsdtCabin | null) => {
     const parsed = parseOpeningBalanceForm()
     if (!parsed) return
 
-    const nextCabins = adjustOpeningUsdtCabins(
-      openingBalances.usdt,
-      openingUsdtCabinA,
-      openingUsdtCabinB,
-      parsed.balances.usdt,
-    )
-    setOpeningUsdtCabinA(nextCabins.a)
-    setOpeningUsdtCabinB(nextCabins.b)
+    const usdtAdjust = parseUsdtAdjustInput(openingBalanceForm.usdtAdjust)
+    if (usdtAdjust === 'invalid') return
+
+    if (usdtAdjust !== 0) {
+      if (!cabin) {
+        setOpeningBalanceError('請選擇 P 增減的艙位')
+        setOpeningBalanceModalOpen(true)
+        return
+      }
+      const nextLiveUsdt =
+        coerceDisplayZeroBalance(balances.usdt, 'usdt') + usdtAdjust
+      const cabinResult = applyOpeningUsdtDeltaToCabin(
+        openingUsdtCabinA,
+        openingUsdtCabinB,
+        usdtCabinBalances,
+        usdtAdjust,
+        cabin,
+        nextLiveUsdt,
+      )
+      if (!cabinResult.ok) {
+        setOpeningBalanceError(cabinResult.error)
+        setOpeningBalanceModalOpen(true)
+        return
+      }
+      setOpeningUsdtCabinA(cabinResult.a)
+      setOpeningUsdtCabinB(cabinResult.b)
+    }
+
     setOpeningBalances(parsed.balances)
     setOpeningUsdtCost(parsed.usdtCost)
     setOpeningVnTwdRate(parsed.vnTwdRate)
     setOpeningVnUsdtRate(parsed.vnUsdtRate)
     setOpeningBalanceModalOpen(false)
     setOpeningBalanceError('')
+    setOpeningUsdtCabinPickAdjust(null)
+    handleSelectTab('daily')
+  }
+
+  const promptOpeningBalanceConfirm = (cabin: UsdtCabin | null) => {
+    const parsed = parseOpeningBalanceForm()
+    if (!parsed) return
+
+    const changes: string[] = []
+    if (parsed.balances.twd !== openingBalances.twd) {
+      changes.push(
+        `T ${formatTwdCompactInput(openingBalances.twd)} → ${formatTwdCompactInput(parsed.balances.twd)}`,
+      )
+    }
+    if (parsed.balances.usdt !== openingBalances.usdt) {
+      const cabinLabel = cabin ? `（${cabin}）` : ''
+      changes.push(
+        `P ${formatNumber(openingBalances.usdt)} → ${formatNumber(parsed.balances.usdt)}${cabinLabel}`,
+      )
+    }
+    if (parsed.balances.vn !== openingBalances.vn) {
+      changes.push(
+        `VN ${formatVnCompactInput(openingBalances.vn)} → ${formatVnCompactInput(parsed.balances.vn)}`,
+      )
+    }
+    const addRateChange = (label: string, before: number | null, after: number | null) => {
+      if (before !== after) changes.push(`${label} ${before ?? '—'} → ${after ?? '—'}`)
+    }
+    addRateChange('P@T', openingUsdtCost.twd, parsed.usdtCost.twd)
+    addRateChange('P@VN', openingUsdtCost.vn, parsed.usdtCost.vn)
+    addRateChange('VN@T', openingVnTwdRate, parsed.vnTwdRate)
+    addRateChange('VN@P', openingVnUsdtRate, parsed.vnUsdtRate)
+
+    if (changes.length === 0) {
+      setOpeningBalanceModalOpen(false)
+      setOpeningBalanceError('')
+      setOpeningUsdtCabinPickAdjust(null)
+      return
+    }
+
+    setOpeningUsdtCabinPickAdjust(null)
+    setOpeningBalanceModalOpen(false)
+    setConfirmDialog({
+      title: '',
+      lines: changes,
+      cancelLabel: 'C',
+      confirmLabel: 'OK',
+      variant: 'primary',
+      onConfirm: () => {
+        setConfirmDialog(null)
+        executeApplyOpeningBalance(cabin)
+      },
+    })
   }
 
   const handleRebalanceCabins = (targetCabinA: number, targetCabinB: number) => {
@@ -1903,10 +1979,11 @@ function App() {
     setOpeningUsdtCabinA(next.a)
     setOpeningUsdtCabinB(next.b)
     setCabinRebalanceModalOpen(false)
+    handleSelectTab('daily')
     // 戶轉分倉後立刻寫入 A/B/C 絕對數量，避免 debounce 內重整遺失
     void (async () => {
       const ok = await savePersistedAppStateAsync({
-        activeTab,
+        activeTab: 'daily',
         dailyWorkTab,
         openingBalances,
         openingUsdtCost,
@@ -1967,46 +2044,15 @@ function App() {
     const parsed = parseOpeningBalanceForm()
     if (!parsed) return
 
-    const changes: string[] = []
-    if (parsed.balances.twd !== openingBalances.twd) {
-      changes.push(
-        `T ${formatTwdCompactInput(openingBalances.twd)} → ${formatTwdCompactInput(parsed.balances.twd)}`,
-      )
-    }
-    if (parsed.balances.usdt !== openingBalances.usdt) {
-      changes.push(`P ${formatNumber(openingBalances.usdt)} → ${formatNumber(parsed.balances.usdt)}`)
-    }
-    if (parsed.balances.vn !== openingBalances.vn) {
-      changes.push(
-        `VN ${formatVnCompactInput(openingBalances.vn)} → ${formatVnCompactInput(parsed.balances.vn)}`,
-      )
-    }
-    const addRateChange = (label: string, before: number | null, after: number | null) => {
-      if (before !== after) changes.push(`${label} ${before ?? '—'} → ${after ?? '—'}`)
-    }
-    addRateChange('P@T', openingUsdtCost.twd, parsed.usdtCost.twd)
-    addRateChange('P@VN', openingUsdtCost.vn, parsed.usdtCost.vn)
-    addRateChange('VN@T', openingVnTwdRate, parsed.vnTwdRate)
-    addRateChange('VN@P', openingVnUsdtRate, parsed.vnUsdtRate)
+    const usdtAdjust = parseUsdtAdjustInput(openingBalanceForm.usdtAdjust)
+    if (usdtAdjust === 'invalid') return
 
-    if (changes.length === 0) {
-      setOpeningBalanceModalOpen(false)
-      setOpeningBalanceError('')
+    if (usdtAdjust !== 0) {
+      setOpeningUsdtCabinPickAdjust(usdtAdjust)
       return
     }
 
-    setOpeningBalanceModalOpen(false)
-    setConfirmDialog({
-      title: '',
-      lines: changes,
-      cancelLabel: 'C',
-      confirmLabel: 'OK',
-      variant: 'primary',
-      onConfirm: () => {
-        setConfirmDialog(null)
-        executeApplyOpeningBalance()
-      },
-    })
+    promptOpeningBalanceConfirm(null)
   }
 
   if (!ready) {
@@ -2069,8 +2115,16 @@ function App() {
         onCancel={() => {
           setOpeningBalanceModalOpen(false)
           setOpeningBalanceError('')
+          setOpeningUsdtCabinPickAdjust(null)
         }}
         onConfirm={handleSaveOpeningBalance}
+      />
+      <OpeningUsdtCabinPickModal
+        open={openingUsdtCabinPickAdjust !== null}
+        adjust={openingUsdtCabinPickAdjust ?? 0}
+        cabins={usdtCabinBalances}
+        onCancel={() => setOpeningUsdtCabinPickAdjust(null)}
+        onConfirm={(cabin) => promptOpeningBalanceConfirm(cabin)}
       />
       <CabinRebalanceModal
         open={cabinRebalanceModalOpen}

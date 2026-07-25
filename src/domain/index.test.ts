@@ -9,6 +9,7 @@ import type {
 import { roundUsdtCostRate } from '../utils/format'
 import {
   adjustOpeningUsdtCabins,
+  applyOpeningUsdtDeltaToCabin,
   buildMonthlyClose,
   buildTradeSettleConfirmSummary,
   computeInventoryCost,
@@ -881,5 +882,23 @@ describe('usdt cabin quantity (shared cost)', () => {
   it('deducts opening P decreases from cabin A before B and C', () => {
     expect(adjustOpeningUsdtCabins(100, 30, 40, 80)).toEqual({ a: 10, b: 40 })
     expect(adjustOpeningUsdtCabins(100, 30, 40, 50)).toEqual({ a: 0, b: 20 })
+  })
+
+  it('applies opening P delta to the chosen cabin', () => {
+    const current = { a: 30, b: 40, c: 30 }
+    expect(
+      applyOpeningUsdtDeltaToCabin(30, 40, current, 20, 'B', 120),
+    ).toEqual({ ok: true, a: 30, b: 60 })
+    expect(
+      applyOpeningUsdtDeltaToCabin(30, 40, current, 20, 'C', 120),
+    ).toEqual({ ok: true, a: 30, b: 40 })
+    expect(
+      applyOpeningUsdtDeltaToCabin(30, 40, current, -25, 'A', 75),
+    ).toEqual({ ok: true, a: 5, b: 40 })
+  })
+
+  it('rejects opening P decrease when chosen cabin is short', () => {
+    const current = { a: 30, b: 40, c: 30 }
+    expect(applyOpeningUsdtDeltaToCabin(30, 40, current, -50, 'C', 50).ok).toBe(false)
   })
 })

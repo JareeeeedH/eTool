@@ -552,6 +552,38 @@ export function adjustOpeningUsdtCabins(
 }
 
 /**
+ * 期初 P 增減套用到指定艙位（以目前水位 A/B/C 為準反推 opening 分倉）。
+ * 扣減時該艙必須夠扣。
+ */
+export function applyOpeningUsdtDeltaToCabin(
+  openingUsdtCabinA: number,
+  openingUsdtCabinB: number,
+  current: { a: number; b: number; c: number },
+  delta: number,
+  cabin: UsdtCabin,
+  nextLiveTotalUsdt: number,
+): { ok: true; a: number; b: number } | { ok: false; error: string } {
+  if (!Number.isFinite(delta) || delta === 0) {
+    return { ok: true, a: openingUsdtCabinA, b: openingUsdtCabinB }
+  }
+  const bal = cabin === 'A' ? current.a : cabin === 'B' ? current.b : current.c
+  if (delta < 0 && bal + delta < -1e-9) {
+    return { ok: false, error: `${cabin} 不夠扣（目前 ${bal}）` }
+  }
+  const targetA = cabin === 'A' ? current.a + delta : current.a
+  const targetB = cabin === 'B' ? current.b + delta : current.b
+  const next = openingUsdtCabinsAfterRebalance(
+    openingUsdtCabinA,
+    openingUsdtCabinB,
+    { a: current.a, b: current.b },
+    targetA,
+    targetB,
+    nextLiveTotalUsdt,
+  )
+  return { ok: true, a: next.a, b: next.b }
+}
+
+/**
  * A/B/C 內部互轉：只改分倉數量，總 P 與成本不變。
  * 透過調整 openingUsdtCabinA/B 達成目標。
  */
