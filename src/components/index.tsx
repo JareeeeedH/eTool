@@ -1687,8 +1687,10 @@ export function TransactionTable({
       ? `${VN_MOBILE_NUM_CELL_CLASS} ${extra}`
       : `${TRANSACTION_NUM_CELL_CLASS} ${extra}`
   const twdAvg = showDayAverage
-    ? calculateBuyDayAverageRate(transactions, 'twd')
-    : calculateAverageRate(transactions, 'twd')
+    ? isBuy
+      ? calculateBuyDayAverageRate(transactions, 'twd')
+      : calculateAverageRate(transactions, 'twd')
+    : null
   const totalUsdt = transactions.reduce((sum, tx) => sum + tx.usdtAmount, 0)
   const totalTwd = transactions.reduce((sum, tx) => sum + tx.fiatAmount, 0)
   const totalProfit = !isBuy
@@ -2574,6 +2576,7 @@ export function VnTradeTable({
   accent,
   sideLabel: _sideLabel,
   showDayAverage = false,
+  showSellAverage = false,
   sellProfitById,
   visibleRows = 8,
   bodyScrollRef,
@@ -2628,6 +2631,28 @@ export function VnTradeTable({
     }
     return totalTwd > 0 ? totalVnPaid / totalTwd : null
   }, [isBuy, showDayAverage, transactions])
+  const daySellUsdtAvg = useMemo(() => {
+    if (isBuy || !showSellAverage) return null
+    let totalVn = 0
+    let totalUsdt = 0
+    for (const tx of transactions) {
+      if (tx.payCurrency !== 'usdt') continue
+      totalVn += tx.vnAmount
+      totalUsdt += tx.usdtAmount
+    }
+    return totalUsdt > 0 ? totalVn / totalUsdt : null
+  }, [isBuy, showSellAverage, transactions])
+  const daySellTwdAvg = useMemo(() => {
+    if (isBuy || !showSellAverage) return null
+    let totalVn = 0
+    let totalTwd = 0
+    for (const tx of transactions) {
+      if (tx.payCurrency !== 'twd') continue
+      totalVn += tx.vnAmount
+      totalTwd += tx.twdAmount
+    }
+    return totalTwd > 0 ? totalVn / totalTwd : null
+  }, [isBuy, showSellAverage, transactions])
   const totalProfit = !isBuy
     ? transactions.reduce((sum, tx) => sum + (sellProfitById?.get(tx.id)?.profit ?? 0), 0)
     : 0
@@ -2820,6 +2845,29 @@ export function VnTradeTable({
                 {dayBuyTwdAvg !== null && (
                   <span className="font-bold tabular-nums text-violet-600">
                     @{formatVnTradeRateDisplay(dayBuyTwdAvg)}
+                    <span className="ml-0.5 text-[9px] font-semibold text-emerald-600">
+                      {vnRateUnitSuffix('twd')}
+                    </span>
+                  </span>
+                )}
+              </div>
+            ) : (
+              <span className="text-slate-400">—</span>
+            )
+          ) : !isBuy && showSellAverage ? (
+            daySellUsdtAvg !== null || daySellTwdAvg !== null ? (
+              <div className="flex flex-col items-end gap-0.5 leading-tight">
+                {daySellUsdtAvg !== null && (
+                  <span className="font-bold tabular-nums text-amber-600">
+                    @{formatVnTradeRateDisplay(daySellUsdtAvg)}
+                    <span className="ml-0.5 text-[9px] font-semibold text-sky-600">
+                      {vnRateUnitSuffix('usdt')}
+                    </span>
+                  </span>
+                )}
+                {daySellTwdAvg !== null && (
+                  <span className="font-bold tabular-nums text-amber-600">
+                    @{formatVnTradeRateDisplay(daySellTwdAvg)}
                     <span className="ml-0.5 text-[9px] font-semibold text-emerald-600">
                       {vnRateUnitSuffix('twd')}
                     </span>

@@ -2318,6 +2318,7 @@ function App() {
                       onDelete={handleDelete}
                       accent="sell"
                       sideLabel="賣出"
+                      showDayAverage
                       sellProfitById={sellProfitById}
                       visibleRows={tableVisibleRows}
                       bodyScrollRef={sellBodyScrollRef}

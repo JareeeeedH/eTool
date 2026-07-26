@@ -340,7 +340,7 @@ export interface TransactionTableProps {
   onDelete: (id: string) => void
   accent: 'buy' | 'sell'
   sideLabel: string
-  /** buy 顯示當日買入均價；sell 顯示每筆利潤 */
+  /** buy：當日買入均價；sell：當日賣價平均 */
   showDayAverage?: boolean
   sellProfitById?: Map<string, SellProfitInfo>
   /** 明細 tbody 預設顯示列數，超出捲動 */
