@@ -12,6 +12,10 @@ import {
   parseVnTableCompactInput,
   timestampForNewTrade,
   timestampFromDateInput,
+  timestampForEditedTrade,
+  resolveTradeDate,
+  formatTradeListDate,
+  compareTradeListOrder,
 } from './format'
 
 describe('compact input parsing', () => {
@@ -92,10 +96,54 @@ describe('timestampForNewTrade', () => {
     expect(next.getTime()).toBe(existingEvening.getTime() + 1)
   })
 
-  it('places new trade after older-dated inventory even if form date is earlier', () => {
-    const existing = new Date(2026, 6, 10, 18, 0, 0)
-    const earlyFormDate = '2017-01-11'
-    const next = timestampForNewTrade(earlyFormDate, [existing], new Date(2026, 6, 11, 14, 0, 0))
+  it('places new trade after later inventory so settle cutoff still includes it', () => {
+    const existing = new Date(2026, 6, 30, 18, 0, 0)
+    const backdate = '2026-07-28'
+    const next = timestampForNewTrade(backdate, [existing], new Date(2026, 6, 30, 14, 0, 0))
     expect(next.getTime()).toBe(existing.getTime() + 1)
+  })
+})
+
+describe('timestampForEditedTrade', () => {
+  it('moves timestamp onto selected day when after settle', () => {
+    const prev = new Date(2026, 6, 30, 15, 30, 0)
+    const settled = new Date(2026, 6, 27, 20, 0, 0)
+    const next = timestampForEditedTrade('2026-07-29', prev, settled)
+    expect(resolveTradeDate({ timestamp: next, tradeDate: '2026-07-29' })).toBe('2026-07-29')
+    expect(next.getDate()).toBe(29)
+    expect(next.getHours()).toBe(15)
+  })
+
+  it('keeps timestamp when selected day is before settle', () => {
+    const prev = new Date(2026, 6, 30, 15, 30, 0)
+    const settled = new Date(2026, 6, 29, 20, 0, 0)
+    const next = timestampForEditedTrade('2026-07-28', prev, settled)
+    expect(next.getTime()).toBe(prev.getTime())
+  })
+})
+
+describe('resolveTradeDate / compareTradeListOrder', () => {
+  it('prefers tradeDate for display day', () => {
+    const tx = {
+      timestamp: new Date(2026, 6, 30, 18, 0, 0),
+      tradeDate: '2026-07-28',
+    }
+    expect(resolveTradeDate(tx)).toBe('2026-07-28')
+    expect(formatTradeListDate(tx)).toBe('28')
+  })
+
+  it('sorts by tradeDate then timestamp', () => {
+    const a = {
+      timestamp: new Date(2026, 6, 30, 20, 0, 0),
+      tradeDate: '2026-07-28',
+    }
+    const b = {
+      timestamp: new Date(2026, 6, 30, 19, 0, 0),
+      tradeDate: '2026-07-29',
+    }
+    expect([a, b].sort(compareTradeListOrder).map(resolveTradeDate)).toEqual([
+      '2026-07-29',
+      '2026-07-28',
+    ])
   })
 })

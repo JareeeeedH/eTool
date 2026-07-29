@@ -69,6 +69,7 @@ import {
   normalizeCabinAlloc,
   normalizeLoadedSettlement,
   normalizeLoadedTransactions,
+  repairTradeTimestampsAfterSettle,
   normalizeMonthlyClose,
   normalizeUsdtCabinSnapshot,
   normalizeVnTradeTransaction,
@@ -98,7 +99,10 @@ import {
   parseTwdAdjustInput,
   parseUsdtAdjustInput,
   parseVnAdjustInput,
+  compareTradeListOrder,
+  resolveTradeDate,
   timestampForNewTrade,
+  timestampForEditedTrade,
   timestampFromDateInput,
 } from './utils/format'
 import { formCardClass, recordCardClass } from './utils/uiClasses'
@@ -294,7 +298,13 @@ function App() {
           // 月結功能暫不使用：不載入、並在下次存檔時清掉本機月結
           setMonthlyCloses([])
           setSelectedMonthlyCloseId(null)
-          const normalizedTx = normalizeLoadedTransactions(data.transactions)
+          const settledAt = getLastTradeSettlementAt(
+            data.settlements.map(normalizeLoadedSettlement),
+          )
+          const normalizedTx = repairTradeTimestampsAfterSettle(
+            normalizeLoadedTransactions(data.transactions),
+            settledAt,
+          )
           const migrated = migrateUsdtCabinAttribution(
             data.openingBalances,
             data.openingUsdtCabinA,
@@ -304,9 +314,6 @@ function App() {
           let nextOpeningA = migrated.openingUsdtCabinA
           let nextOpeningB = migrated.openingUsdtCabinB
           if (data.usdtCabinSnapshot) {
-            const settledAt = getLastTradeSettlementAt(
-              data.settlements.map(normalizeLoadedSettlement),
-            )
             const currentCabins = computeUsdtCabinBalances(
               data.openingBalances,
               nextOpeningA,
@@ -548,19 +555,31 @@ function App() {
   }
 
   const buyTransactions = useMemo(
-    () => usdtTransactions.filter((tx) => tx.type === 'buy'),
+    () =>
+      usdtTransactions
+        .filter((tx) => tx.type === 'buy')
+        .sort(compareTradeListOrder),
     [usdtTransactions],
   )
   const sellTransactions = useMemo(
-    () => usdtTransactions.filter((tx) => tx.type === 'sell'),
+    () =>
+      usdtTransactions
+        .filter((tx) => tx.type === 'sell')
+        .sort(compareTradeListOrder),
     [usdtTransactions],
   )
   const vnBuyTransactions = useMemo(
-    () => vnTradeTransactions.filter((tx) => tx.type === 'buy'),
+    () =>
+      vnTradeTransactions
+        .filter((tx) => tx.type === 'buy')
+        .sort(compareTradeListOrder),
     [vnTradeTransactions],
   )
   const vnSellTransactions = useMemo(
-    () => vnTradeTransactions.filter((tx) => tx.type === 'sell'),
+    () =>
+      vnTradeTransactions
+        .filter((tx) => tx.type === 'sell')
+        .sort(compareTradeListOrder),
     [vnTradeTransactions],
   )
   const sellProfitById = useMemo(
@@ -1045,7 +1064,13 @@ function App() {
                 fiatAmount: fiat,
                 rate,
                 ...cabinAlloc,
-                timestamp: timestampFromDateInput(tradeDate, tx.timestamp),
+                // 畫面日用 tradeDate；timestamp 盡量跟日走，但不早於結帳線
+                tradeDate,
+                timestamp: timestampForEditedTrade(
+                  tradeDate,
+                  tx.timestamp,
+                  lastTradeSettledAt,
+                ),
               }
             : tx,
         )
@@ -1056,6 +1081,7 @@ function App() {
           tradeDate,
           list.map((tx) => tx.timestamp),
         ),
+        tradeDate,
         category: 'usdt',
         type,
         fiatCurrency: 'twd',
@@ -1223,7 +1249,13 @@ function App() {
                 cabin: cabinAlloc?.cabin,
                 cabinAAmount: cabinAlloc?.cabinAAmount,
                 cabinBAmount: cabinAlloc?.cabinBAmount,
-                timestamp: timestampFromDateInput(tradeDate, tx.timestamp),
+                // 畫面日用 tradeDate；timestamp 盡量跟日走，但不早於結帳線
+                tradeDate,
+                timestamp: timestampForEditedTrade(
+                  tradeDate,
+                  tx.timestamp,
+                  lastTradeSettledAt,
+                ),
               }
             : tx,
         )
@@ -1234,6 +1266,7 @@ function App() {
           tradeDate,
           list.map((tx) => tx.timestamp),
         ),
+        tradeDate,
         category: 'vn_trade',
         type,
         payCurrency,
@@ -1309,7 +1342,12 @@ function App() {
                   fiatAmount: fiat,
                   rate,
                   ...cabinAlloc,
-                  timestamp: timestampFromDateInput(tradeDate, tx.timestamp),
+                  tradeDate,
+                  timestamp: timestampForEditedTrade(
+                    tradeDate,
+                    tx.timestamp,
+                    lastTradeSettledAt,
+                  ),
                 }
               : tx,
           )
@@ -1320,6 +1358,7 @@ function App() {
                 tradeDate,
                 transactions.map((tx) => tx.timestamp),
               ),
+              tradeDate,
               category: 'usdt' as const,
               type,
               fiatCurrency: 'twd' as const,
@@ -1380,7 +1419,12 @@ function App() {
                 usdtAmount: pay,
                 rate,
                 ...cabinAlloc,
-                timestamp: timestampFromDateInput(tradeDate, tx.timestamp),
+                tradeDate,
+                timestamp: timestampForEditedTrade(
+                  tradeDate,
+                  tx.timestamp,
+                  lastTradeSettledAt,
+                ),
               }
             : tx,
         )
@@ -1391,6 +1435,7 @@ function App() {
               tradeDate,
               transactions.map((tx) => tx.timestamp),
             ),
+            tradeDate,
             category: 'vn_trade' as const,
             type,
             payCurrency: 'usdt' as const,
@@ -1456,12 +1501,12 @@ function App() {
       setBuyUsdtAmount(String(tx.usdtAmount))
       setBuyFiatAmount(formatTwdCompactInput(tx.fiatAmount))
       setBuyRate(formatRateCalc(tx.rate))
-      setBuyTradeDate(dateInputValueFromDate(tx.timestamp))
+      setBuyTradeDate(resolveTradeDate(tx))
     } else {
       setSellUsdtAmount(String(tx.usdtAmount))
       setSellFiatAmount(formatTwdCompactInput(tx.fiatAmount))
       setSellRate(formatRateCalc(tx.rate))
-      setSellTradeDate(dateInputValueFromDate(tx.timestamp))
+      setSellTradeDate(resolveTradeDate(tx))
     }
   }
 
@@ -1493,7 +1538,7 @@ function App() {
           : String(vnTradePayAmount(normalized)),
       )
       setVnBuyRate(formatVnRateCalc(normalized.rate))
-      setVnBuyTradeDate(dateInputValueFromDate(normalized.timestamp))
+      setVnBuyTradeDate(resolveTradeDate(normalized))
     } else {
       setVnSellPayCurrency(normalized.payCurrency)
       setVnSellVnAmount(formatVnCompactInput(normalized.vnAmount))
@@ -1503,7 +1548,7 @@ function App() {
           : String(vnTradePayAmount(normalized)),
       )
       setVnSellRate(formatVnRateCalc(normalized.rate))
-      setVnSellTradeDate(dateInputValueFromDate(normalized.timestamp))
+      setVnSellTradeDate(resolveTradeDate(normalized))
     }
   }
 

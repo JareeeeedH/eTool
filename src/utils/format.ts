@@ -312,6 +312,32 @@ export function formatTransactionTableDate(date: Date): string {
   return String(date.getDate())
 }
 
+/** 列表用交易日：優先 tradeDate，舊資料回退 timestamp */
+export function resolveTradeDate(
+  tx: { tradeDate?: string; timestamp: Date },
+): string {
+  if (tx.tradeDate && isValidDateInputValue(tx.tradeDate)) return tx.tradeDate
+  return dateInputValueFromDate(tx.timestamp)
+}
+
+/** 交易明細列表顯示日（依 tradeDate） */
+export function formatTradeListDate(tx: {
+  tradeDate?: string
+  timestamp: Date
+}): string {
+  return formatTradeMetaDateDisplay(resolveTradeDate(tx))
+}
+
+/** 列表排序：交易日新→舊，同日再依 timestamp 新→舊 */
+export function compareTradeListOrder(
+  a: { tradeDate?: string; timestamp: Date },
+  b: { tradeDate?: string; timestamp: Date },
+): number {
+  const byDate = resolveTradeDate(b).localeCompare(resolveTradeDate(a))
+  if (byDate !== 0) return byDate
+  return b.timestamp.getTime() - a.timestamp.getTime()
+}
+
 /** HTML date input（YYYY-MM-DD），本地時區 */
 export function todayDateInputValue(): string {
   return dateInputValueFromDate(new Date())
@@ -357,9 +383,10 @@ export function timestampFromDateInput(dateStr: string, timeSource: Date = new D
 }
 
 /**
- * 新增交易時間戳：
- * - 盡量落在所選曆日
- * - 但必須晚於所有既有流水，避免日期偏舊（或同日時刻較早）導致驗證誤判庫存不足
+ * 新增交易時間戳（庫存／結帳計算用）：
+ * - 盡量用所選日 + 當下時刻
+ * - 但必須晚於所有既有流水，避免補登舊日掉到結帳線之前、水位不算進去
+ * 畫面日期請另存 tradeDate。
  */
 export function timestampForNewTrade(
   dateStr: string,
@@ -375,6 +402,23 @@ export function timestampForNewTrade(
   if (!Number.isFinite(latestOverall)) return base
   if (base.getTime() > latestOverall) return base
   return new Date(latestOverall + 1)
+}
+
+/**
+ * 編輯交易日：在不早於結帳線的前提下，盡量把 timestamp 也改到所選日。
+ * 若所選日早於結帳，保留原 timestamp（靠 tradeDate 顯示），避免水位被踢出。
+ */
+export function timestampForEditedTrade(
+  dateStr: string,
+  previousTimestamp: Date,
+  lastTradeSettledAt: Date | null,
+): Date {
+  const base = timestampFromDateInput(dateStr, previousTimestamp)
+  if (!lastTradeSettledAt) return base
+  if (base.getTime() > lastTradeSettledAt.getTime()) return base
+  return previousTimestamp.getTime() > lastTradeSettledAt.getTime()
+    ? previousTimestamp
+    : new Date(lastTradeSettledAt.getTime() + 1)
 }
 
 export function formatArchiveDateRange(start: Date | null, end: Date | null): string {

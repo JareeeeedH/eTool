@@ -25,6 +25,7 @@ import {
   USDT_CABIN_MIGRATE_TARGET_A,
 } from '../constants'
 import {
+  dateInputValueFromDate,
   expenseTypeLabel,
   floorTwd,
   formatArchiveDateRange,
@@ -1993,7 +1994,44 @@ export function normalizeLoadedTransactions(transactions: Transaction[]): Transa
       (tx) =>
         isUsdtTransaction(tx) || isVnTradeTransaction(tx) || isExpenseTransaction(tx),
     )
-    .map((tx) => (isVnTradeTransaction(tx) ? normalizeVnTradeTransaction(tx) : tx))
+    .map((tx) => {
+      if (isExpenseTransaction(tx)) return tx
+      const normalized = isVnTradeTransaction(tx) ? normalizeVnTradeTransaction(tx) : tx
+      if (normalized.tradeDate) return normalized
+      return {
+        ...normalized,
+        tradeDate: dateInputValueFromDate(normalized.timestamp),
+      }
+    })
+}
+
+/**
+ * 補登舊日若把 timestamp 推到結帳線之前，水位會不算這筆。
+ * 載入時把這類交易 timestamp 拉回結帳後，保留 tradeDate 供畫面排序。
+ */
+export function repairTradeTimestampsAfterSettle(
+  transactions: Transaction[],
+  lastTradeSettledAt: Date | null,
+): Transaction[] {
+  if (!lastTradeSettledAt) return transactions
+  const cutoff = lastTradeSettledAt.getTime()
+
+  let latestSafe = cutoff
+  for (const tx of transactions) {
+    const t = tx.timestamp.getTime()
+    if (t > latestSafe) latestSafe = t
+  }
+
+  return transactions.map((tx) => {
+    if (isExpenseTransaction(tx)) return tx
+    if (tx.timestamp.getTime() > cutoff) return tx
+    latestSafe += 1
+    return {
+      ...tx,
+      tradeDate: tx.tradeDate ?? dateInputValueFromDate(tx.timestamp),
+      timestamp: new Date(latestSafe),
+    }
+  })
 }
 
 export function normalizeMonthlyClose(item: MonthlyClose): MonthlyClose {

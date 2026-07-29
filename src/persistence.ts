@@ -62,6 +62,7 @@ interface UsdtInventoryCost {
 interface UsdtTransaction {
   id: string
   timestamp: Date
+  tradeDate?: string
   category: 'usdt'
   type: TransactionType
   fiatCurrency: FiatCurrency
@@ -76,6 +77,7 @@ interface UsdtTransaction {
 interface VnTradeTransaction {
   id: string
   timestamp: Date
+  tradeDate?: string
   category: 'vn_trade'
   type: TransactionType
   payCurrency: VnPayCurrency
@@ -251,6 +253,11 @@ function parseExpenseType(value: unknown): ExpenseType {
   return 'other'
 }
 
+function parseTradeDate(value: unknown): string | undefined {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value
+  return undefined
+}
+
 function parseVnTradeRecord(
   id: string,
   timestamp: Date,
@@ -260,11 +267,13 @@ function parseVnTradeRecord(
   const payCurrency = parseVnPayCurrency(value.payCurrency)
   const twdAmount = parseNumber(value.twdAmount)
   const usdtAmount = parseNumber(value.usdtAmount)
+  const tradeDate = parseTradeDate(value.tradeDate)
 
   if (payCurrency === 'usdt') {
     return {
       id,
       timestamp,
+      tradeDate,
       category: 'vn_trade',
       type,
       payCurrency: 'usdt',
@@ -281,6 +290,7 @@ function parseVnTradeRecord(
   return {
     id,
     timestamp,
+    tradeDate,
     category: 'vn_trade',
     type,
     payCurrency: 'twd',
@@ -324,6 +334,7 @@ function parseTransaction(value: unknown): Transaction | null {
   return {
     id: value.id,
     timestamp,
+    tradeDate: parseTradeDate(value.tradeDate),
     category: 'usdt',
     type: value.type,
     fiatCurrency: value.fiatCurrency,

@@ -23,6 +23,11 @@ export type AccentColor = 'emerald' | 'rose' | 'violet' | 'orange'
 export interface UsdtTransaction {
   id: string
   timestamp: Date
+  /**
+   * 畫面／列表用交易日（YYYY-MM-DD）。
+   * 與 timestamp 分離：補登舊日期時仍顯示該日，但 timestamp 可留在結帳後以正確計入水位。
+   */
+  tradeDate?: string
   category: 'usdt'
   type: TransactionType
   fiatCurrency: FiatCurrency
@@ -41,6 +46,11 @@ export interface UsdtTransaction {
 export interface VnTradeTransaction {
   id: string
   timestamp: Date
+  /**
+   * 畫面／列表用交易日（YYYY-MM-DD）。
+   * 與 timestamp 分離：補登舊日期時仍顯示該日，但 timestamp 可留在結帳後以正確計入水位。
+   */
+  tradeDate?: string
   category: 'vn_trade'
   type: TransactionType
   payCurrency: VnPayCurrency

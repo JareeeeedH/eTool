@@ -79,7 +79,7 @@ import {
   formatSettlementDateTime,
   formatTableDateTime,
   formatTradeMetaDateDisplay,
-  formatTransactionTableDate,
+  formatTradeListDate,
   formatTwd,
   formatExpenseTwdInput,
   formatTwdCompactInput,
@@ -1749,7 +1749,7 @@ export function TransactionTable({
           } text-slate-600`}
         >
           <span className="inline-flex items-center gap-0.5">
-            {formatTransactionTableDate(tx.timestamp)}
+            {formatTradeListDate(tx)}
           </span>
         </td>
         <td className={usdtNumCell('text-slate-800')}>
@@ -2908,7 +2908,7 @@ export function VnTradeTable({
       >
         <td className={vnIndexCell('text-slate-600')}>
           <span className="inline-flex items-center gap-0.5">
-            {formatTransactionTableDate(tx.timestamp)}
+            {formatTradeListDate(tx)}
           </span>
         </td>
         <td className={vnAmountCell('text-amber-700')}>
