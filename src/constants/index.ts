@@ -38,9 +38,13 @@ export const TRADE_INPUT_CLASS =
 export const TRADE_FORM_GRID_CLASS =
   'grid grid-cols-2 grid-rows-2 gap-1 sm:flex sm:grid-cols-none sm:items-center sm:gap-1'
 
-/** 第四格：日期固定窄寬 + Cancel / Add */
+/** 第四格：日期固定窄寬 + 備註 + Cancel / Add */
 export const TRADE_FORM_META_CELL_CLASS =
   'flex min-h-0 min-w-0 w-full items-center gap-0.5 sm:w-auto sm:gap-1 sm:shrink-0'
+
+/** 買賣表單備註（交易對象）小格 */
+export const TRADE_NOTE_INPUT_CLASS =
+  'h-[1.75rem] w-[3.25rem] shrink-0 rounded border border-slate-300 bg-white px-1 py-0 text-center text-[10px] leading-none text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-300/40 disabled:bg-slate-50 sm:h-auto sm:w-14 sm:py-0.5 sm:text-[11px] sm:leading-tight'
 
 /** 買賣表單按鈕（第四格內與日期併排） */
 export const TRADE_FORM_ACTIONS_CLASS =

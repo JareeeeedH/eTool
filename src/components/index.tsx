@@ -40,6 +40,7 @@ import {
   TRADE_FORM_SUBMIT_CLASS,
   TRADE_FORM_GRID_CLASS,
   TRADE_INPUT_CLASS,
+  TRADE_NOTE_INPUT_CLASS,
   TRADE_PANE_CODE,
   TRADE_RATE_INPUT_CLASS,
   TRADE_RATE_FIELD_CLASS,
@@ -1748,8 +1749,18 @@ export function TransactionTable({
             mobileRowIndex ? TRANSACTION_MOBILE_DATE_CELL_CLASS : TRANSACTION_TIME_CELL_CLASS
           } text-slate-600`}
         >
-          <span className="inline-flex items-center gap-0.5">
-            {formatTradeListDate(tx)}
+          <span className="inline-flex min-w-0 max-w-full flex-col items-start gap-0 leading-none">
+            <span className="inline-flex items-center gap-0.5">
+              {formatTradeListDate(tx)}
+            </span>
+            {tx.note?.trim() ? (
+              <span
+                className="max-w-[3.5rem] truncate text-[9px] text-slate-400"
+                title={tx.note.trim()}
+              >
+                {tx.note.trim()}
+              </span>
+            ) : null}
           </span>
         </td>
         <td className={usdtNumCell('text-slate-800')}>
@@ -1889,8 +1900,11 @@ function TradeMetaDateInput({
 
 function TradeFormMetaCell({
   dateId,
+  noteId,
   tradeDate,
+  note,
   onTradeDateChange,
+  onNoteChange,
   disabled,
   isEditing,
   onClear,
@@ -1898,8 +1912,11 @@ function TradeFormMetaCell({
   buttonClass,
 }: {
   dateId: string
+  noteId: string
   tradeDate: string
+  note: string
   onTradeDateChange: (value: string) => void
+  onNoteChange: (value: string) => void
   disabled?: boolean
   isEditing: boolean
   onClear: () => void
@@ -1913,6 +1930,17 @@ function TradeFormMetaCell({
         value={tradeDate}
         onChange={onTradeDateChange}
         disabled={disabled}
+      />
+      <input
+        id={noteId}
+        type="text"
+        value={note}
+        onChange={(e) => onNoteChange(e.target.value)}
+        disabled={disabled}
+        placeholder="對象"
+        aria-label="交易對象"
+        autoComplete="off"
+        className={TRADE_NOTE_INPUT_CLASS}
       />
       {!isEditing && (
         <button
@@ -1954,11 +1982,13 @@ export function TradeForm({
   fiat,
   rate,
   tradeDate,
+  note,
   error,
   isEditing,
   disabled,
   onFieldChange,
   onTradeDateChange,
+  onNoteChange,
   onSubmit,
   onCancel,
   onClear,
@@ -2078,8 +2108,11 @@ export function TradeForm({
           <div className="col-start-2 row-start-2 min-w-0 sm:order-4">
             <TradeFormMetaCell
               dateId={`${prefix}Date`}
+              noteId={`${prefix}Note`}
               tradeDate={tradeDate}
+              note={note}
               onTradeDateChange={onTradeDateChange}
+              onNoteChange={onNoteChange}
               disabled={disabled}
               isEditing={isEditing}
               onClear={onClear}
@@ -2374,11 +2407,13 @@ export function VnTradeForm({
   pay,
   rate,
   tradeDate,
+  note,
   error,
   isEditing,
   disabled,
   onFieldChange,
   onTradeDateChange,
+  onNoteChange,
   onSubmit,
   onCancel,
   onClear,
@@ -2519,8 +2554,11 @@ export function VnTradeForm({
           <div className="col-start-2 row-start-2 min-w-0 sm:order-4">
             <TradeFormMetaCell
               dateId={`${prefix}Date`}
+              noteId={`${prefix}Note`}
               tradeDate={tradeDate}
+              note={note}
               onTradeDateChange={onTradeDateChange}
+              onNoteChange={onNoteChange}
               disabled={disabled}
               isEditing={isEditing}
               onClear={onClear}
@@ -2907,8 +2945,18 @@ export function VnTradeTable({
         className={`group border-b border-slate-100 transition-colors hover:bg-slate-100/70 ${vnPayCurrencyRowAccent(tx.payCurrency)} ${transactionDataRowClass(tx.id, editingId, highlightedId)}`}
       >
         <td className={vnIndexCell('text-slate-600')}>
-          <span className="inline-flex items-center gap-0.5">
-            {formatTradeListDate(tx)}
+          <span className="inline-flex min-w-0 max-w-full flex-col items-start gap-0 leading-none">
+            <span className="inline-flex items-center gap-0.5">
+              {formatTradeListDate(tx)}
+            </span>
+            {tx.note?.trim() ? (
+              <span
+                className="max-w-[3.5rem] truncate text-[9px] text-slate-400"
+                title={tx.note.trim()}
+              >
+                {tx.note.trim()}
+              </span>
+            ) : null}
           </span>
         </td>
         <td className={vnAmountCell('text-amber-700')}>

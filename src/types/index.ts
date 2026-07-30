@@ -41,6 +41,8 @@ export interface UsdtTransaction {
   cabinBAmount?: number
   /** 舊資料單艙標籤；有 cabinA/BAmount 時以數量為準 */
   cabin?: UsdtCabin
+  /** 交易對象等備註 */
+  note?: string
 }
 
 export interface VnTradeTransaction {
@@ -65,6 +67,8 @@ export interface VnTradeTransaction {
   cabinBAmount?: number
   /** 舊資料單艙標籤；有 cabinA/BAmount 時以數量為準 */
   cabin?: UsdtCabin
+  /** 交易對象等備註 */
+  note?: string
 }
 
 export interface ExpenseTransaction {
@@ -368,11 +372,13 @@ export interface TradeFormProps {
   fiat: string
   rate: string
   tradeDate: string
+  note: string
   error: string
   isEditing: boolean
   disabled: boolean
   onFieldChange: (field: 'usdt' | 'fiat' | 'rate', value: string) => void
   onTradeDateChange: (value: string) => void
+  onNoteChange: (value: string) => void
   onSubmit: (e: FormEvent) => void
   onCancel: () => void
   onClear: () => void
@@ -398,11 +404,13 @@ export interface VnTradeFormProps {
   pay: string
   rate: string
   tradeDate: string
+  note: string
   error: string
   isEditing: boolean
   disabled: boolean
   onFieldChange: (field: 'vn' | 'pay' | 'rate', value: string) => void
   onTradeDateChange: (value: string) => void
+  onNoteChange: (value: string) => void
   onSubmit: (e: FormEvent) => void
   onCancel: () => void
   onClear: () => void

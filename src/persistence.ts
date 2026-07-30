@@ -72,6 +72,7 @@ interface UsdtTransaction {
   cabinAAmount?: number
   cabinBAmount?: number
   cabin?: UsdtCabin
+  note?: string
 }
 
 interface VnTradeTransaction {
@@ -88,6 +89,7 @@ interface VnTradeTransaction {
   cabinAAmount?: number
   cabinBAmount?: number
   cabin?: UsdtCabin
+  note?: string
 }
 
 interface ExpenseTransaction {
@@ -258,6 +260,12 @@ function parseTradeDate(value: unknown): string | undefined {
   return undefined
 }
 
+function parseTradeNote(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const note = value.trim()
+  return note ? note : undefined
+}
+
 function parseVnTradeRecord(
   id: string,
   timestamp: Date,
@@ -284,6 +292,7 @@ function parseVnTradeRecord(
       cabin: parseUsdtCabin(value.cabin),
       cabinAAmount: parseNullableNumber(value.cabinAAmount) ?? undefined,
       cabinBAmount: parseNullableNumber(value.cabinBAmount) ?? undefined,
+      note: parseTradeNote(value.note),
     }
   }
 
@@ -298,6 +307,7 @@ function parseVnTradeRecord(
     twdAmount,
     usdtAmount: 0,
     rate: parseNumber(value.rate),
+    note: parseTradeNote(value.note),
   }
 }
 
@@ -344,6 +354,7 @@ function parseTransaction(value: unknown): Transaction | null {
     cabin: parseUsdtCabin(value.cabin),
     cabinAAmount: parseNullableNumber(value.cabinAAmount) ?? undefined,
     cabinBAmount: parseNullableNumber(value.cabinBAmount) ?? undefined,
+    note: parseTradeNote(value.note),
   }
 }
 

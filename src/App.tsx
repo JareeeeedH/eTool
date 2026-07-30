@@ -151,6 +151,7 @@ type PendingCabinAlloc =
       rate: number
       isEditing: boolean
       tradeDate: string
+      note: string
       initialCabinA: number
       initialCabinB: number
       direction: 'in' | 'out'
@@ -164,6 +165,7 @@ type PendingCabinAlloc =
       rate: number
       isEditing: boolean
       tradeDate: string
+      note: string
       initialCabinA: number
       initialCabinB: number
       direction: 'in' | 'out'
@@ -215,12 +217,14 @@ function App() {
   const [buyFiatAmount, setBuyFiatAmount] = useState('')
   const [buyRate, setBuyRate] = useState('')
   const [buyTradeDate, setBuyTradeDate] = useState(defaultTradeDateInputValue)
+  const [buyNote, setBuyNote] = useState('')
   const [buyError, setBuyError] = useState('')
 
   const [sellUsdtAmount, setSellUsdtAmount] = useState('')
   const [sellFiatAmount, setSellFiatAmount] = useState('')
   const [sellRate, setSellRate] = useState('')
   const [sellTradeDate, setSellTradeDate] = useState(defaultTradeDateInputValue)
+  const [sellNote, setSellNote] = useState('')
   const [sellError, setSellError] = useState('')
 
   const [vnBuyVnAmount, setVnBuyVnAmount] = useState('')
@@ -228,6 +232,7 @@ function App() {
   const [vnBuyPayCurrency, setVnBuyPayCurrency] = useState<VnPayCurrency>('usdt')
   const [vnBuyRate, setVnBuyRate] = useState('')
   const [vnBuyTradeDate, setVnBuyTradeDate] = useState(defaultTradeDateInputValue)
+  const [vnBuyNote, setVnBuyNote] = useState('')
   const [vnBuyError, setVnBuyError] = useState('')
 
   const [vnSellVnAmount, setVnSellVnAmount] = useState('')
@@ -235,6 +240,7 @@ function App() {
   const [vnSellPayCurrency, setVnSellPayCurrency] = useState<VnPayCurrency>('twd')
   const [vnSellRate, setVnSellRate] = useState('')
   const [vnSellTradeDate, setVnSellTradeDate] = useState(defaultTradeDateInputValue)
+  const [vnSellNote, setVnSellNote] = useState('')
   const [vnSellError, setVnSellError] = useState('')
 
   const [cabinAllocPending, setCabinAllocPending] = useState<PendingCabinAlloc | null>(null)
@@ -618,6 +624,7 @@ function App() {
     setBuyFiatAmount('')
     setBuyRate('')
     setBuyTradeDate(defaultTradeDateInputValue())
+    setBuyNote('')
     setBuyError('')
     if (editingCategory === 'buy') {
       setEditingId(null)
@@ -632,6 +639,7 @@ function App() {
     setSellFiatAmount('')
     setSellRate('')
     setSellTradeDate(defaultTradeDateInputValue())
+    setSellNote('')
     setSellError('')
     if (editingCategory === 'sell') {
       setEditingId(null)
@@ -645,6 +653,7 @@ function App() {
     setBuyUsdtAmount('')
     setBuyFiatAmount('')
     setBuyRate('')
+    setBuyNote('')
     setBuyError('')
   }
 
@@ -652,6 +661,7 @@ function App() {
     setSellUsdtAmount('')
     setSellFiatAmount('')
     setSellRate('')
+    setSellNote('')
     setSellError('')
   }
 
@@ -673,6 +683,7 @@ function App() {
     setVnBuyPayCurrency('usdt')
     setVnBuyRate('')
     setVnBuyTradeDate(defaultTradeDateInputValue())
+    setVnBuyNote('')
     setVnBuyError('')
     if (editingCategory === 'vn_buy') {
       setEditingId(null)
@@ -688,6 +699,7 @@ function App() {
     setVnSellPayCurrency('twd')
     setVnSellRate('')
     setVnSellTradeDate(defaultTradeDateInputValue())
+    setVnSellNote('')
     setVnSellError('')
     if (editingCategory === 'vn_sell') {
       setEditingId(null)
@@ -701,6 +713,7 @@ function App() {
     setVnBuyVnAmount('')
     setVnBuyPayAmount('')
     setVnBuyRate('')
+    setVnBuyNote('')
     setVnBuyError('')
   }
 
@@ -708,6 +721,7 @@ function App() {
     setVnSellVnAmount('')
     setVnSellPayAmount('')
     setVnSellRate('')
+    setVnSellNote('')
     setVnSellError('')
   }
 
@@ -995,6 +1009,7 @@ function App() {
       setError('請選擇有效日期')
       return
     }
+    const note = (isBuy ? buyNote : sellNote).trim()
 
     const resolved = resolveUsdtTradeFields(usdtStr, fiatStr, rateStr)
     if (!resolved.ok) {
@@ -1013,6 +1028,7 @@ function App() {
         rate,
         isEditing,
         tradeDate,
+        note,
         initialCabinA: isEditing && editCabinAAmount !== null ? editCabinAAmount : usdt,
         initialCabinB: isEditing && editCabinBAmount !== null ? editCabinBAmount : 0,
         direction: isBuy ? 'in' : 'out',
@@ -1046,11 +1062,13 @@ function App() {
     tradeDate: string,
     cabinAAmount: number,
     cabinBAmount: number,
+    note: string,
   ): string | null => {
     const isBuy = type === 'buy'
     const setError = isBuy ? setBuyError : setSellError
     const newId = crypto.randomUUID()
     const cabinAlloc = normalizeCabinAlloc(usdt, cabinAAmount, cabinBAmount)
+    const noteValue = note.trim() || undefined
 
     const buildUpdatedList = (list: Transaction[]): Transaction[] => {
       if (isEditing) {
@@ -1071,6 +1089,7 @@ function App() {
                   tx.timestamp,
                   lastTradeSettledAt,
                 ),
+                note: noteValue,
               }
             : tx,
         )
@@ -1089,6 +1108,7 @@ function App() {
         fiatAmount: fiat,
         rate,
         ...cabinAlloc,
+        note: noteValue,
       }
       return [newTransaction, ...list]
     }
@@ -1152,6 +1172,7 @@ function App() {
       setError('請選擇有效日期')
       return
     }
+    const note = (isBuy ? vnBuyNote : vnSellNote).trim()
 
     const resolved = resolveVnTradeFields(vnStr, payStr, rateStr, payCurrency)
     if (!resolved.ok) {
@@ -1161,7 +1182,18 @@ function App() {
     const { vn, pay, rate } = resolved
 
     const finishWithoutCabin = () => {
-      const newId = commitVnTrade(type, payCurrency, vn, pay, rate, isEditing, tradeDate, null)
+      const newId = commitVnTrade(
+        type,
+        payCurrency,
+        vn,
+        pay,
+        rate,
+        isEditing,
+        tradeDate,
+        null,
+        null,
+        note,
+      )
       if (newId) {
         flashNewTransaction(newId)
       }
@@ -1178,6 +1210,7 @@ function App() {
         rate,
         isEditing,
         tradeDate,
+        note,
         initialCabinA: isEditing && editCabinAAmount !== null ? editCabinAAmount : pay,
         initialCabinB: isEditing && editCabinBAmount !== null ? editCabinBAmount : 0,
         direction: isBuy ? 'out' : 'in',
@@ -1224,10 +1257,12 @@ function App() {
     tradeDate: string,
     cabinAAmount: number | null,
     cabinBAmount: number | null = null,
+    note: string = '',
   ): string | null => {
     const isBuy = type === 'buy'
     const setError = isBuy ? setVnBuyError : setVnSellError
     const newId = crypto.randomUUID()
+    const noteValue = note.trim() || undefined
 
     const cabinAlloc =
       payCurrency === 'usdt' && cabinAAmount !== null
@@ -1256,6 +1291,7 @@ function App() {
                   tx.timestamp,
                   lastTradeSettledAt,
                 ),
+                note: noteValue,
               }
             : tx,
         )
@@ -1275,6 +1311,7 @@ function App() {
         usdtAmount: payCurrency === 'usdt' ? pay : 0,
         rate,
         ...(cabinAlloc ?? {}),
+        note: noteValue,
       }
       return [newTransaction, ...list]
     }
@@ -1329,7 +1366,7 @@ function App() {
     setCabinAllocError('')
 
     if (cabinAllocPending.kind === 'usdt') {
-      const { type, usdt, fiat, rate, isEditing, tradeDate } = cabinAllocPending
+      const { type, usdt, fiat, rate, isEditing, tradeDate, note } = cabinAllocPending
       const cabinAlloc = normalizeCabinAlloc(usdt, cabinAAmount, cabinBAmount)
       const updatedList: Transaction[] = isEditing
         ? transactions.map((tx) =>
@@ -1399,13 +1436,14 @@ function App() {
         tradeDate,
         cabinAAmount,
         cabinBAmount,
+        note,
       )
       setCabinAllocPending(null)
       if (newId) flashNewTransaction(newId)
       return
     }
 
-    const { type, vn, pay, rate, isEditing, tradeDate } = cabinAllocPending
+    const { type, vn, pay, rate, isEditing, tradeDate, note } = cabinAllocPending
     const cabinAlloc = normalizeCabinAlloc(pay, cabinAAmount, cabinBAmount)
     const updatedList: Transaction[] = isEditing
       ? transactions.map((tx) =>
@@ -1478,6 +1516,7 @@ function App() {
       tradeDate,
       cabinAAmount,
       cabinBAmount,
+      note,
     )
     setCabinAllocPending(null)
     if (newId) flashNewTransaction(newId)
@@ -1502,11 +1541,13 @@ function App() {
       setBuyFiatAmount(formatTwdCompactInput(tx.fiatAmount))
       setBuyRate(formatRateCalc(tx.rate))
       setBuyTradeDate(resolveTradeDate(tx))
+      setBuyNote(tx.note ?? '')
     } else {
       setSellUsdtAmount(String(tx.usdtAmount))
       setSellFiatAmount(formatTwdCompactInput(tx.fiatAmount))
       setSellRate(formatRateCalc(tx.rate))
       setSellTradeDate(resolveTradeDate(tx))
+      setSellNote(tx.note ?? '')
     }
   }
 
@@ -1539,6 +1580,7 @@ function App() {
       )
       setVnBuyRate(formatVnRateCalc(normalized.rate))
       setVnBuyTradeDate(resolveTradeDate(normalized))
+      setVnBuyNote(normalized.note ?? '')
     } else {
       setVnSellPayCurrency(normalized.payCurrency)
       setVnSellVnAmount(formatVnCompactInput(normalized.vnAmount))
@@ -1549,6 +1591,7 @@ function App() {
       )
       setVnSellRate(formatVnRateCalc(normalized.rate))
       setVnSellTradeDate(resolveTradeDate(normalized))
+      setVnSellNote(normalized.note ?? '')
     }
   }
 
@@ -2290,11 +2333,13 @@ function App() {
                       fiat={buyFiatAmount}
                       rate={buyRate}
                       tradeDate={buyTradeDate}
+                      note={buyNote}
                       error={buyError}
                       isEditing={isEditingBuy}
                       disabled={isEditingAny && !isEditingBuy}
                       onFieldChange={updateBuyForm}
                       onTradeDateChange={setBuyTradeDate}
+                      onNoteChange={setBuyNote}
                       onSubmit={(e) => handleSubmit('buy', e)}
                       onCancel={resetBuyForm}
                       onClear={clearBuyForm}
@@ -2336,11 +2381,13 @@ function App() {
                       fiat={sellFiatAmount}
                       rate={sellRate}
                       tradeDate={sellTradeDate}
+                      note={sellNote}
                       error={sellError}
                       isEditing={isEditingSell}
                       disabled={isEditingAny && !isEditingSell}
                       onFieldChange={updateSellForm}
                       onTradeDateChange={setSellTradeDate}
+                      onNoteChange={setSellNote}
                       onSubmit={(e) => handleSubmit('sell', e)}
                       onCancel={resetSellForm}
                       onClear={clearSellForm}
@@ -2386,11 +2433,13 @@ function App() {
                       pay={vnBuyPayAmount}
                       rate={vnBuyRate}
                       tradeDate={vnBuyTradeDate}
+                      note={vnBuyNote}
                       error={vnBuyError}
                       isEditing={isEditingVnBuy}
                       disabled={isEditingAny && !isEditingVnBuy}
                       onFieldChange={updateVnBuyForm}
                       onTradeDateChange={setVnBuyTradeDate}
+                      onNoteChange={setVnBuyNote}
                       onSubmit={(e) => handleVnSubmit('buy', e)}
                       onCancel={resetVnBuyForm}
                       onClear={clearVnBuyForm}
@@ -2437,11 +2486,13 @@ function App() {
                       pay={vnSellPayAmount}
                       rate={vnSellRate}
                       tradeDate={vnSellTradeDate}
+                      note={vnSellNote}
                       error={vnSellError}
                       isEditing={isEditingVnSell}
                       disabled={isEditingAny && !isEditingVnSell}
                       onFieldChange={updateVnSellForm}
                       onTradeDateChange={setVnSellTradeDate}
+                      onNoteChange={setVnSellNote}
                       onSubmit={(e) => handleVnSubmit('sell', e)}
                       onCancel={resetVnSellForm}
                       onClear={clearVnSellForm}
