@@ -1129,6 +1129,7 @@ function App() {
         usdtAmount: usdt,
         cabinAAmount,
         cabinBAmount,
+        fiatAmount: type === 'buy' ? fiat : undefined,
       },
     )
     if (validationError) {
@@ -1421,6 +1422,7 @@ function App() {
           usdtAmount: usdt,
           cabinAAmount,
           cabinBAmount,
+          fiatAmount: type === 'buy' ? fiat : undefined,
         },
       )
       if (validationError) {
@@ -1709,6 +1711,26 @@ function App() {
     )
     const settledDayProfit = settledDayUsdtProfit + settledDayVnProfit
 
+    const usdtSellProfits = computeSellProfitById(
+      openingBalances,
+      openingUsdtCost,
+      transactions,
+    )
+    const vnAnalytics = computeVnTradeAnalytics(
+      openingBalances,
+      openingVnTwdRate,
+      openingVnUsdtRate,
+      openingUsdtCost,
+      transactions,
+    )
+    const sellProfitById: Record<string, number> = {}
+    for (const [id, info] of usdtSellProfits) {
+      sellProfitById[id] = info.profit
+    }
+    for (const [id, info] of vnAnalytics.sellProfitById) {
+      sellProfitById[id] = info.profit
+    }
+
     const settlement: DailySettlement = {
       id: crypto.randomUUID(),
       settledAt: new Date(),
@@ -1729,6 +1751,12 @@ function App() {
       dayUsdtProfit: settledDayUsdtProfit,
       dayVnProfit: settledDayVnProfit,
       dayTotalProfit: settledDayProfit,
+      trades: tradeTxs.map((tx) => ({
+        ...tx,
+        timestamp: new Date(tx.timestamp),
+      })),
+      sellProfitById:
+        Object.keys(sellProfitById).length > 0 ? sellProfitById : undefined,
     }
 
     setSettlements((prev) => [settlement, ...prev])

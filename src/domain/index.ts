@@ -1519,7 +1519,15 @@ export function assembleExpenseSettlementsForMonthlyClose(
 }
 
 export function cloneDailySettlement(item: DailySettlement): DailySettlement {
-  return { ...item, settledAt: new Date(item.settledAt) }
+  return {
+    ...item,
+    settledAt: new Date(item.settledAt),
+    trades: item.trades?.map((tx) => ({
+      ...tx,
+      timestamp: new Date(tx.timestamp),
+    })),
+    sellProfitById: item.sellProfitById ? { ...item.sellProfitById } : undefined,
+  }
 }
 
 export function cloneExpenseSettlement(item: ExpenseSettlement): ExpenseSettlement {
@@ -1630,6 +1638,11 @@ export function normalizeLoadedSettlement(item: DailySettlement): DailySettlemen
     ...item,
     settledAt: new Date(item.settledAt),
     dayVnUsdtRate: item.dayVnUsdtRate ?? null,
+    trades: item.trades?.map((tx) => ({
+      ...tx,
+      timestamp: new Date(tx.timestamp),
+    })),
+    sellProfitById: item.sellProfitById ? { ...item.sellProfitById } : undefined,
   }
 }
 
@@ -1946,8 +1959,9 @@ export function validateCurrentUsdtCabinSpend(
 }
 
 /**
- * 全量驗證失敗時：若本筆不花台幣，且失敗原因是歷史重播的「台幣庫存不足」，
- * 改以目前庫存檢查 USDT／分艙。
+ * 全量驗證失敗時的救援：
+ * - 出 P（不花台幣）：歷史重播誤報「台幣庫存不足」時，改以目前 P／分艙檢查
+ * - 進 P（花台幣）：歷史重播因既有透支報「USDT 庫存不足」時，改以目前台幣檢查（允許補倉）
  */
 export function resolveUsdtSpendValidationError(
   fullError: string | null,
@@ -1958,6 +1972,8 @@ export function resolveUsdtSpendValidationError(
     usdtAmount: number
     cabinAAmount: number
     cabinBAmount: number
+    /** 買入（花台幣）時傳入本筆台幣金額 */
+    fiatAmount?: number
   },
 ): string | null {
   if (!fullError) return null
@@ -1969,6 +1985,16 @@ export function resolveUsdtSpendValidationError(
       options.cabinAAmount,
       options.cabinBAmount,
     )
+  }
+  if (
+    options.spendsTwd &&
+    (fullError === 'USDT 庫存不足' || /艙 USDT 不足$/.test(fullError))
+  ) {
+    const fiat = options.fiatAmount
+    if (fiat !== undefined && fiat > options.balances.twd + 1e-9) {
+      return '台幣庫存不足'
+    }
+    return null
   }
   return fullError
 }

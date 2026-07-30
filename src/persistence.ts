@@ -130,6 +130,8 @@ interface DailySettlement {
   dayExpenseTotal?: number
   dayNetProfit?: number
   expenseCount?: number
+  trades?: Array<UsdtTransaction | VnTradeTransaction>
+  sellProfitById?: Record<string, number>
 }
 
 interface ExpenseSettlementItem {
@@ -404,6 +406,26 @@ function parseSettlement(value: unknown): DailySettlement | null {
   const usdtBalance = parseNumber(value.usdtBalance)
   const vnBalance = parseNumber(value.vnBalance)
 
+  const trades = Array.isArray(value.trades)
+    ? value.trades
+        .map(parseTransaction)
+        .filter(
+          (tx): tx is UsdtTransaction | VnTradeTransaction =>
+            tx !== null && (tx.category === 'usdt' || tx.category === 'vn_trade'),
+        )
+    : undefined
+
+  let sellProfitById: Record<string, number> | undefined
+  if (isRecord(value.sellProfitById)) {
+    const mapped: Record<string, number> = {}
+    for (const [id, profit] of Object.entries(value.sellProfitById)) {
+      if (typeof profit === 'number' && Number.isFinite(profit)) {
+        mapped[id] = profit
+      }
+    }
+    if (Object.keys(mapped).length > 0) sellProfitById = mapped
+  }
+
   return {
     id: value.id,
     settledAt,
@@ -448,6 +470,8 @@ function parseSettlement(value: unknown): DailySettlement | null {
       value.expenseCount !== undefined && value.expenseCount !== null
         ? parseNumber(value.expenseCount)
         : undefined,
+    trades: trades && trades.length > 0 ? trades : undefined,
+    sellProfitById,
   }
 }
 

@@ -81,6 +81,7 @@ import {
   formatTableDateTime,
   formatTradeMetaDateDisplay,
   formatTradeListDate,
+  compareTradeListOrder,
   formatTwd,
   formatExpenseTwdInput,
   formatTwdCompactInput,
@@ -107,9 +108,11 @@ import {
   calculateBuyDayAverageRate,
   computeUsdtSellProfitPreview,
   computeVnSellProfitPreview,
+  isUsdtTransaction,
   settlementHasSplitProfit,
   totalAssetsFromSettlement,
   transferUsdtBetweenCabins,
+  vnTradePayAmount,
 } from '../domain'
 
 export function VnPoolCostLines({
@@ -1937,8 +1940,8 @@ function TradeFormMetaCell({
         value={note}
         onChange={(e) => onNoteChange(e.target.value)}
         disabled={disabled}
-        placeholder="對象"
-        aria-label="交易對象"
+        placeholder="備註"
+        aria-label="備註"
         autoComplete="off"
         className={TRADE_NOTE_INPUT_CLASS}
       />
@@ -3513,6 +3516,17 @@ export function CollapsibleSection({
 }
 
 export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   const cumulativeTotalProfit = settlements.reduce((sum, item) => sum + item.dayTotalProfit, 0)
   const cumulativeUsdtProfit = settlements.reduce(
     (sum, item) => sum + (item.dayUsdtProfit ?? 0),
@@ -3555,21 +3569,139 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
 
       {settlements.map((item) => {
         const displayAssets = totalAssetsFromSettlement(item)
+        const isExpanded = expandedIds.has(item.id)
+        const trades = item.trades
+          ? [...item.trades].sort(compareTradeListOrder)
+          : []
+        const tradeCount = item.trades?.length ?? item.transactionCount
+
         return (
           <article
             key={item.id}
-            className="w-full rounded-xl border border-slate-200/90 bg-white px-3 py-2 shadow-sm"
+            className="w-full overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-sm"
           >
-            <SettlementRecordBody
-              heading={formatSettlementDateTime(item.settledAt)}
-              twdBalance={item.twdBalance}
-              usdtBalance={item.usdtBalance}
-              vnBalance={item.vnBalance}
-              displayAssets={displayAssets}
-              dayUsdtProfit={item.dayUsdtProfit}
-              dayVnProfit={item.dayVnProfit}
-              dayTotalProfit={item.dayTotalProfit}
-            />
+            <button
+              type="button"
+              onClick={() => toggleExpanded(item.id)}
+              className="w-full px-3 py-2 text-left transition hover:bg-slate-50/90"
+              aria-expanded={isExpanded}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <SettlementRecordBody
+                    heading={formatSettlementDateTime(item.settledAt)}
+                    twdBalance={item.twdBalance}
+                    usdtBalance={item.usdtBalance}
+                    vnBalance={item.vnBalance}
+                    displayAssets={displayAssets}
+                    dayUsdtProfit={item.dayUsdtProfit}
+                    dayVnProfit={item.dayVnProfit}
+                    dayTotalProfit={item.dayTotalProfit}
+                  />
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    {tradeCount} 筆明細
+                    {item.trades ? (isExpanded ? ' · 收合' : ' · 點開回查') : ' · 舊結算無明細'}
+                  </p>
+                </div>
+                <svg
+                  className={`mt-1 h-4 w-4 shrink-0 text-slate-400 transition-transform duration-300 ease-in-out motion-reduce:transition-none ${
+                    isExpanded ? 'rotate-180' : ''
+                  }`}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
+                </svg>
+              </div>
+            </button>
+
+            <CollapsibleSection open={isExpanded}>
+              <div className="border-t border-slate-100 px-3 pb-3 pt-2">
+                {!item.trades || item.trades.length === 0 ? (
+                  <p className="py-2 text-center text-[11px] text-slate-400">
+                    此結算未封存明細（升級後新結帳才會保留）
+                  </p>
+                ) : (
+                  <table className="w-full text-left text-[11px]">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-slate-500">
+                        <th className="py-1 pr-1 font-medium">日</th>
+                        <th className="py-1 pr-1 font-medium">別</th>
+                        <th className="py-1 pr-1 text-right font-medium">量</th>
+                        <th className="py-1 pr-1 text-right font-medium">價</th>
+                        <th className="py-1 pr-1 text-right font-medium">R</th>
+                        <th className="py-1 pr-1 text-right font-medium">PF</th>
+                        <th className="py-1 font-medium">備註</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trades.map((tx) => {
+                        const pane =
+                          isUsdtTransaction(tx)
+                            ? tx.type === 'buy'
+                              ? TRADE_PANE_CODE.buy_u
+                              : TRADE_PANE_CODE.sell_u
+                            : tx.type === 'buy'
+                              ? TRADE_PANE_CODE.buy_vn
+                              : TRADE_PANE_CODE.sell_vn
+                        const qty = isUsdtTransaction(tx)
+                          ? formatNumber(tx.usdtAmount)
+                          : formatVnTableCompact(tx.vnAmount)
+                        const pay = isUsdtTransaction(tx)
+                          ? formatTwdTableCompact(tx.fiatAmount)
+                          : tx.payCurrency === 'usdt'
+                            ? formatNumber(vnTradePayAmount(tx))
+                            : formatTwdTableCompact(vnTradePayAmount(tx))
+                        const rateText = isUsdtTransaction(tx)
+                          ? formatUsdtTradeRateDisplay(tx.rate)
+                          : formatVnTradeRateDisplay(tx.rate)
+                        const profit =
+                          tx.type === 'sell' ? item.sellProfitById?.[tx.id] : undefined
+                        const note = tx.note?.trim() || '—'
+
+                        return (
+                          <tr key={tx.id} className="border-b border-slate-50">
+                            <td className="py-1 pr-1 tabular-nums text-slate-600">
+                              {formatTradeListDate(tx)}
+                            </td>
+                            <td className="py-1 pr-1 font-medium text-slate-700">{pane}</td>
+                            <td className="py-1 pr-1 text-right tabular-nums text-slate-800">
+                              {qty}
+                            </td>
+                            <td className="py-1 pr-1 text-right tabular-nums text-slate-700">
+                              {pay}
+                              {!isUsdtTransaction(tx) ? (
+                                <span className="ml-0.5 text-[9px] text-slate-400">
+                                  {assetCode(tx.payCurrency)}
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="py-1 pr-1 text-right tabular-nums text-slate-600">
+                              {rateText}
+                            </td>
+                            <td
+                              className={`py-1 pr-1 text-right tabular-nums ${
+                                profit === undefined
+                                  ? 'text-slate-300'
+                                  : profitColorClass(profit)
+                              }`}
+                            >
+                              {profit === undefined ? '—' : formatProfit(profit)}
+                            </td>
+                            <td className="max-w-[4.5rem] truncate py-1 text-slate-500" title={note}>
+                              {note}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </CollapsibleSection>
           </article>
         )
       })}

@@ -113,6 +113,13 @@ export interface DailySettlement {
   dayVnProfit?: number
   /** 當日賣出總利潤（TWD）= USDT + VN */
   dayTotalProfit: number
+  /**
+   * 結帳當下封存的交易明細（舊結算可能無此欄）。
+   * 僅含 usdt / vn_trade，不含 expense。
+   */
+  trades?: Array<UsdtTransaction | VnTradeTransaction>
+  /** 結帳當下各賣單利潤（TWD），key = 交易 id */
+  sellProfitById?: Record<string, number>
 }
 
 export interface ExpenseSettlementItem {

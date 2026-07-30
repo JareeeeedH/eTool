@@ -875,6 +875,32 @@ describe('usdt cabin quantity (shared cost)', () => {
     expect(err).toBeNull()
   })
 
+  it('allows USDT buy when history USDT is overdrawn but current TWD is enough', () => {
+    const err = resolveUsdtSpendValidationError('USDT 庫存不足', {
+      spendsTwd: true,
+      balances: { twd: 372_000, usdt: -3_248, vn: 0 },
+      cabins: { a: 0, b: 0, c: -3_248 },
+      usdtAmount: 10_000,
+      cabinAAmount: 0,
+      cabinBAmount: 10_000,
+      fiatAmount: 324_700,
+    })
+    expect(err).toBeNull()
+  })
+
+  it('still blocks USDT buy when current TWD is insufficient', () => {
+    const err = resolveUsdtSpendValidationError('USDT 庫存不足', {
+      spendsTwd: true,
+      balances: { twd: 100_000, usdt: -3_248, vn: 0 },
+      cabins: { a: 0, b: 0, c: -3_248 },
+      usdtAmount: 10_000,
+      cabinAAmount: 0,
+      cabinBAmount: 10_000,
+      fiatAmount: 324_700,
+    })
+    expect(err).toBe('台幣庫存不足')
+  })
+
   it('assigns opening P increases to cabin A', () => {
     expect(adjustOpeningUsdtCabins(100, 30, 40, 120)).toEqual({ a: 50, b: 40 })
   })
