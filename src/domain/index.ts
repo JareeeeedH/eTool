@@ -8,6 +8,7 @@ import type {
   MonthlyClose,
   OpeningBalanceForm,
   Transaction,
+  TransactionType,
   TotalAssetsTwd,
   UsdtCabin,
   UsdtInventoryCost,

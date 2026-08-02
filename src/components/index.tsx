@@ -146,10 +146,11 @@ export function VnPoolCostLines({
 }
 export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
   const [note, setNote] = useState('')
-
-  useEffect(() => {
+  const [noteForDialog, setNoteForDialog] = useState(dialog)
+  if (dialog !== noteForDialog) {
+    setNoteForDialog(dialog)
     setNote('')
-  }, [dialog])
+  }
 
   if (!dialog) return null
 
@@ -736,13 +737,14 @@ export function OpeningUsdtCabinPickModal({
 }: OpeningUsdtCabinPickModalProps) {
   const [selected, setSelected] = useState<UsdtCabin | null>(null)
   const [localError, setLocalError] = useState('')
-
-  useEffect(() => {
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
     if (!open) {
       setSelected(null)
       setLocalError('')
     }
-  }, [open])
+  }
 
   if (!open) return null
 
@@ -4061,10 +4063,11 @@ export function OpeningBalanceModal({
   onConfirm,
 }: OpeningBalanceModalProps) {
   const [zeroConfirmOpen, setZeroConfirmOpen] = useState(false)
-
-  useEffect(() => {
+  const [wasOpen, setWasOpen] = useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
     if (!open) setZeroConfirmOpen(false)
-  }, [open])
+  }
 
   if (!open) return null
 
