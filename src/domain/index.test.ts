@@ -25,6 +25,7 @@ import {
   openingUsdtCabinsAfterRebalance,
   recalculateBalances,
   resolveUsdtSpendValidationError,
+  resolveVnTwdLegValidationError,
   transferUsdtBetweenCabins,
   validateTransactions,
 } from './index'
@@ -875,6 +876,30 @@ describe('usdt cabin quantity (shared cost)', () => {
     expect(err).toBeNull()
   })
 
+  it('allows USDT spend from B when history reports A cabin short', () => {
+    const err = resolveUsdtSpendValidationError('A 艙 USDT 不足', {
+      spendsTwd: false,
+      balances: { twd: 324_100, usdt: 63_722, vn: 0 },
+      cabins: { a: 6, b: 63_716, c: 0 },
+      usdtAmount: 45_513,
+      cabinAAmount: 0,
+      cabinBAmount: 45_513,
+    })
+    expect(err).toBeNull()
+  })
+
+  it('still blocks USDT spend when current cabin really is short', () => {
+    const err = resolveUsdtSpendValidationError('A 艙 USDT 不足', {
+      spendsTwd: false,
+      balances: { twd: 324_100, usdt: 63_722, vn: 0 },
+      cabins: { a: 6, b: 63_716, c: 0 },
+      usdtAmount: 45_513,
+      cabinAAmount: 45_513,
+      cabinBAmount: 0,
+    })
+    expect(err).toBe('A 艙 USDT 不足')
+  })
+
   it('allows USDT buy when history USDT is overdrawn but current TWD is enough', () => {
     const err = resolveUsdtSpendValidationError('USDT 庫存不足', {
       spendsTwd: true,
@@ -899,6 +924,26 @@ describe('usdt cabin quantity (shared cost)', () => {
       fiatAmount: 324_700,
     })
     expect(err).toBe('台幣庫存不足')
+  })
+
+  it('allows VN sell for TWD when history reports A cabin short', () => {
+    const err = resolveVnTwdLegValidationError('A 艙 USDT 不足', {
+      type: 'sell',
+      balances: { twd: 324_100, usdt: 18_209, vn: 37.5698 },
+      vnAmount: 28.14,
+      twdAmount: 350,
+    })
+    expect(err).toBeNull()
+  })
+
+  it('still blocks VN sell for TWD when current VN is short', () => {
+    const err = resolveVnTwdLegValidationError('A 艙 USDT 不足', {
+      type: 'sell',
+      balances: { twd: 324_100, usdt: 18_209, vn: 10 },
+      vnAmount: 28.14,
+      twdAmount: 350,
+    })
+    expect(err).toBe('VN 庫存不足')
   })
 
   it('assigns opening P increases to cabin A', () => {

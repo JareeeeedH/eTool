@@ -82,6 +82,7 @@ import {
   settlementFromTotalAssets,
   validateTransactions,
   resolveUsdtSpendValidationError,
+  resolveVnTwdLegValidationError,
   vnTradePayAmount,
 } from './domain'
 import {
@@ -1339,12 +1340,20 @@ function App() {
               cabinBAmount: cabinBForCheck,
             },
           )
-        : validateTransactions(
-            updatedTransactions,
-            openingBalances,
-            lastTradeSettledAt,
-            openingUsdtCabinA,
-            openingUsdtCabinB,
+        : resolveVnTwdLegValidationError(
+            validateTransactions(
+              updatedTransactions,
+              openingBalances,
+              lastTradeSettledAt,
+              openingUsdtCabinA,
+              openingUsdtCabinB,
+            ),
+            {
+              type,
+              balances,
+              vnAmount: vn,
+              twdAmount: pay,
+            },
           )
     if (validationError) {
       setError(validationError)

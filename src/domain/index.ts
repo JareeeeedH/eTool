@@ -1960,7 +1960,7 @@ export function validateCurrentUsdtCabinSpend(
 
 /**
  * 全量驗證失敗時的救援：
- * - 出 P（不花台幣）：歷史重播誤報「台幣庫存不足」時，改以目前 P／分艙檢查
+ * - 出 P（不花台幣）：歷史重播誤報台幣／USDT／分艙不足時，改以目前 P／分艙檢查
  * - 進 P（花台幣）：歷史重播因既有透支報「USDT 庫存不足」時，改以目前台幣檢查（允許補倉）
  */
 export function resolveUsdtSpendValidationError(
@@ -1977,7 +1977,12 @@ export function resolveUsdtSpendValidationError(
   },
 ): string | null {
   if (!fullError) return null
-  if (fullError === '台幣庫存不足' && !options.spendsTwd) {
+  if (
+    !options.spendsTwd &&
+    (fullError === '台幣庫存不足' ||
+      fullError === 'USDT 庫存不足' ||
+      /艙 USDT 不足$/.test(fullError))
+  ) {
     return validateCurrentUsdtCabinSpend(
       options.balances,
       options.cabins,
@@ -1997,6 +2002,36 @@ export function resolveUsdtSpendValidationError(
     return null
   }
   return fullError
+}
+
+/**
+ * VN 走台幣腿（買付 T／賣收 T）不碰 USDT 艙。
+ * 歷史重播若因 USDT／分艙／無關水位失敗，改以目前 T 或 VN 檢查。
+ */
+export function resolveVnTwdLegValidationError(
+  fullError: string | null,
+  options: {
+    type: TransactionType
+    balances: Balances
+    vnAmount: number
+    twdAmount: number
+  },
+): string | null {
+  if (!fullError) return null
+  if (fullError === '請輸入有效的正數金額') return fullError
+
+  const isInventoryNoise =
+    fullError === '台幣庫存不足' ||
+    fullError === 'VN 庫存不足' ||
+    fullError === 'USDT 庫存不足' ||
+    /艙 USDT 不足$/.test(fullError)
+
+  if (!isInventoryNoise) return fullError
+
+  if (options.type === 'buy') {
+    return options.twdAmount > options.balances.twd + 1e-9 ? '台幣庫存不足' : null
+  }
+  return options.vnAmount > options.balances.vn + 1e-9 ? 'VN 庫存不足' : null
 }
 
 export function openingBalanceToForm(
