@@ -25,6 +25,7 @@ import type {
   PageTab,
   Transaction,
   TransactionType,
+  TwdCabinNotes,
   UsdtCabin,
   UsdtInventoryCost,
   UsdtTransaction,
@@ -46,9 +47,12 @@ import {
 import {
   applyOpeningUsdtDeltaToCabin,
   buildDeleteConfirmLines,
+  buildMonthlyClose,
+  buildMonthlyClosePreview,
   buildTradeSettleConfirmSummary,
   calculateBuyDayAverageRate,
   calculateVnBuyDayAverageRate,
+  computeArchivedDateRange,
   computeInventoryCost,
   computeSellProfitById,
   computeTotalAssetsTwd,
@@ -56,12 +60,12 @@ import {
   computeUsdtDayTotalProfit,
   computeVnDayTotalProfit,
   computeVnTradeAnalytics,
+  expenseSettlementsFromCumulative,
   filterExpenseTransactions,
   filterTradeTransactions,
   getLastTradeSettlementAt,
   filterUsdtTransactions,
   filterVnTradeTransactions,
-  getBusinessDayLabel,
   isExpenseTransaction,
   isUsdtTransaction,
   isVnTradeTransaction,
@@ -77,6 +81,7 @@ import {
   alignOpeningUsdtCabinsToSnapshot,
   openingUsdtCabinsAfterRebalance,
   recalculateBalances,
+  suggestMonthlyPeriodLabel,
   resolveCabinAAmount,
   resolveCabinBAmount,
   settlementFromTotalAssets,
@@ -91,6 +96,7 @@ import {
   formatExpenseTwdInput,
   formatNumber,
   formatSettlementDateTime,
+  formatSettlementDateTimeForBusinessDate,
   formatTwd,
   formatTwdCompactInput,
   formatVnCompactInput,
@@ -116,13 +122,13 @@ import {
   DailyBalanceStrip,
   DailyTradeSettleBar,
   DailyMobileTradeTabBar,
-  DailyWorkTabBar,
   EditingBanner,
   ExpenseForm,
   ExpensePageSummary,
   ExpenseTable,
   MobileNavCloseIcon,
   MobileNavMenuIcon,
+  MonthlyArchivePanel,
   MonthlyClosesList,
   NotebookPanel,
   OpeningBalanceModal,
@@ -140,6 +146,7 @@ const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'notes'>, string> = {
   expenses: 'EXP',
   cumulative_expenses: 'EXP.SUM',
   settlements: 'SET.',
+  month: '月結',
   monthly: 'SETUP',
 }
 
@@ -160,7 +167,7 @@ type PendingCabinAlloc =
   | {
       kind: 'vn'
       type: TransactionType
-      payCurrency: 'usdt'
+      payCurrency: VnPayCurrency
       vn: number
       pay: number
       rate: number
@@ -178,10 +185,20 @@ function dailyTradePaneClass(
   pane: DailyMobileTradePane,
   parentTab: DailyWorkTab,
 ): string {
+  const expenseSelected = mobilePane === 'expense'
   return [
     'flex flex-col gap-1 sm:gap-1.5',
-    mobilePane !== pane ? 'max-lg:hidden' : '',
-    desktopTab !== parentTab ? 'lg:hidden' : '',
+    expenseSelected || mobilePane !== pane ? 'max-lg:hidden' : '',
+    expenseSelected || desktopTab !== parentTab ? 'lg:hidden' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
+function dailyExpensePaneClass(mobilePane: DailyMobileTradePane): string {
+  return [
+    'flex flex-col gap-1 sm:gap-1.5',
+    mobilePane !== 'expense' ? 'hidden' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -201,6 +218,13 @@ function App() {
   const [openingUsdtCost, setOpeningUsdtCost] = useState<UsdtInventoryCost>({ ...EMPTY_USDT_COST })
   const [openingUsdtCabinA, setOpeningUsdtCabinA] = useState(0)
   const [openingUsdtCabinB, setOpeningUsdtCabinB] = useState(0)
+  const [twdCabinNotes, setTwdCabinNotes] = useState<TwdCabinNotes>({
+    a: '',
+    b: '',
+    c: '',
+    d: '',
+    e: '',
+  })
   const [openingVnTwdRate, setOpeningVnTwdRate] = useState<number | null>(null)
   const [openingVnUsdtRate, setOpeningVnUsdtRate] = useState<number | null>(null)
   const [settlements, setSettlements] = useState<DailySettlement[]>([])
@@ -302,8 +326,7 @@ function App() {
           setSettlements(data.settlements.map(normalizeLoadedSettlement))
           setExpenseSettlements(data.expenseSettlements ?? [])
           setCumulativeExpenses(data.cumulativeExpenses ?? [])
-          // 月結功能暫不使用：不載入、並在下次存檔時清掉本機月結
-          setMonthlyCloses([])
+          setMonthlyCloses((data.monthlyCloses ?? []).map((item) => normalizeMonthlyClose(item)))
           setSelectedMonthlyCloseId(null)
           const settledAt = getLastTradeSettlementAt(
             data.settlements.map(normalizeLoadedSettlement),
@@ -345,6 +368,17 @@ function App() {
           }
           setOpeningUsdtCabinA(nextOpeningA)
           setOpeningUsdtCabinB(nextOpeningB)
+          setTwdCabinNotes(
+            data.twdCabinNotes
+              ? {
+                  a: String(data.twdCabinNotes.a ?? ''),
+                  b: String(data.twdCabinNotes.b ?? ''),
+                  c: String(data.twdCabinNotes.c ?? ''),
+                  d: String(data.twdCabinNotes.d ?? ''),
+                  e: String(data.twdCabinNotes.e ?? ''),
+                }
+              : { a: '', b: '', c: '', d: '', e: '' },
+          )
           setTransactions(migrated.transactions)
           setOpeningBalanceForm(
             openingBalanceToForm(
@@ -450,6 +484,7 @@ function App() {
       openingUsdtCabinA,
       openingUsdtCabinB,
       usdtCabinSnapshot: cabinSnapshot,
+      twdCabinNotes,
       openingVnTwdRate,
       openingVnUsdtRate,
       transactions,
@@ -470,6 +505,7 @@ function App() {
     openingUsdtCost,
     openingUsdtCabinA,
     openingUsdtCabinB,
+    twdCabinNotes,
     openingVnTwdRate,
     openingVnUsdtRate,
     transactions,
@@ -508,17 +544,13 @@ function App() {
     [transactions],
   )
 
-  const businessDayLabel = useMemo(
-    () => getBusinessDayLabel(tradeTransactions),
-    [tradeTransactions],
-  )
-
   const createSnapshot = (): AppSnapshot => ({
     transactions,
     openingBalances,
     openingUsdtCost,
     openingUsdtCabinA,
     openingUsdtCabinB,
+    twdCabinNotes,
     openingVnTwdRate,
     openingVnUsdtRate,
     settlements,
@@ -537,6 +569,7 @@ function App() {
     setOpeningUsdtCost(snapshot.openingUsdtCost)
     setOpeningUsdtCabinA(snapshot.openingUsdtCabinA ?? 0)
     setOpeningUsdtCabinB(snapshot.openingUsdtCabinB ?? 0)
+    setTwdCabinNotes(snapshot.twdCabinNotes ?? { a: '', b: '', c: '', d: '', e: '' })
     setOpeningVnTwdRate(snapshot.openingVnTwdRate ?? null)
     setOpeningVnUsdtRate(snapshot.openingVnUsdtRate ?? null)
     setSettlements(snapshot.settlements.map(normalizeLoadedSettlement))
@@ -555,7 +588,7 @@ function App() {
     if (tab !== 'notes' && editingNoteId) {
       resetNoteForm()
     }
-    if (tab === 'monthly') {
+    if (tab !== 'month') {
       setSelectedMonthlyCloseId(null)
     }
     setActiveTab(tab)
@@ -822,28 +855,16 @@ function App() {
     else setVnSellRate(value)
   }
 
-  const handleWorkTabChange = (tab: DailyWorkTab) => {
-    if (tab === dailyWorkTab) return
-    if (editingCategory === 'buy') resetBuyForm()
-    else if (editingCategory === 'sell') resetSellForm()
-    else if (editingCategory === 'vn_buy') resetVnBuyForm()
-    else if (editingCategory === 'vn_sell') resetVnSellForm()
-    else if (editingCategory === 'expense') resetExpenseForm()
-    setDailyWorkTab(tab)
-    setMobileTradePane(tab === 'usdt' ? 'buy_u' : 'buy_vn')
-    if (document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur()
-    }
-  }
-
   const handleMobileTradePaneChange = (pane: DailyMobileTradePane) => {
     if (pane === mobileTradePane) return
     if (editingCategory === 'buy' && pane !== 'buy_u') resetBuyForm()
     else if (editingCategory === 'sell' && pane !== 'sell_u') resetSellForm()
     else if (editingCategory === 'vn_buy' && pane !== 'buy_vn') resetVnBuyForm()
     else if (editingCategory === 'vn_sell' && pane !== 'sell_vn') resetVnSellForm()
+    else if (editingCategory === 'expense' && pane !== 'expense') resetExpenseForm()
     setMobileTradePane(pane)
-    setDailyWorkTab(pane === 'buy_u' || pane === 'sell_u' ? 'usdt' : 'vn')
+    if (pane === 'buy_u' || pane === 'sell_u') setDailyWorkTab('usdt')
+    else if (pane === 'buy_vn' || pane === 'sell_vn') setDailyWorkTab('vn')
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur()
     }
@@ -895,9 +916,7 @@ function App() {
       return [newTransaction, ...list]
     }
 
-    const updatedTransactions = buildUpdatedList(transactions)
-    // 進行中開銷僅紀錄，不參與庫存重算／驗證（與 domain 註解一致）
-    setTransactions(updatedTransactions)
+    setTransactions(buildUpdatedList(transactions))
     resetExpenseForm()
   }
 
@@ -1455,68 +1474,6 @@ function App() {
     }
 
     const { type, vn, pay, rate, isEditing, tradeDate, note } = cabinAllocPending
-    const cabinAlloc = normalizeCabinAlloc(pay, cabinAAmount, cabinBAmount)
-    const updatedList: Transaction[] = isEditing
-      ? transactions.map((tx) =>
-          tx.id === editingId && isVnTradeTransaction(tx)
-            ? {
-                ...tx,
-                type,
-                payCurrency: 'usdt' as const,
-                vnAmount: vn,
-                twdAmount: 0,
-                usdtAmount: pay,
-                rate,
-                ...cabinAlloc,
-                tradeDate,
-                timestamp: timestampForEditedTrade(
-                  tradeDate,
-                  tx.timestamp,
-                  lastTradeSettledAt,
-                ),
-              }
-            : tx,
-        )
-      : [
-          {
-            id: crypto.randomUUID(),
-            timestamp: timestampForNewTrade(
-              tradeDate,
-              transactions.map((tx) => tx.timestamp),
-            ),
-            tradeDate,
-            category: 'vn_trade' as const,
-            type,
-            payCurrency: 'usdt' as const,
-            vnAmount: vn,
-            twdAmount: 0,
-            usdtAmount: pay,
-            rate,
-            ...cabinAlloc,
-          },
-          ...transactions,
-        ]
-    const validationError = resolveUsdtSpendValidationError(
-      validateTransactions(
-        updatedList,
-        openingBalances,
-        lastTradeSettledAt,
-        openingUsdtCabinA,
-        openingUsdtCabinB,
-      ),
-      {
-        spendsTwd: false,
-        balances,
-        cabins: usdtCabinBalances,
-        usdtAmount: pay,
-        cabinAAmount,
-        cabinBAmount,
-      },
-    )
-    if (validationError) {
-      setCabinAllocError(validationError)
-      return
-    }
     const newId = commitVnTrade(
       type,
       'usdt',
@@ -1529,8 +1486,13 @@ function App() {
       cabinBAmount,
       note,
     )
+    if (!newId) {
+      return
+    }
     setCabinAllocPending(null)
-    if (newId) flashNewTransaction(newId)
+    setEditCabinAAmount(null)
+    setEditCabinBAmount(null)
+    flashNewTransaction(newId)
   }
 
   const handleEdit = (tx: UsdtTransaction) => {
@@ -1608,7 +1570,8 @@ function App() {
 
   const handleEditExpense = (tx: ExpenseTransaction) => {
     resetNoteForm()
-    setActiveTab('expenses')
+    setActiveTab('daily')
+    setMobileTradePane('expense')
     setEditingId(tx.id)
     setEditingCategory('expense')
     setBuyError('')
@@ -1682,14 +1645,16 @@ function App() {
           : editingCategory === 'vn_sell'
             ? tradePaneEditingBannerLabel('sell_vn')
             : editingCategory === 'expense'
-              ? '正在編輯開銷'
+              ? tradePaneEditingBannerLabel('expense')
               : isEditingNote
                 ? '正在編輯筆記'
               : null
 
-  const executeTradeSettle = () => {
+  const executeTradeSettle = (businessDate?: string) => {
     const snapshot = createSnapshot()
     const tradeTxs = filterTradeTransactions(transactions)
+    const pendingExpenses = filterExpenseTransactions(transactions)
+    const expenseTotal = pendingExpenses.reduce((sum, tx) => sum + tx.amountTwd, 0)
 
     const inventoryAtSettle = computeInventoryCost(
       openingBalances,
@@ -1740,56 +1705,94 @@ function App() {
       sellProfitById[id] = info.profit
     }
 
-    const settlement: DailySettlement = {
-      id: crypto.randomUUID(),
-      settledAt: new Date(),
-      dateLabel: formatSettlementDateTime(new Date()),
-      twdBalance: balances.twd,
-      usdtBalance: balances.usdt,
-      vnBalance: balances.vn,
-      usdtInventoryAvgTwd: inventoryAtSettle.twd,
-      usdtInventoryAvgVn: inventoryAtSettle.vn,
-      dayBuyAvgTwd: calculateBuyDayAverageRate(usdtTransactions, 'twd'),
-      dayBuyAvgVn: calculateVnBuyDayAverageRate(
-        openingBalances,
-        openingUsdtCost,
-        transactions,
-      ),
-      ...settlementFromTotalAssets(assetsAtSettle),
-      transactionCount: tradeTxs.length,
-      dayUsdtProfit: settledDayUsdtProfit,
-      dayVnProfit: settledDayVnProfit,
-      dayTotalProfit: settledDayProfit,
-      trades: tradeTxs.map((tx) => ({
-        ...tx,
-        timestamp: new Date(tx.timestamp),
-      })),
-      sellProfitById:
-        Object.keys(sellProfitById).length > 0 ? sellProfitById : undefined,
+    const now = new Date()
+    const dateLabel = businessDate
+      ? formatSettlementDateTimeForBusinessDate(businessDate, now)
+      : formatSettlementDateTime(now)
+
+    if (tradeTxs.length > 0) {
+      const settlement: DailySettlement = {
+        id: crypto.randomUUID(),
+        settledAt: now,
+        dateLabel,
+        twdBalance: balances.twd,
+        usdtBalance: balances.usdt,
+        vnBalance: balances.vn,
+        usdtInventoryAvgTwd: inventoryAtSettle.twd,
+        usdtInventoryAvgVn: inventoryAtSettle.vn,
+        dayBuyAvgTwd: calculateBuyDayAverageRate(usdtTransactions, 'twd'),
+        dayBuyAvgVn: calculateVnBuyDayAverageRate(
+          openingBalances,
+          openingUsdtCost,
+          transactions,
+        ),
+        ...settlementFromTotalAssets(assetsAtSettle),
+        transactionCount: tradeTxs.length,
+        dayUsdtProfit: settledDayUsdtProfit,
+        dayVnProfit: settledDayVnProfit,
+        dayTotalProfit: settledDayProfit,
+        trades: tradeTxs.map((tx) => ({
+          ...tx,
+          timestamp: new Date(tx.timestamp),
+        })),
+        sellProfitById:
+          Object.keys(sellProfitById).length > 0 ? sellProfitById : undefined,
+      }
+
+      setSettlements((prev) => [settlement, ...prev])
+      setOpeningUsdtCost(inventoryAtSettle)
+      setOpeningUsdtCabinA(usdtCabinBalances.a)
+      setOpeningUsdtCabinB(usdtCabinBalances.b)
+      setOpeningVnTwdRate(assetsAtSettle.dayVnTwdRate)
+      setOpeningVnUsdtRate(assetsAtSettle.dayVnUsdtRate)
     }
 
-    setSettlements((prev) => [settlement, ...prev])
-    setOpeningBalances(balances)
-    setOpeningUsdtCost(inventoryAtSettle)
-    setOpeningUsdtCabinA(usdtCabinBalances.a)
-    setOpeningUsdtCabinB(usdtCabinBalances.b)
-    setOpeningVnTwdRate(assetsAtSettle.dayVnTwdRate)
-    setOpeningVnUsdtRate(assetsAtSettle.dayVnUsdtRate)
-    setTransactions((prev) => prev.filter(isExpenseTransaction))
+    // AL 時一併扣除進行中開銷（key-in 當下不扣總帳）
+    const nextOpeningBalances =
+      expenseTotal > 0
+        ? { ...balances, twd: balances.twd - expenseTotal }
+        : { ...balances }
+    setOpeningBalances(nextOpeningBalances)
+
+    if (pendingExpenses.length > 0 && expenseTotal > 0) {
+      setCumulativeExpenses((prev) => [
+        {
+          id: crypto.randomUUID(),
+          timestamp: now,
+          amountTwd: expenseTotal,
+          note: tradeTxs.length > 0 ? `AL ${dateLabel}` : `AL EXP ${dateLabel}`,
+          items: pendingExpenses.map((tx) => ({
+            amountTwd: tx.amountTwd,
+            note: tx.note,
+            timestamp: tx.timestamp,
+          })),
+        },
+        ...prev,
+      ])
+    }
+
+    setTransactions([])
     resetBuyForm()
     resetSellForm()
     resetVnBuyForm()
     resetVnSellForm()
+    resetExpenseForm()
     setEditingId(null)
     setEditingCategory(null)
-    setActiveTab('settlements')
+    setActiveTab(tradeTxs.length > 0 ? 'settlements' : 'cumulative_expenses')
 
     setUndoSnapshot(snapshot)
-    setUndoMessage(`已完成 ${businessDayLabel} 交易結算`)
+    setUndoMessage(
+      tradeTxs.length > 0
+        ? expenseTotal > 0
+          ? `已完成 ${dateLabel} 交易結算（含開銷 −${formatTwd(expenseTotal)}）`
+          : `已完成 ${dateLabel} 交易結算`
+        : `已扣除開銷 −${formatTwd(expenseTotal)}`,
+    )
   }
 
   const handleTradeSettle = () => {
-    if (tradeTransactions.length === 0) {
+    if (tradeTransactions.length === 0 && expenseTransactions.length === 0) {
       setConfirmDialog({
         title: '',
         lines: ['無交易'],
@@ -1814,9 +1817,9 @@ function App() {
       cancelLabel: 'C',
       confirmLabel: 'OK',
       variant: 'primary',
-      onConfirm: () => {
+      onConfirm: (businessDate) => {
         setConfirmDialog(null)
-        executeTradeSettle()
+        executeTradeSettle(businessDate)
       },
     })
   }
@@ -1833,6 +1836,108 @@ function App() {
     setUndoMessage('')
   }
 
+  const executeMonthlyClose = () => {
+    const expenseBatches = expenseSettlementsFromCumulative(cumulativeExpenses)
+    if (settlements.length === 0 && expenseBatches.length === 0) return
+
+    const snapshot = createSnapshot()
+    const latest = settlements[0]
+    const closingBalances = latest
+      ? {
+          twd: latest.twdBalance,
+          usdt: latest.usdtBalance,
+          vn: latest.vnBalance,
+        }
+      : { ...balances }
+    const closingUsdtCost = latest
+      ? {
+          twd: latest.usdtInventoryAvgTwd,
+          vn: latest.usdtInventoryAvgVn,
+        }
+      : { ...openingUsdtCost }
+    const closingVnTwdRate = latest?.dayVnTwdRate ?? openingVnTwdRate
+    const closingVnUsdtRate = latest?.dayVnUsdtRate ?? openingVnUsdtRate
+    const closingBookAssets = latest?.totalAssetsTwd ?? totalAssets.total
+    const { end } = computeArchivedDateRange(settlements, expenseBatches)
+    const periodLabel = suggestMonthlyPeriodLabel(end ?? new Date())
+
+    const monthlyClose = buildMonthlyClose(
+      periodLabel,
+      settlements,
+      expenseBatches,
+      closingBalances,
+      closingUsdtCost,
+      closingVnTwdRate,
+      closingVnUsdtRate,
+      closingBookAssets,
+    )
+
+    setMonthlyCloses((prev) => [monthlyClose, ...prev])
+    setSettlements([])
+    setCumulativeExpenses([])
+    setSelectedMonthlyCloseId(monthlyClose.id)
+    setUndoSnapshot(snapshot)
+    setUndoMessage(`已完成 ${periodLabel} 月結`)
+    setActiveTab('month')
+  }
+
+  const handleOpenMonthlyClose = () => {
+    const expenseBatches = expenseSettlementsFromCumulative(cumulativeExpenses)
+    const pendingTradeCount = tradeTransactions.length
+
+    if (settlements.length === 0 && expenseBatches.length === 0) {
+      setConfirmDialog({
+        title: '',
+        lines: ['無可月結內容'],
+        confirmLabel: 'OK',
+        variant: 'primary',
+        alertOnly: true,
+        onConfirm: () => setConfirmDialog(null),
+      })
+      return
+    }
+
+    const latest = settlements[0]
+    const closingBalances = latest
+      ? {
+          twd: latest.twdBalance,
+          usdt: latest.usdtBalance,
+          vn: latest.vnBalance,
+        }
+      : { ...balances }
+    const closingBookAssets = latest?.totalAssetsTwd ?? totalAssets.total
+    const preview = buildMonthlyClosePreview(
+      settlements,
+      expenseBatches,
+      [],
+      pendingTradeCount,
+      closingBalances,
+      closingBookAssets,
+    )
+    const periodLabel = preview.periodLabel
+
+    setConfirmDialog({
+      title: '',
+      lines: [],
+      monthlyCloseSummary: {
+        periodLabel,
+        tradeCount: preview.tradeCount,
+        expenseItemCount: preview.expenseItemCount,
+        grossProfit: preview.grossProfit,
+        expenseTotal: preview.expenseTotal,
+        netProfit: preview.netProfit,
+        dateRangeLabel: preview.dateRangeLabel,
+      },
+      cancelLabel: 'C',
+      confirmLabel: 'OK',
+      variant: 'primary',
+      onConfirm: () => {
+        setConfirmDialog(null)
+        executeMonthlyClose()
+      },
+    })
+  }
+
   const executeResetAll = () => {
     if (!canResetAllLocally()) return
     setTransactions([])
@@ -1845,6 +1950,7 @@ function App() {
     setOpeningUsdtCost({ ...EMPTY_USDT_COST })
     setOpeningUsdtCabinA(0)
     setOpeningUsdtCabinB(0)
+    setTwdCabinNotes({ a: '', b: '', c: '', d: '', e: '' })
     setOpeningVnTwdRate(null)
     setOpeningVnUsdtRate(null)
     resetBuyForm()
@@ -1944,11 +2050,6 @@ function App() {
       return null
     }
 
-    if (twdAdjust === 0 && usdtAdjust === 0 && vnAdjust === 0) {
-      setOpeningBalanceError('請輸入至少一項庫存增減')
-      return null
-    }
-
     const parseOptionalRate = (value: string): number | null | 'invalid' => {
       const trimmed = value.trim()
       if (!trimmed) return null
@@ -1980,6 +2081,18 @@ function App() {
 
     if (usdt > 0 && usdtCostTwd === null) {
       setOpeningBalanceError('有 USDT 庫存時請填寫 USDT 料金 (TWD)')
+      return null
+    }
+
+    const inventoryChanged =
+      twdAdjust !== 0 || usdtAdjust !== 0 || vnAdjust !== 0
+    const ratesChanged =
+      usdtCostTwd !== openingUsdtCost.twd ||
+      usdtCostVn !== openingUsdtCost.vn ||
+      vnTwdRate !== openingVnTwdRate ||
+      vnUsdtRate !== openingVnUsdtRate
+    if (!inventoryChanged && !ratesChanged) {
+      setOpeningBalanceError('請輸入庫存增減，或修改料金')
       return null
     }
 
@@ -2115,6 +2228,7 @@ function App() {
         openingUsdtCabinA: next.a,
         openingUsdtCabinB: next.b,
         usdtCabinSnapshot: snapshot,
+        twdCabinNotes,
         openingVnTwdRate,
         openingVnUsdtRate,
         transactions,
@@ -2178,6 +2292,10 @@ function App() {
     }
 
     promptOpeningBalanceConfirm(null)
+  }
+
+  const handleTwdCabinNoteChange = (cabin: 'a' | 'b' | 'c' | 'd' | 'e', value: string) => {
+    setTwdCabinNotes((prev) => ({ ...prev, [cabin]: value }))
   }
 
   if (!ready) {
@@ -2342,22 +2460,22 @@ function App() {
                 balances={balances}
                 inventoryCost={inventoryCost}
                 usdtCabinBalances={usdtCabinBalances}
+                twdCabinNotes={twdCabinNotes}
+                onTwdCabinNoteChange={handleTwdCabinNoteChange}
                 totalAssets={totalAssets}
                 vnTwdRate={vnTradeAnalytics.currentVnTwdRate}
                 vnUsdtRate={vnTradeAnalytics.currentVnUsdtRate}
               />
               <DailyMobileTradeTabBar
-                className="lg:hidden"
                 value={mobileTradePane}
                 onChange={handleMobileTradePaneChange}
               />
-              <DailyWorkTabBar
-                className="hidden lg:flex"
-                value={dailyWorkTab}
-                onChange={handleWorkTabChange}
-              />
 
-              <section className="grid shrink-0 gap-1 sm:gap-2 lg:grid-cols-2 lg:items-start">
+              <section
+                className={`grid shrink-0 gap-1 sm:gap-2 ${
+                  mobileTradePane === 'expense' ? '' : 'lg:grid-cols-2 lg:items-start'
+                }`}
+              >
                 <div
                   className={dailyTradePaneClass(mobileTradePane, dailyWorkTab, 'buy_u', 'usdt')}
                 >
@@ -2566,9 +2684,46 @@ function App() {
                     />
                   </div>
                 </div>
+
+                <div className={dailyExpensePaneClass(mobileTradePane)}>
+                  <div
+                    className={`overflow-hidden rounded-xl border bg-white shadow-sm ${
+                      isEditingExpense
+                        ? 'border-amber-300 ring-1 ring-amber-100'
+                        : 'border-slate-200/90'
+                    }`}
+                  >
+                    <div className="border-b border-slate-100 px-3 py-2.5">
+                      <ExpenseForm
+                        amount={expenseAmount}
+                        note={expenseNote}
+                        expenseDate={expenseDate}
+                        error={expenseError}
+                        isEditing={isEditingExpense}
+                        disabled={isEditingAny && !isEditingExpense}
+                        onAmountChange={setExpenseAmount}
+                        onNoteChange={setExpenseNote}
+                        onExpenseDateChange={setExpenseDate}
+                        onSubmit={handleExpenseSubmit}
+                        onCancel={resetExpenseForm}
+                      />
+                    </div>
+                    <div className="px-2.5 py-1">
+                      <ExpenseTable
+                        transactions={expenseTransactions}
+                        editingId={editingId}
+                        onEdit={handleEditExpense}
+                        onDelete={handleDelete}
+                        visibleRows={tableVisibleRows}
+                      />
+                    </div>
+                    <ExpensePageSummary transactions={expenseTransactions} />
+                  </div>
+                </div>
               </section>
               <DailyTradeSettleBar
                 tradeCount={tradeTransactions.length}
+                expenseCount={expenseTransactions.length}
                 onSettle={handleTradeSettle}
               />
             </div>
@@ -2645,11 +2800,18 @@ function App() {
             <>
               <SettlementsPanel settlements={settlements} />
             </>
+          ) : activeTab === 'month' ? (
+            <MonthlyArchivePanel
+              closes={monthlyCloses}
+              selectedId={selectedMonthlyCloseId}
+              onSelect={setSelectedMonthlyCloseId}
+            />
           ) : (
             <>
               <MonthlyClosesList
                 onOpeningBalance={handleOpenOpeningBalance}
                 onCabinRebalance={() => setCabinRebalanceModalOpen(true)}
+                onMonthlyClose={handleOpenMonthlyClose}
                 onPullProdState={
                   canPullProdStateToLocal() ? handlePullProdState : undefined
                 }

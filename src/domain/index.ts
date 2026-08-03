@@ -1,7 +1,9 @@
 import type {
   Balances,
+  CumulativeExpenseEntry,
   DailySettlement,
   ExpenseSettlement,
+  ExpenseSettlementItem,
   ExpenseTransaction,
   ExpenseType,
   FiatCurrency,
@@ -27,6 +29,7 @@ import {
 } from '../constants'
 import {
   dateInputValueFromDate,
+  defaultTradeDateInputValue,
   expenseTypeLabel,
   floorTwd,
   formatArchiveDateRange,
@@ -37,6 +40,8 @@ import {
   formatTwdTableCompact,
   formatVnTableCompact,
   formatVnTradeRateDisplay,
+  resolveSettlementArchiveDate,
+  resolveTradeDate,
   roundUsdtCostRate,
   roundVnPoolCostRate,
   roundVnTradeRate,
@@ -102,7 +107,8 @@ import {
  * 精度
  * -----------------------------------------------------------------------------
  * - U 池 @、賣 U 利潤用 @：roundUsdtCostRate（四捨五入 3 位小數）
- * - V 池 @：roundVnPoolCostRate（四捨五入 1 位小數）
+ * - V 成交匯率 R：roundVnTradeRate（四捨五入 2 位小數）
+ * - V 池 @：roundVnPoolCostRate（四捨五入 2 位小數）
  * - 利潤顯示：formatProfit → roundTwdTableCompact 萬位，四捨五入至小數第二位
  *
  * -----------------------------------------------------------------------------
@@ -110,7 +116,8 @@ import {
  * -----------------------------------------------------------------------------
  * - 進行中開銷僅紀錄，不參與 recalculateBalances（不扣台幣餘額、不影響總資產）
  * - 每日明細總覽、日結封存之庫存／總資產皆不含開銷
- * - 月結時：毛利 − 開銷 = 淨利；實際總資產 = 庫存計價帳面 − 本期開銷；並自期初台幣扣開銷
+ * - AL 結帳時一併自期初台幣扣除進行中開銷，並封存至 EXP.SUM
+ * - 月結時：毛利 − 開銷 = 淨利；實際總資產 = 庫存計價帳面 − 本期開銷
  *
  * -----------------------------------------------------------------------------
  * 異動本檔時請確認
@@ -195,6 +202,15 @@ export function normalizeVnTradeTransaction(tx: VnTradeTransaction): VnTradeTran
 
 export function vnTradePayAmount(tx: VnTradeTransaction): number {
   return tx.payCurrency === 'usdt' ? tx.usdtAmount : tx.twdAmount
+}
+
+/** 畫面顯示用 R：由 VN÷支付金額重算後四捨五入至小數第二位（避免舊資料曾存 1 位小數） */
+export function vnTradeDisplayRate(tx: VnTradeTransaction): number {
+  const pay = vnTradePayAmount(tx)
+  if (pay > 0 && tx.vnAmount > 0) {
+    return roundVnTradeRate(tx.vnAmount / pay)
+  }
+  return roundVnTradeRate(tx.rate)
 }
 
 /** 該筆交易是否會異動 USDT 數量 */
@@ -1519,6 +1535,52 @@ export function assembleExpenseSettlementsForMonthlyClose(
   return result
 }
 
+/** 將 EXP.SUM 轉成月結用開銷批次（類別一律 other；僅供封存／顯示） */
+export function expenseSettlementsFromCumulative(
+  entries: CumulativeExpenseEntry[],
+): ExpenseSettlement[] {
+  if (entries.length === 0) return []
+
+  const items: ExpenseSettlementItem[] = []
+  for (const entry of entries) {
+    if (entry.items && entry.items.length > 0) {
+      for (const item of entry.items) {
+        items.push({
+          expenseType: 'other',
+          amountTwd: item.amountTwd,
+          note: item.note,
+          timestamp: new Date(item.timestamp),
+        })
+      }
+    } else {
+      items.push({
+        expenseType: 'other',
+        amountTwd: entry.amountTwd,
+        note: entry.note,
+        timestamp: new Date(entry.timestamp),
+      })
+    }
+  }
+
+  const expenseTotal = items.reduce((sum, item) => sum + item.amountTwd, 0)
+  const latestTs = items.reduce(
+    (max, item) => Math.max(max, item.timestamp.getTime()),
+    entries[0]!.timestamp.getTime(),
+  )
+
+  return [
+    {
+      id: crypto.randomUUID(),
+      settledAt: new Date(latestTs),
+      dateLabel: 'EXP.SUM',
+      twdBalance: 0,
+      expenseCount: items.length,
+      expenseTotal,
+      items,
+    },
+  ]
+}
+
 export function cloneDailySettlement(item: DailySettlement): DailySettlement {
   return {
     ...item,
@@ -1558,10 +1620,11 @@ export function computeArchivedDateRange(
   tradeSettlements: DailySettlement[],
   expenseSettlements: ExpenseSettlement[],
 ): { start: Date | null; end: Date | null } {
-  const dates = [
-    ...tradeSettlements.map((item) => item.settledAt),
-    ...expenseSettlements.map((item) => item.settledAt),
-  ]
+  // 月結區間以 SET 帳務日為準；僅無 SET 時才退回開銷時間（避免 EXP 把尾端拉到隔日）
+  const dates =
+    tradeSettlements.length > 0
+      ? tradeSettlements.map((item) => resolveSettlementArchiveDate(item))
+      : expenseSettlements.map((item) => item.settledAt)
   if (dates.length === 0) return { start: null, end: null }
   const times = dates.map((date) => date.getTime())
   return {
@@ -1570,8 +1633,9 @@ export function computeArchivedDateRange(
   }
 }
 
-export function suggestMonthlyPeriodLabel(): string {
-  return `${new Date().getMonth() + 1}月份`
+/** 月結期別標籤：依封存區間尾端月份（SET 帳務日），非「今天」 */
+export function suggestMonthlyPeriodLabel(anchor: Date = new Date()): string {
+  return `${anchor.getMonth() + 1}月份`
 }
 
 export function buildMonthlyClosePreview(
@@ -1602,6 +1666,7 @@ export function buildMonthlyClosePreview(
     closingBookTotalAssets: totalAssets,
     closingTotalAssets: totalAssets - expenseTotal,
     dateRangeLabel: formatArchiveDateRange(start, end),
+    periodLabel: suggestMonthlyPeriodLabel(end ?? new Date()),
     pendingTradeCount,
     pendingExpenseCount: pendingExpenses.length,
   }
@@ -1709,6 +1774,18 @@ export function getBusinessDayLabel(transactions: Transaction[]): string {
   return formatSettlementDate(new Date())
 }
 
+/** 日結預設帳務日：取進行中交易最新 tradeDate，否則今天 */
+export function defaultSettleBusinessDate(transactions: Transaction[]): string {
+  const trades = filterTradeTransactions(transactions)
+  if (trades.length === 0) return defaultTradeDateInputValue()
+  let latest = resolveTradeDate(trades[0]!)
+  for (const tx of trades) {
+    const day = resolveTradeDate(tx)
+    if (day > latest) latest = day
+  }
+  return latest
+}
+
 export function buildDeleteConfirmLines(tx: Transaction): string[] {
   if (isExpenseTransaction(tx)) {
     const note = tx.note.trim()
@@ -1723,7 +1800,7 @@ export function buildDeleteConfirmLines(tx: Transaction): string[] {
     return [
       `VN ${formatVnTableCompact(tx.vnAmount)}`,
       pay,
-      `@${formatVnTradeRateDisplay(tx.rate)}`,
+      `@${formatVnTradeRateDisplay(vnTradeDisplayRate(tx))}`,
     ]
   }
 
@@ -1760,6 +1837,8 @@ export function buildTradeSettleConfirmSummary(
     transactions,
   )
   const hasSells = usdtSell > 0 || vnSell > 0
+  const pendingExpenses = filterExpenseTransactions(transactions)
+  const expenseTotal = pendingExpenses.reduce((sum, tx) => sum + tx.amountTwd, 0)
 
   return {
     tradeCount: usdtTxs.length + vnTxs.length,
@@ -1772,6 +1851,9 @@ export function buildTradeSettleConfirmSummary(
     dayVnProfit: vnSell > 0 ? dayVnProfit : null,
     dayTotalProfit: dayUsdtProfit + dayVnProfit,
     hasSells,
+    expenseCount: pendingExpenses.length,
+    expenseTotal,
+    defaultBusinessDate: defaultSettleBusinessDate(transactions),
   }
 }
 export function applyExpenseTransaction(balances: Balances, tx: ExpenseTransaction): Balances {

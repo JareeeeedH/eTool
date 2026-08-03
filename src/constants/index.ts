@@ -1,11 +1,12 @@
 import type { Balances, DailyMobileTradePane, ExpenseType } from '../types'
 
-/** 四格交易簡稱（手機 tab / 電腦表單標題共用） */
+/** 主功能簡稱（手機 tab / 電腦表單標題共用） */
 export const TRADE_PANE_CODE: Record<DailyMobileTradePane, string> = {
   buy_u: 'IE',
   sell_u: 'OE',
   buy_vn: 'IV',
   sell_vn: 'OV',
+  expense: 'EXP',
 }
 
 export function tradePaneEditLabel(pane: DailyMobileTradePane): string {

@@ -29,7 +29,7 @@ export function formatFiatInput(value: number): string {
 }
 
 export function formatVnRateCalc(value: number): string {
-  return (Math.round(value * 10) / 10).toFixed(1)
+  return (Math.round(value * 100) / 100).toFixed(2)
 }
 
 export function formatRateCalc(value: number): string {

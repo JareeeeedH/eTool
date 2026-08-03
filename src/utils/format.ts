@@ -210,13 +210,13 @@ export function formatRateDisplay(value: number): string {
   return roundMoney(value).toFixed(2)
 }
 
-/** VN 成交匯率：四捨五入至小數第一位 */
+/** VN 成交匯率：四捨五入至小數第二位 */
 export function roundVnTradeRate(value: number): number {
-  return Math.round(value * 10) / 10
+  return Math.round(value * 100) / 100
 }
 
 export function formatVnTradeRateDisplay(value: number): string {
-  return roundVnTradeRate(value).toFixed(1)
+  return roundVnTradeRate(value).toFixed(2)
 }
 
 /** USDT 匯率（TWD/USDT）：四捨五入至小數第三位 */
@@ -238,14 +238,14 @@ export function formatVnNtdCostRate(rate: number): string {
   return `1 T = ${formatVnTradeRateDisplay(rate)} VN`
 }
 
-/** VN 池成本：四捨五入至小數第一位（1 NTD = ? VN） */
+/** VN 池成本：四捨五入至小數第二位（1 NTD = ? VN／1 USDT = ? VN） */
 export function roundVnPoolCostRate(value: number): number {
-  return Math.round(value * 10) / 10
+  return Math.round(value * 100) / 100
 }
 
-/** VN 池成本 @ 顯示：四捨五入至小數第一位 */
+/** VN 池成本 @ 顯示：四捨五入至小數第二位 */
 export function formatVnPoolCostRateDisplay(value: number): string {
-  return roundVnPoolCostRate(value).toFixed(1)
+  return roundVnPoolCostRate(value).toFixed(2)
 }
 
 export function formatVnNtdCostRateCompact(rate: number): string {
@@ -265,6 +265,31 @@ export function formatProfit(value: number): string {
   if (rounded === 0) return '0'
   const prefix = rounded > 0 ? '+' : '−'
   return `${prefix}${Math.abs(rounded).toFixed(2)}`
+}
+
+/**
+ * 分項先各自萬位四捨五入再加總（已是萬位小數）。
+ * 避免畫面「P +0.64、VN +5.34，合計卻 +5.97」這類各自 round 不一致。
+ */
+export function sumRoundedProfitParts(
+  ...parts: Array<number | null | undefined>
+): number {
+  let sum = 0
+  for (const part of parts) {
+    if (part == null || !Number.isFinite(part)) continue
+    sum += roundTwdTableCompact(part)
+  }
+  return Math.round(sum * 100) / 100
+}
+
+/** 合計顯示用：與畫面上已顯示的分項加總一致 */
+export function formatProfitFromParts(
+  ...parts: Array<number | null | undefined>
+): string {
+  const sum = sumRoundedProfitParts(...parts)
+  if (sum === 0) return '0'
+  const prefix = sum > 0 ? '+' : '−'
+  return `${prefix}${Math.abs(sum).toFixed(2)}`
 }
 
 /** @deprecated 與 formatProfit 相同（萬位縮寫，四捨五入至小數第二位） */
@@ -301,6 +326,28 @@ export function formatSettlementDateTime(date: Date): string {
     hour12: false,
   })
   return `${day} ${time}`
+}
+
+/** SET 日結列表：只顯示結帳「日」（如 3），不顯示時間 */
+export function formatSettlementDayLabel(
+  dateLabel: string,
+  settledAt?: Date,
+): string {
+  const match = /^(\d{1,2})\b/.exec(dateLabel.trim())
+  if (match) return match[1]
+  if (settledAt) return String(settledAt.getDate())
+  return dateLabel.trim() || '—'
+}
+
+/** 日結標籤：帳務日的「日」+ 當下時間 */
+export function formatSettlementDateTimeForBusinessDate(
+  businessDate: string,
+  now: Date = new Date(),
+): string {
+  const dayDate = isValidDateInputValue(businessDate)
+    ? timestampFromDateInput(businessDate, now)
+    : now
+  return formatSettlementDateTime(dayDate)
 }
 
 export function formatTableDateTime(date: Date): string {
@@ -419,6 +466,42 @@ export function timestampForEditedTrade(
   return previousTimestamp.getTime() > lastTradeSettledAt.getTime()
     ? previousTimestamp
     : new Date(lastTradeSettledAt.getTime() + 1)
+}
+
+/**
+ * 日結封存用日期：優先 dateLabel 的帳務「日」，再對齊 settledAt 的年月。
+ * 例：實際結算 8/1、標籤「31 14:12」→ 7/31。
+ */
+export function resolveSettlementArchiveDate(item: {
+  settledAt: Date
+  dateLabel: string
+}): Date {
+  const settled = item.settledAt
+  const match = /^(\d{1,2})\s+\d{1,2}:\d{2}/.exec(item.dateLabel.trim())
+  if (!match) return new Date(settled)
+  const day = Number(match[1])
+  if (!Number.isFinite(day) || day < 1 || day > 31) return new Date(settled)
+
+  let y = settled.getFullYear()
+  let m = settled.getMonth()
+  if (day > settled.getDate()) {
+    m -= 1
+    if (m < 0) {
+      m = 11
+      y -= 1
+    }
+  }
+  const daysInMonth = new Date(y, m + 1, 0).getDate()
+  if (day > daysInMonth) return new Date(settled)
+  return new Date(
+    y,
+    m,
+    day,
+    settled.getHours(),
+    settled.getMinutes(),
+    settled.getSeconds(),
+    settled.getMilliseconds(),
+  )
 }
 
 export function formatArchiveDateRange(start: Date | null, end: Date | null): string {

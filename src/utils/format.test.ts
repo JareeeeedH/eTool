@@ -6,6 +6,9 @@ import {
   formatVnCompactInput,
   coerceDisplayZeroBalance,
   formatTwdAdjustToZero,
+  formatProfit,
+  formatProfitFromParts,
+  sumRoundedProfitParts,
   parseExpenseTwdInput,
   parseTwdAdjustInput,
   parseTwdTableCompactInput,
@@ -14,8 +17,11 @@ import {
   timestampFromDateInput,
   timestampForEditedTrade,
   resolveTradeDate,
+  resolveSettlementArchiveDate,
+  formatSettlementDayLabel,
   formatTradeListDate,
   compareTradeListOrder,
+  formatArchiveDateRange,
 } from './format'
 
 describe('compact input parsing', () => {
@@ -145,5 +151,47 @@ describe('resolveTradeDate / compareTradeListOrder', () => {
       '2026-07-29',
       '2026-07-28',
     ])
+  })
+})
+
+describe('formatProfitFromParts', () => {
+  it('sums already-rounded display parts so P+VN matches total', () => {
+    // 6369 → 0.64 萬；53358 → 5.34 萬；真實合計 59727 → 5.97，但畫面應為 0.64+5.34=5.98
+    expect(formatProfit(6369.064999999944)).toBe('+0.64')
+    expect(formatProfit(53358.03553829419)).toBe('+5.34')
+    expect(formatProfit(59727.10053829414)).toBe('+5.97')
+    expect(formatProfitFromParts(6369.064999999944, 53358.03553829419)).toBe('+5.98')
+    expect(sumRoundedProfitParts(6369.064999999944, 53358.03553829419)).toBe(5.98)
+  })
+})
+
+describe('resolveSettlementArchiveDate', () => {
+  it('maps dateLabel day 31 with Aug 1 settledAt to July 31', () => {
+    const settledAt = new Date(2026, 7, 1, 14, 12, 53)
+    const archive = resolveSettlementArchiveDate({
+      settledAt,
+      dateLabel: '31 14:12',
+    })
+    expect(archive.getFullYear()).toBe(2026)
+    expect(archive.getMonth()).toBe(6)
+    expect(archive.getDate()).toBe(31)
+    expect(formatArchiveDateRange(archive, archive)).toBe('07/31')
+  })
+
+  it('keeps same calendar day when label day matches settledAt', () => {
+    const settledAt = new Date(2026, 6, 31, 13, 50, 0)
+    const archive = resolveSettlementArchiveDate({
+      settledAt,
+      dateLabel: '31 13:50',
+    })
+    expect(archive.getMonth()).toBe(6)
+    expect(archive.getDate()).toBe(31)
+  })
+})
+
+describe('formatSettlementDayLabel', () => {
+  it('shows only settlement day without time', () => {
+    expect(formatSettlementDayLabel('3 03:50')).toBe('3')
+    expect(formatSettlementDayLabel('31 14:12')).toBe('31')
   })
 })

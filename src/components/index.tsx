@@ -13,12 +13,14 @@ import type {
   ExpensePageSummaryProps,
   ExpenseTableProps,
   MonthlyClosesListProps,
+  MonthlyArchivePanelProps,
   NotebookPanelProps,
   OpeningBalanceModalProps,
   SettlementsPanelProps,
   ExpenseSettlementsPanelProps,
   SettlementRecordBodyProps,
   TradeSettleConfirmSummary,
+  MonthlyCloseConfirmSummary,
   TradeFormProps,
   TransactionTableProps,
   UndoBannerProps,
@@ -70,14 +72,18 @@ import {
 import {
   assetCode,
   formatNumber,
+  formatArchiveDateRange,
   formatProfit,
   formatProfitCompact,
+  formatProfitFromParts,
   formatProfitMarginPercent,
+  sumRoundedProfitParts,
   formatUsdtTradeRateDisplay,
   formatVnTradeRateDisplay,
   formatUsdtCostRateDisplay,
   formatSettlementDate,
   formatSettlementDateTime,
+  formatSettlementDayLabel,
   formatTableDateTime,
   formatTradeMetaDateDisplay,
   formatTradeListDate,
@@ -89,6 +95,7 @@ import {
   formatVnCompactInput,
   formatVnTableCompact,
   parseTwdAdjustInput,
+  parseTwdTableCompactInput,
   parseExpenseTwdInput,
   parseUsdtAdjustInput,
   parseVnAdjustInput,
@@ -109,9 +116,11 @@ import {
   computeUsdtSellProfitPreview,
   computeVnSellProfitPreview,
   isUsdtTransaction,
+  normalizeMonthlyCloseRecord,
   settlementHasSplitProfit,
   totalAssetsFromSettlement,
   transferUsdtBetweenCabins,
+  vnTradeDisplayRate,
   vnTradePayAmount,
 } from '../domain'
 
@@ -146,18 +155,22 @@ export function VnPoolCostLines({
 }
 export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
   const [note, setNote] = useState('')
+  const [businessDate, setBusinessDate] = useState('')
   const [noteForDialog, setNoteForDialog] = useState(dialog)
   if (dialog !== noteForDialog) {
     setNoteForDialog(dialog)
     setNote('')
+    setBusinessDate(dialog?.tradeSettleSummary?.defaultBusinessDate ?? '')
   }
 
   if (!dialog) return null
 
   const isTradeSettle = Boolean(dialog.tradeSettleSummary)
+  const isMonthlyClose = Boolean(dialog.monthlyCloseSummary)
+  const isCardConfirm = isTradeSettle || isMonthlyClose
   /** 無標題、僅短內容：刪除確認等，用小卡 */
   const isCompactConfirm =
-    !isTradeSettle &&
+    !isCardConfirm &&
     !dialog.noteInput &&
     (!dialog.title.trim() || dialog.lines.length === 0)
 
@@ -170,7 +183,7 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
     >
       <div
         className={`w-full rounded-lg bg-white shadow-lg ${
-          isTradeSettle
+          isCardConfirm
             ? 'max-w-[16.5rem] p-3.5'
             : isCompactConfirm
               ? 'max-w-[13.5rem] px-3 py-2.5'
@@ -180,7 +193,7 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
         <h2
           id="confirm-dialog-title"
           className={
-            isTradeSettle || isCompactConfirm || !dialog.title
+            isCardConfirm || isCompactConfirm || !dialog.title
               ? 'sr-only'
               : 'text-sm font-semibold text-slate-900'
           }
@@ -188,7 +201,13 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
           {dialog.title || dialog.confirmLabel}
         </h2>
         {dialog.tradeSettleSummary ? (
-          <TradeSettleConfirmBody summary={dialog.tradeSettleSummary} />
+          <TradeSettleConfirmBody
+            summary={dialog.tradeSettleSummary}
+            businessDate={businessDate}
+            onBusinessDateChange={setBusinessDate}
+          />
+        ) : dialog.monthlyCloseSummary ? (
+          <MonthlyCloseConfirmBody summary={dialog.monthlyCloseSummary} />
         ) : dialog.lines.length > 0 ? (
           <div
             className={`${dialog.title ? 'mt-2' : 'mt-0'} ${
@@ -228,7 +247,7 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
         )}
         <div
           className={`flex justify-end gap-1.5 ${
-            isTradeSettle ? 'mt-2.5' : isCompactConfirm ? 'mt-2.5' : 'mt-4'
+            isCardConfirm ? 'mt-2.5' : isCompactConfirm ? 'mt-2.5' : 'mt-4'
           }`}
         >
           {!dialog.alertOnly && (
@@ -236,19 +255,27 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
               type="button"
               onClick={onCancel}
               className={`rounded-md border border-slate-300 bg-white font-medium text-slate-600 hover:bg-slate-50 ${
-                isTradeSettle || isCompactConfirm
+                isCardConfirm || isCompactConfirm
                   ? 'px-2 py-1 text-[11px]'
                   : 'px-3 py-1.5 text-sm'
               }`}
             >
-              {dialog.cancelLabel ?? (isTradeSettle || isCompactConfirm ? 'C' : '取消')}
+              {dialog.cancelLabel ?? (isCardConfirm || isCompactConfirm ? 'C' : '取消')}
             </button>
           )}
           <button
             type="button"
-            onClick={() => dialog.onConfirm(note.trim())}
+            onClick={() =>
+              dialog.onConfirm(
+                dialog.tradeSettleSummary
+                  ? businessDate
+                  : dialog.noteInput
+                    ? note.trim()
+                    : undefined,
+              )
+            }
             className={`rounded-md font-medium text-white ${
-              isTradeSettle || isCompactConfirm
+              isCardConfirm || isCompactConfirm
                 ? 'px-2.5 py-1 text-[11px]'
                 : 'px-3 py-1.5 text-sm'
             } ${
@@ -265,13 +292,92 @@ export function ConfirmModal({ dialog, onCancel }: ConfirmModalProps) {
   )
 }
 
-function TradeSettleConfirmBody({ summary }: { summary: TradeSettleConfirmSummary }) {
+function MonthlyCloseConfirmBody({ summary }: { summary: MonthlyCloseConfirmSummary }) {
   return (
     <div className="space-y-2">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-center">
-        <span className="text-sm font-semibold tabular-nums text-slate-900">
-          #{summary.tradeCount}
-        </span>
+      {summary.dateRangeLabel ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-center">
+          <p className="text-[11px] tabular-nums text-slate-600">{summary.dateRangeLabel}</p>
+        </div>
+      ) : null}
+
+      <div className="rounded-lg border border-slate-200 px-2 py-1.5 text-center">
+        <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">SET</p>
+        <p className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900">
+          {summary.tradeCount}
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 px-2.5 py-2">
+        <div className="space-y-0.5 text-xs tabular-nums">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-slate-500">PF</span>
+            <span className={`font-medium ${profitColorClass(summary.grossProfit)}`}>
+              {formatProfit(summary.grossProfit)}
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-slate-500">EXP</span>
+            <span className="font-medium text-rose-600">
+              {formatTwdTableCompact(summary.expenseTotal)}
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between gap-2 border-t border-slate-100 pt-1.5">
+            <span className="text-slate-500">nPF</span>
+            <span className={`text-sm font-bold ${profitColorClass(summary.netProfit)}`}>
+              {formatProfit(summary.netProfit)}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TradeSettleConfirmBody({
+  summary,
+  businessDate,
+  onBusinessDateChange,
+}: {
+  summary: TradeSettleConfirmSummary
+  businessDate: string
+  onBusinessDateChange: (value: string) => void
+}) {
+  const dateValue = isValidDateInputValue(businessDate)
+    ? businessDate
+    : summary.defaultBusinessDate
+  const [year, month, day] = dateValue.split('-').map((part) => Number(part))
+  const daysInMonth = new Date(year, month, 0).getDate()
+  const dayOptions = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+
+  return (
+    <div className="space-y-2">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-semibold tabular-nums text-slate-900">
+            #{summary.tradeCount}
+          </span>
+          <label className="flex min-w-0 items-center gap-1">
+            <span className="sr-only">帳務日</span>
+            <select
+              value={day}
+              onChange={(event) => {
+                const nextDay = Number(event.target.value)
+                const m = String(month).padStart(2, '0')
+                const d = String(nextDay).padStart(2, '0')
+                onBusinessDateChange(`${year}-${m}-${d}`)
+              }}
+              aria-label="帳務日"
+              className="w-[3.25rem] rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-center text-[11px] tabular-nums text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/30"
+            >
+              {dayOptions.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className={`grid gap-1.5 ${summary.showVn ? 'grid-cols-2' : 'grid-cols-1'}`}>
@@ -315,8 +421,12 @@ function TradeSettleConfirmBody({ summary }: { summary: TradeSettleConfirmSummar
               </div>
             )}
             <div className="flex items-baseline justify-end gap-2 border-t border-slate-100 pt-1.5">
-              <span className={`text-sm font-bold ${profitColorClass(summary.dayTotalProfit)}`}>
-                {formatProfit(summary.dayTotalProfit)}
+              <span
+                className={`text-sm font-bold ${profitColorClass(
+                  sumRoundedProfitParts(summary.dayUsdtProfit, summary.dayVnProfit),
+                )}`}
+              >
+                {formatProfitFromParts(summary.dayUsdtProfit, summary.dayVnProfit)}
               </span>
             </div>
           </div>
@@ -324,6 +434,19 @@ function TradeSettleConfirmBody({ summary }: { summary: TradeSettleConfirmSummar
           <p className="text-xs text-slate-400">—</p>
         )}
       </div>
+
+      {summary.expenseCount > 0 && (
+        <div className="rounded-lg border border-orange-200 bg-orange-50/70 px-2.5 py-1.5">
+          <div className="flex items-baseline justify-between gap-2 text-xs tabular-nums">
+            <span className="font-semibold text-orange-800">
+              EXP #{summary.expenseCount}
+            </span>
+            <span className="font-semibold text-rose-600">
+              −{formatTwd(summary.expenseTotal)}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -366,6 +489,10 @@ export function SettlementDayProfit({
   const textClass = compact ? 'text-[11px] leading-tight' : 'text-xs leading-tight'
   const formatSigned = (value: number) =>
     formatProfit(value) === '0' ? '+0' : formatProfit(value)
+  const displayTotal = showSplit ? sumRoundedProfitParts(usdtProfit, vnProfit) : totalProfit
+  const displayTotalLabel = showSplit
+    ? formatProfitFromParts(usdtProfit, vnProfit)
+    : formatProfit(totalProfit)
 
   if (!showSplit && !showNet) {
     return (
@@ -389,8 +516,8 @@ export function SettlementDayProfit({
               VN{formatSigned(vnProfit!)}
             </span>
             {!splitOnly && (
-              <span className={`ml-1.5 ${profitColorClass(totalProfit)}`}>
-                {formatProfit(totalProfit)}
+              <span className={`ml-1.5 ${profitColorClass(displayTotal)}`}>
+                {displayTotalLabel}
               </span>
             )}
           </>
@@ -415,8 +542,8 @@ export function SettlementDayProfit({
         <>
           <p className={profitColorClass(usdtProfit!)}>P {formatProfit(usdtProfit!)}</p>
           <p className={profitColorClass(vnProfit!)}>VN {formatProfit(vnProfit!)}</p>
-          <p className={`font-semibold ${profitColorClass(totalProfit)}`}>
-            {formatProfit(totalProfit)}
+          <p className={`font-semibold ${profitColorClass(displayTotal)}`}>
+            {displayTotalLabel}
           </p>
         </>
       ) : (
@@ -608,34 +735,108 @@ export function DailyBalanceStrip({
   balances,
   inventoryCost,
   usdtCabinBalances,
+  twdCabinNotes,
+  onTwdCabinNoteChange,
   totalAssets,
   vnTwdRate,
   vnUsdtRate,
 }: DailyBalanceStripProps) {
-  const cabins = usdtCabinBalances ?? { a: 0, b: 0, c: 0 }
+  const usdtCabins = usdtCabinBalances ?? { a: 0, b: 0, c: 0 }
+  const notes = twdCabinNotes ?? { a: '', b: '', c: '', d: '', e: '' }
+  /** A–E 輸入與表單 T 相同：萬位縮寫 → 台幣後再加總 */
+  const twdNoteSumActual = (['a', 'b', 'c', 'd', 'e'] as const).reduce((sum, key) => {
+    return sum + (parseTwdTableCompactInput(notes[key], true) ?? 0)
+  }, 0)
   const showUsdtCost = balances.usdt > 0 && inventoryCost.twd !== null
   const showVnRates =
     balances.vn > 0 && (vnTwdRate !== null || vnUsdtRate !== null)
-  const showCabinSplit = balances.usdt > 0
+  const showUsdtCabinSplit = balances.usdt > 0
   const cabinTone: Record<UsdtCabin, string> = {
     A: 'bg-sky-50 text-sky-800 ring-sky-200',
     B: 'bg-violet-50 text-violet-800 ring-violet-200',
     C: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
   }
-  const cabinBalance = (cabin: UsdtCabin) =>
-    cabin === 'A' ? cabins.a : cabin === 'B' ? cabins.b : cabins.c
+  const twdNoteLetterTone: Record<'A' | 'B' | 'C' | 'D' | 'E', string> = {
+    A: 'text-sky-600',
+    B: 'text-violet-600',
+    C: 'text-emerald-600',
+    D: 'text-amber-600',
+    E: 'text-rose-600',
+  }
+  const twdNoteSumMismatch =
+    Math.abs(twdNoteSumActual - balances.twd) > 0.5
+  const renderCabinPills = (cabins: { a: number; b: number; c: number }, format?: (n: number) => string) =>
+    (['A', 'B'] as const).map((cabin) => (
+      <span
+        key={cabin}
+        className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-semibold tabular-nums ring-1 ring-inset sm:text-[10px] ${cabinTone[cabin]}`}
+      >
+        <span className="opacity-70">{cabin}</span>
+        <AnimatedAmount
+          value={cabin === 'A' ? cabins.a : cabins.b}
+          format={format}
+        />
+      </span>
+    ))
 
   return (
     <div className="mb-0.5 grid grid-cols-2 items-stretch gap-0.5 sm:mb-1.5 sm:grid-cols-4 sm:gap-1.5">
-      <div className={`${BALANCE_CARD_CLASS} ${BALANCE_MOBILE_ROW_CLASS}`}>
-        <p className={BALANCE_LABEL_CLASS}>T</p>
-        <AnimatedAmount
-          as="p"
-          className={BALANCE_VALUE_CLASS}
-          value={balances.twd}
-          format={formatTwdTableCompact}
-          title={formatTwd(balances.twd)}
-        />
+      <div
+        className={`${BALANCE_CARD_CLASS} flex flex-col items-center justify-center gap-y-0.5 sm:gap-y-1`}
+      >
+        <div className="flex flex-wrap items-baseline justify-center gap-x-1">
+          <p className={BALANCE_LABEL_CLASS}>T</p>
+          <AnimatedAmount
+            as="p"
+            className={`${BALANCE_VALUE_CLASS} text-[13px] sm:text-base`}
+            value={balances.twd}
+            format={formatTwdTableCompact}
+            title={formatTwd(balances.twd)}
+          />
+        </div>
+        {onTwdCabinNoteChange && (
+          <div className="w-full min-w-0 rounded bg-slate-50/90 px-1 py-0.5 sm:px-1.5 sm:py-0.5">
+            <div className="flex items-center gap-px sm:gap-0.5">
+              {(['a', 'b', 'c', 'd', 'e'] as const).map((key, index) => {
+                const cabin = key.toUpperCase() as 'A' | 'B' | 'C' | 'D' | 'E'
+                const noteActual = parseTwdTableCompactInput(notes[key], true)
+                return (
+                  <label
+                    key={key}
+                    className={`flex min-w-0 flex-1 items-baseline gap-px sm:gap-0.5 ${
+                      index > 0 ? 'border-l border-slate-200/80 pl-0.5 sm:pl-1' : ''
+                    }`}
+                    title={noteActual != null ? formatTwd(noteActual) : undefined}
+                  >
+                    <span
+                      className={`shrink-0 text-[7px] font-semibold leading-none sm:text-[8px] ${twdNoteLetterTone[cabin]}`}
+                    >
+                      {cabin}
+                    </span>
+                    <input
+                      type="text"
+                      value={notes[key]}
+                      onChange={(e) => onTwdCabinNoteChange(key, e.target.value)}
+                      placeholder="0"
+                      className="min-w-0 w-full border-0 bg-transparent p-0 text-center text-[7px] font-medium tabular-nums leading-none text-slate-600 outline-none placeholder:text-slate-300 sm:text-[8px]"
+                      inputMode="decimal"
+                      aria-label={`T 備註 ${cabin}（萬）`}
+                    />
+                  </label>
+                )
+              })}
+            </div>
+            <p
+              className={`mt-0.5 text-center text-[7px] tabular-nums leading-none sm:text-[8px] ${
+                twdNoteSumMismatch ? 'font-medium text-amber-700' : 'text-slate-400'
+              }`}
+              title={formatTwd(twdNoteSumActual)}
+            >
+              Σ {formatTwdTableCompact(twdNoteSumActual)}
+              {twdNoteSumMismatch ? ' ≠ T' : ''}
+            </p>
+          </div>
+        )}
       </div>
       <div
         className={`${BALANCE_CARD_CLASS} flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0 sm:block`}
@@ -650,17 +851,18 @@ export function DailyBalanceStrip({
             format={(n) => `@${formatUsdtCostRateDisplay(n)}`}
           />
         )}
-        {showCabinSplit && (
+        {totalAssets.usdtInTwd !== null && balances.usdt > 0 && (
+          <AnimatedAmount
+            as="p"
+            className={`${BALANCE_SUB_CLASS} font-medium text-slate-500`}
+            value={totalAssets.usdtInTwd}
+            format={(n) => `≈T ${formatTwdTableCompact(n)}`}
+            title={`兌換台幣 ${formatTwd(totalAssets.usdtInTwd)}`}
+          />
+        )}
+        {showUsdtCabinSplit && (
           <div className="mt-1 flex w-full flex-wrap items-center justify-center gap-1">
-            {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
-              <span
-                key={cabin}
-                className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-semibold tabular-nums ring-1 ring-inset sm:text-[10px] ${cabinTone[cabin]}`}
-              >
-                <span className="opacity-70">{cabin}</span>
-                <AnimatedAmount value={cabinBalance(cabin)} />
-              </span>
-            ))}
+            {renderCabinPills(usdtCabins)}
           </div>
         )}
       </div>
@@ -705,6 +907,15 @@ export function DailyBalanceStrip({
             </div>
           </>
         )}
+        {totalAssets.vnInTwd !== null && balances.vn > 0 && (
+          <AnimatedAmount
+            as="p"
+            className={`${BALANCE_SUB_CLASS} mt-0.5 font-medium text-slate-500`}
+            value={totalAssets.vnInTwd}
+            format={(n) => `≈T ${formatTwdTableCompact(n)}`}
+            title={`兌換台幣 ${formatTwd(totalAssets.vnInTwd)}`}
+          />
+        )}
       </div>
       <TotalAssetsColumn assets={totalAssets} dense />
     </div>
@@ -714,6 +925,7 @@ export function DailyBalanceStrip({
 /** A/B/C 內部調度：選出倉 → 收倉，並顯示三艙現況 */
 export function CabinRebalanceModal({
   open,
+  currencyLabel = 'P',
   cabins,
   onCancel,
   onConfirm,
@@ -721,6 +933,7 @@ export function CabinRebalanceModal({
   if (!open) return null
   return (
     <CabinRebalanceModalContent
+      currencyLabel={currencyLabel}
       cabins={cabins}
       onCancel={onCancel}
       onConfirm={onConfirm}
@@ -731,6 +944,7 @@ export function CabinRebalanceModal({
 export function OpeningUsdtCabinPickModal({
   open,
   adjust,
+  currencyLabel = 'P',
   cabins,
   onCancel,
   onConfirm,
@@ -787,12 +1001,12 @@ export function OpeningUsdtCabinPickModal({
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
         <h2 className="text-sm font-semibold text-slate-900">選擇艙位</h2>
         <p className="mt-1 text-[13px] tabular-nums text-slate-600">
-          P {adjust > 0 ? '+' : adjust < 0 ? '−' : ''}
-          {formatNumber(absAdjust)}
+          {currencyLabel} {adjust > 0 ? '+' : adjust < 0 ? '−' : ''}
+          {currencyLabel === 'T' ? formatTwdTableCompact(absAdjust) : formatNumber(absAdjust)}
         </p>
 
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          {(['A', 'B', 'C'] as const).map((cabin) => {
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {(['A', 'B'] as const).map((cabin) => {
             const bal = cabinBal(cabin)
             const enabled = canUse(cabin)
             const isSelected = selected === cabin
@@ -853,17 +1067,19 @@ export function OpeningUsdtCabinPickModal({
 }
 
 function CabinRebalanceModalContent({
+  currencyLabel = 'P',
   cabins,
   onCancel,
   onConfirm,
 }: {
+  currencyLabel?: 'P' | 'T'
   cabins: CabinRebalanceModalProps['cabins']
   onCancel: CabinRebalanceModalProps['onCancel']
   onConfirm: CabinRebalanceModalProps['onConfirm']
 }) {
   const totalP = Math.max(0, cabins.a + cabins.b + cabins.c)
   const [fromCabin, setFromCabin] = useState<UsdtCabin>('A')
-  const [toCabin, setToCabin] = useState<UsdtCabin>('C')
+  const [toCabin, setToCabin] = useState<UsdtCabin>('B')
   const [amountStr, setAmountStr] = useState('')
   const [rebalanceError, setRebalanceError] = useState('')
   const [pendingTransfer, setPendingTransfer] = useState<{
@@ -934,7 +1150,6 @@ function CabinRebalanceModalContent({
                 [
                   ['A', cabins.a, pendingTransfer.next.a],
                   ['B', cabins.b, pendingTransfer.next.b],
-                  ['C', cabins.c, pendingTransfer.next.c],
                 ] as const
               )
                 .filter(([, before, after]) => before !== after)
@@ -965,10 +1180,13 @@ function CabinRebalanceModalContent({
           </>
         ) : (
           <>
-            <p className="text-xs text-slate-500">P 合計 {formatNumber(totalP)}</p>
+            <p className="text-xs text-slate-500">
+              {currencyLabel} 合計{' '}
+              {currencyLabel === 'T' ? formatTwdTableCompact(totalP) : formatNumber(totalP)}
+            </p>
 
             <div className="mt-2 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] tabular-nums">
-              {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
+              {(['A', 'B'] as UsdtCabin[]).map((cabin) => (
                 <span key={cabin} className={cabinTone[cabin]}>
                   {cabin} {formatNumber(cabinBalance(cabin))}
                 </span>
@@ -989,7 +1207,7 @@ function CabinRebalanceModalContent({
                       }}
                       className={cabinSelectClass}
                     >
-                      {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
+                      {(['A', 'B'] as UsdtCabin[]).map((cabin) => (
                         <option key={cabin} value={cabin}>
                           {cabin}（{formatNumber(cabinBalance(cabin))}）
                         </option>
@@ -1011,7 +1229,7 @@ function CabinRebalanceModalContent({
                       }}
                       className={cabinSelectClass}
                     >
-                      {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
+                      {(['A', 'B'] as UsdtCabin[]).map((cabin) => (
                         <option key={cabin} value={cabin}>
                           {cabin}（{formatNumber(cabinBalance(cabin))}）
                         </option>
@@ -1073,6 +1291,7 @@ function CabinRebalanceModalContent({
 export function CabinAllocModal({
   open,
   totalUsdt,
+  currencyLabel = 'P',
   direction,
   initialCabinA,
   initialCabinB,
@@ -1084,10 +1303,10 @@ export function CabinAllocModal({
 }: CabinAllocModalProps) {
   const seedA = Math.min(Math.max(0, initialCabinA), totalUsdt)
   const seedB = Math.min(Math.max(0, initialCabinB), Math.max(0, totalUsdt - seedA))
-  const seedC = Math.max(0, totalUsdt - seedA - seedB)
+  // 取消 C：剩餘併入 B，確保 A+B = total
+  const seedBAll = seedB + Math.max(0, totalUsdt - seedA - seedB)
   const [cabinAStr, setCabinAStr] = useState(seedA === 0 ? '' : String(seedA))
-  const [cabinBStr, setCabinBStr] = useState(seedB === 0 ? '' : String(seedB))
-  const [cabinCStr, setCabinCStr] = useState(seedC === 0 ? '' : String(seedC))
+  const [cabinBStr, setCabinBStr] = useState(seedBAll === 0 ? '' : String(seedBAll))
   const [localError, setLocalError] = useState('')
 
   if (!open) return null
@@ -1105,60 +1324,49 @@ export function CabinAllocModal({
     onDismissError?.()
   }
 
-  const syncFromAB = (a: number, b: number) => {
+  const syncAB = (a: number, b: number) => {
     const clampedA = Math.min(Math.max(0, a), totalUsdt)
     const clampedB = Math.min(Math.max(0, b), Math.max(0, totalUsdt - clampedA))
-    const c = Math.max(0, totalUsdt - clampedA - clampedB)
-    setCabinAStr(String(clampedA))
-    setCabinBStr(String(clampedB))
-    setCabinCStr(String(c))
+    setCabinAStr(clampedA === 0 ? '' : String(clampedA))
+    setCabinBStr(clampedB === 0 ? '' : String(clampedB))
     clearErrors()
   }
 
   const applyA = (raw: string) => {
     setCabinAStr(raw)
+    clearErrors()
     const a = parseAmt(raw)
-    const b = parseAmt(cabinBStr)
-    if (a === null || b === null) return
-    syncFromAB(a, b)
+    if (a === null) return
+    const clampedA = Math.min(Math.max(0, a), totalUsdt)
+    setCabinBStr(totalUsdt - clampedA === 0 ? '' : String(totalUsdt - clampedA))
   }
 
   const applyB = (raw: string) => {
     setCabinBStr(raw)
-    const a = parseAmt(cabinAStr)
-    const b = parseAmt(raw)
-    if (a === null || b === null) return
-    syncFromAB(a, b)
-  }
-
-  const applyC = (raw: string) => {
-    setCabinCStr(raw)
-    const a = parseAmt(cabinAStr)
-    const c = parseAmt(raw)
-    if (a === null || c === null) return
-    const clampedC = Math.min(Math.max(0, c), totalUsdt)
-    const clampedA = Math.min(Math.max(0, a), Math.max(0, totalUsdt - clampedC))
-    const b = Math.max(0, totalUsdt - clampedA - clampedC)
-    setCabinAStr(String(clampedA))
-    setCabinBStr(String(b))
-    setCabinCStr(String(clampedC))
     clearErrors()
+    const b = parseAmt(raw)
+    if (b === null) return
+    const clampedB = Math.min(Math.max(0, b), totalUsdt)
+    setCabinAStr(totalUsdt - clampedB === 0 ? '' : String(totalUsdt - clampedB))
   }
 
   const setPreset = (a: number, b: number) => {
-    syncFromAB(a, b)
+    syncAB(a, b)
   }
 
   const handleConfirm = () => {
     const a = parseAmt(cabinAStr)
     const b = parseAmt(cabinBStr)
-    const c = parseAmt(cabinCStr)
-    if (a === null || b === null || c === null) {
+    if (a === null || b === null) {
       setLocalError('請輸入有效的非負數量')
       return
     }
-    if (Math.abs(a + b + c - totalUsdt) > 1e-9) {
-      setLocalError(`A+B+C 須等於 ${formatNumber(totalUsdt)}`)
+    if (Math.abs(a + b - totalUsdt) > 1e-9) {
+      setLocalError(
+        `A+B 須等於 ${
+          currencyLabel === 'T' ? formatTwdTableCompact(totalUsdt) : formatNumber(totalUsdt)
+        }`,
+      )
       return
     }
     onConfirm(a, b)
@@ -1176,18 +1384,17 @@ export function CabinAllocModal({
     >
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
         <p className="text-xs text-slate-500">
-          P {formatNumber(totalUsdt)}
+          {currencyLabel}{' '}
+          {currencyLabel === 'T' ? formatTwdTableCompact(totalUsdt) : formatNumber(totalUsdt)}
         </p>
 
         <div className="mt-3 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] tabular-nums text-slate-500">
           <span>A {formatNumber(cabinBalances.a)}</span>
           <span className="text-slate-300">·</span>
           <span>B {formatNumber(cabinBalances.b)}</span>
-          <span className="text-slate-300">·</span>
-          <span>C {formatNumber(cabinBalances.c)}</span>
         </div>
 
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <label className="block">
             <span className="mb-0.5 block text-[10px] font-semibold text-sky-600">
               A{signLabel}
@@ -1217,20 +1424,6 @@ export function CabinAllocModal({
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm tabular-nums outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
             />
           </label>
-          <label className="block">
-            <span className="mb-0.5 block text-[10px] font-semibold text-emerald-600">
-              C{signLabel}
-            </span>
-            <input
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="any"
-              value={cabinCStr}
-              onChange={(e) => applyC(e.target.value)}
-              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm tabular-nums outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-            />
-          </label>
         </div>
 
         <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1247,13 +1440,6 @@ export function CabinAllocModal({
             className="rounded border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 hover:bg-violet-100"
           >
             B
-          </button>
-          <button
-            type="button"
-            onClick={() => setPreset(0, 0)}
-            className="rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100"
-          >
-            C
           </button>
         </div>
 
@@ -1282,8 +1468,12 @@ export function CabinAllocModal({
   )
 }
 
-export function DailyTradeSettleBar({ tradeCount, onSettle }: DailyTradeSettleBarProps) {
-  if (tradeCount <= 0) return null
+export function DailyTradeSettleBar({
+  tradeCount,
+  expenseCount = 0,
+  onSettle,
+}: DailyTradeSettleBarProps) {
+  if (tradeCount <= 0 && expenseCount <= 0) return null
 
   return (
     <div className="mt-1 flex justify-end sm:mt-1.5">
@@ -2252,6 +2442,11 @@ const MOBILE_TRADE_PANES: {
     activeClass: 'bg-amber-600 text-white shadow-sm ring-1 ring-amber-600/25',
     idleClass: 'text-amber-900/70 hover:bg-white/70 hover:text-amber-950',
   },
+  {
+    id: 'expense',
+    activeClass: 'bg-orange-600 text-white shadow-sm ring-1 ring-orange-600/25',
+    idleClass: 'text-orange-800/70 hover:bg-white/70 hover:text-orange-900',
+  },
 ]
 
 export function DailyMobileTradeTabBar({
@@ -2267,9 +2462,9 @@ export function DailyMobileTradeTabBar({
     <div
       className={`mb-1 rounded-lg bg-slate-100/90 p-0.5 ${className}`}
       role="tablist"
-      aria-label="交易功能"
+      aria-label="主功能"
     >
-      <div className="grid grid-cols-4 gap-0.5">
+      <div className="grid grid-cols-5 gap-0.5">
         {MOBILE_TRADE_PANES.map((pane) => {
           const selected = value === pane.id
           return (
@@ -2650,6 +2845,14 @@ export function VnTradeTable({
       ? `${VN_MOBILE_NUM_CELL_CLASS} ${extra}`
       : `${TRANSACTION_CELL_CLASS} text-right tabular-nums ${extra}`
   const totalVn = transactions.reduce((sum, tx) => sum + tx.vnAmount, 0)
+  const totalUsdtPay = transactions.reduce(
+    (sum, tx) => (tx.payCurrency === 'usdt' ? sum + tx.usdtAmount : sum),
+    0,
+  )
+  const totalTwdPay = transactions.reduce(
+    (sum, tx) => (tx.payCurrency === 'twd' ? sum + tx.twdAmount : sum),
+    0,
+  )
   const usdtRowCount = transactions.filter((tx) => tx.payCurrency === 'usdt').length
   const twdRowCount = transactions.filter((tx) => tx.payCurrency === 'twd').length
   const dayBuyUsdtAvg = useMemo(() => {
@@ -2760,7 +2963,7 @@ export function VnTradeTable({
               : vnNumCell('whitespace-nowrap font-medium')
           }
         >
-          {mobileRowIndex ? 'Pay' : '金額'}
+          {mobileRowIndex ? 'P' : '金額'}
         </th>
         <th
           className={
@@ -2872,7 +3075,30 @@ export function VnTradeTable({
             )}
           </td>
         )}
-        <td className={vnNumCell('text-slate-400')}>—</td>
+        <td className={vnNumCell()}>
+          {totalUsdtPay > 0 || totalTwdPay > 0 ? (
+            <div className="flex flex-col items-end gap-0.5 leading-tight">
+              {totalUsdtPay > 0 && (
+                <span
+                  className="font-medium tabular-nums text-sky-700"
+                  title={formatNumber(totalUsdtPay)}
+                >
+                  {formatNumber(totalUsdtPay)}
+                </span>
+              )}
+              {totalTwdPay > 0 && (
+                <span
+                  className="font-medium tabular-nums text-emerald-700"
+                  title={formatTwd(totalTwdPay)}
+                >
+                  {formatTwdTableCompact(totalTwdPay)}
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-slate-400">—</span>
+          )}
+        </td>
         <td className={vnNumCell()}>
           {isBuy && showDayAverage ? (
             dayBuyUsdtAvg !== null || dayBuyTwdAvg !== null ? (
@@ -3014,11 +3240,11 @@ export function VnTradeTable({
         </td>
         <td className={vnNumCell()}>
           {mobileRowIndex ? (
-            vnMobileRateCell(tx.rate, tx.payCurrency, false)
+            vnMobileRateCell(vnTradeDisplayRate(tx), tx.payCurrency, false)
           ) : (
             <>
               <span className="tabular-nums text-slate-600">
-                {formatVnTradeRateDisplay(tx.rate)}
+                {formatVnTradeRateDisplay(vnTradeDisplayRate(tx))}
               </span>
               <span
                 className={`ml-0.5 text-[9px] font-semibold ${
@@ -3392,23 +3618,34 @@ export function SettlementRecordBody({
   dayUsdtProfit,
   dayVnProfit,
   dayTotalProfit,
+  usdtCostAvg = null,
+  vnTwdRate = null,
+  vnUsdtRate = null,
   heading,
 }: SettlementRecordBodyProps & { heading?: string }) {
   const showProfit =
     dayUsdtProfit !== undefined || dayVnProfit !== undefined || dayTotalProfit !== 0
+  const hasSplit =
+    dayUsdtProfit !== undefined && dayVnProfit !== undefined
+  const displayTotal = hasSplit
+    ? sumRoundedProfitParts(dayUsdtProfit, dayVnProfit)
+    : dayTotalProfit
+  const displayTotalLabel = hasSplit
+    ? formatProfitFromParts(dayUsdtProfit, dayVnProfit)
+    : formatProfit(dayTotalProfit)
 
   const totalBadge = (
     <span
       className={`shrink-0 rounded-md px-1.5 py-0.5 text-[12px] font-bold tabular-nums tracking-tight ${
-        dayTotalProfit > 0
+        displayTotal > 0
           ? 'bg-emerald-100 text-emerald-800'
-          : dayTotalProfit < 0
+          : displayTotal < 0
             ? 'bg-rose-100 text-rose-800'
             : 'bg-slate-100 text-slate-600'
       }`}
       title="當日總 PF"
     >
-      {formatProfit(dayTotalProfit)}
+      {displayTotalLabel}
     </span>
   )
 
@@ -3424,6 +3661,9 @@ export function SettlementRecordBody({
     </span>
   ) : null
 
+  const showVnCost =
+    vnBalance > 0 && (vnTwdRate != null || vnUsdtRate != null)
+
   const balanceBlock = (
     <>
       <span className="tabular-nums">
@@ -3435,12 +3675,30 @@ export function SettlementRecordBody({
       <span className="tabular-nums">
         <span className="text-slate-400">P </span>
         <span className="font-semibold text-sky-600">{formatNumber(usdtBalance)}</span>
+        {usdtCostAvg != null && usdtBalance > 0 ? (
+          <span
+            className="ml-0.5 text-[10px] tabular-nums text-slate-400"
+            title="結帳成本價"
+          >
+            @{formatUsdtTradeRateDisplay(usdtCostAvg)}
+          </span>
+        ) : null}
       </span>
       <span className="tabular-nums">
         <span className="text-slate-400">VN </span>
         <span className="font-semibold text-amber-600" title={formatNumber(vnBalance)}>
           {formatVnTableCompact(vnBalance)}
         </span>
+        {showVnCost ? (
+          <span className="ml-0.5 text-[10px] tabular-nums text-slate-400" title="結帳 VN 成本">
+            {[
+              vnTwdRate != null ? formatVnNtdCostRateCompact(vnTwdRate) : null,
+              vnUsdtRate != null ? formatVnUsdtCostRateCompact(vnUsdtRate) : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+        ) : null}
       </span>
     </>
   )
@@ -3562,9 +3820,15 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
             <div className="min-w-0 flex-1" />
           )}
           <p
-            className={`shrink-0 text-lg font-bold tabular-nums tracking-tight ${profitColorClass(cumulativeTotalProfit)}`}
+            className={`shrink-0 text-lg font-bold tabular-nums tracking-tight ${profitColorClass(
+              showCumulativeSplit
+                ? sumRoundedProfitParts(cumulativeUsdtProfit, cumulativeVnProfit)
+                : cumulativeTotalProfit,
+            )}`}
           >
-            {formatProfit(cumulativeTotalProfit)}
+            {showCumulativeSplit
+              ? formatProfitFromParts(cumulativeUsdtProfit, cumulativeVnProfit)
+              : formatProfit(cumulativeTotalProfit)}
           </p>
         </div>
       </div>
@@ -3575,7 +3839,10 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
         const trades = item.trades
           ? [...item.trades].sort(compareTradeListOrder)
           : []
-        const tradeCount = item.trades?.length ?? item.transactionCount
+        const dayHeading = formatSettlementDayLabel(
+          item.dateLabel || formatSettlementDateTime(item.settledAt),
+          item.settledAt,
+        )
 
         return (
           <article
@@ -3585,39 +3852,37 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
             <button
               type="button"
               onClick={() => toggleExpanded(item.id)}
-              className="w-full px-3 py-2 text-left transition hover:bg-slate-50/90"
+              className="flex w-full items-start gap-2 px-3 py-2 text-left transition hover:bg-slate-50/90"
               aria-expanded={isExpanded}
+              aria-label={`${dayHeading} 日結${isExpanded ? '收合' : '展開'}明細`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <SettlementRecordBody
-                    heading={formatSettlementDateTime(item.settledAt)}
-                    twdBalance={item.twdBalance}
-                    usdtBalance={item.usdtBalance}
-                    vnBalance={item.vnBalance}
-                    displayAssets={displayAssets}
-                    dayUsdtProfit={item.dayUsdtProfit}
-                    dayVnProfit={item.dayVnProfit}
-                    dayTotalProfit={item.dayTotalProfit}
-                  />
-                  <p className="mt-1 text-[10px] text-slate-400">
-                    {tradeCount} 筆明細
-                    {item.trades ? (isExpanded ? ' · 收合' : ' · 點開回查') : ' · 舊結算無明細'}
-                  </p>
-                </div>
-                <svg
-                  className={`mt-1 h-4 w-4 shrink-0 text-slate-400 transition-transform duration-300 ease-in-out motion-reduce:transition-none ${
-                    isExpanded ? 'rotate-180' : ''
-                  }`}
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
-                </svg>
+              <div className="min-w-0 flex-1">
+                <SettlementRecordBody
+                  heading={dayHeading}
+                  twdBalance={item.twdBalance}
+                  usdtBalance={item.usdtBalance}
+                  vnBalance={item.vnBalance}
+                  displayAssets={displayAssets}
+                  dayUsdtProfit={item.dayUsdtProfit}
+                  dayVnProfit={item.dayVnProfit}
+                  dayTotalProfit={item.dayTotalProfit}
+                  usdtCostAvg={item.dayBuyAvgTwd ?? item.usdtInventoryAvgTwd}
+                  vnTwdRate={item.dayBuyAvgVn ?? item.dayVnTwdRate}
+                  vnUsdtRate={item.dayVnUsdtRate}
+                />
               </div>
+              <svg
+                className={`mt-1 h-4 w-4 shrink-0 text-slate-400 transition-transform duration-300 ease-in-out motion-reduce:transition-none ${
+                  isExpanded ? 'rotate-180' : ''
+                }`}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
+              </svg>
             </button>
 
             <CollapsibleSection open={isExpanded}>
@@ -3630,13 +3895,13 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                   <table className="w-full text-left text-[11px]">
                     <thead>
                       <tr className="border-b border-slate-100 text-slate-500">
-                        <th className="py-1 pr-1 font-medium">日</th>
-                        <th className="py-1 pr-1 font-medium">別</th>
-                        <th className="py-1 pr-1 text-right font-medium">量</th>
-                        <th className="py-1 pr-1 text-right font-medium">價</th>
+                        <th className="py-1 pr-1 font-medium">D</th>
+                        <th className="py-1 pr-1 font-medium">C</th>
+                        <th className="py-1 pr-1 text-right font-medium">L</th>
+                        <th className="py-1 pr-1 text-right font-medium">GI</th>
                         <th className="py-1 pr-1 text-right font-medium">R</th>
                         <th className="py-1 pr-1 text-right font-medium">PF</th>
-                        <th className="py-1 font-medium">備註</th>
+                        <th className="py-1 font-medium">{'\u00a0'}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3659,7 +3924,7 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                             : formatTwdTableCompact(vnTradePayAmount(tx))
                         const rateText = isUsdtTransaction(tx)
                           ? formatUsdtTradeRateDisplay(tx.rate)
-                          : formatVnTradeRateDisplay(tx.rate)
+                          : formatVnTradeRateDisplay(vnTradeDisplayRate(tx))
                         const profit =
                           tx.type === 'sell' ? item.sellProfitById?.[tx.id] : undefined
                         const note = tx.note?.trim() || '—'
@@ -4364,9 +4629,146 @@ export function OpeningBalanceModal({
   )
 }
 
+export function MonthlyArchivePanel({
+  closes,
+  selectedId,
+  onSelect,
+}: MonthlyArchivePanelProps) {
+  const selected = useMemo(
+    () => closes.find((item) => item.id === selectedId) ?? null,
+    [closes, selectedId],
+  )
+
+  if (selected) {
+    const resolved = normalizeMonthlyCloseRecord(selected)
+    const expenseItems = resolved.expenseSettlements.flatMap((batch) => batch.items)
+
+    return (
+      <div className="mx-auto w-full max-w-3xl space-y-2">
+        <button
+          type="button"
+          onClick={() => onSelect(null)}
+          className="text-xs font-medium text-violet-700 hover:text-violet-800"
+        >
+          ← 返回
+        </button>
+
+        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            利潤
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-2 text-xs tabular-nums">
+            <span className={profitColorClass(resolved.usdtProfit)}>
+              P {formatProfit(resolved.usdtProfit)}
+            </span>
+            <span className={profitColorClass(resolved.vnProfit)}>
+              VN {formatProfit(resolved.vnProfit)}
+            </span>
+            <span className={`text-sm font-bold ${profitColorClass(resolved.grossProfit)}`}>
+              PF {formatProfit(resolved.grossProfit)}
+            </span>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              EXP
+            </p>
+            <p className="text-sm font-bold tabular-nums text-rose-600">
+              {formatTwdTableCompact(resolved.expenseTotal)}
+            </p>
+          </div>
+          {expenseItems.length === 0 ? (
+            <p className="mt-2 text-center text-[11px] text-slate-400">無開銷</p>
+          ) : (
+            <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-[11px] tabular-nums">
+              {expenseItems.map((item, index) => (
+                <li
+                  key={`${item.timestamp.getTime()}-${index}`}
+                  className="flex items-baseline justify-between gap-2 border-b border-slate-50 pb-1 last:border-0"
+                >
+                  <span className="min-w-0 truncate text-slate-600">
+                    {item.note.trim() || '—'}
+                  </span>
+                  <span className="shrink-0 font-medium text-rose-600">
+                    {formatTwdTableCompact(item.amountTwd)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] tabular-nums text-slate-600">
+          <div className="flex justify-between gap-2">
+            <span>PF</span>
+            <span className={`font-semibold ${profitColorClass(resolved.grossProfit)}`}>
+              {formatProfit(resolved.grossProfit)}
+            </span>
+          </div>
+          <div className="mt-1 flex justify-between gap-2">
+            <span>EXP</span>
+            <span className="font-semibold text-rose-600">
+              {formatTwdTableCompact(resolved.expenseTotal)}
+            </span>
+          </div>
+          <div className="mt-1.5 flex justify-between gap-2 border-t border-slate-200 pt-1.5">
+            <span>nPF</span>
+            <span className={`font-bold ${profitColorClass(resolved.netProfit)}`}>
+              {formatProfit(resolved.netProfit)}
+            </span>
+          </div>
+          <p className="mt-1 text-[10px] text-slate-400">
+            SET {resolved.tradeSettlements.length} · EXP {resolved.expenseSettlements.reduce((n, b) => n + b.expenseCount, 0)}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (closes.length === 0) {
+    return <div className="py-8 text-center text-xs text-slate-400">尚無月結紀錄</div>
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-3xl space-y-2">
+      {closes.map((item) => {
+        const resolved = normalizeMonthlyCloseRecord(item)
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onSelect(item.id)}
+            className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left shadow-sm transition hover:bg-slate-50"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-800">{resolved.periodLabel}</p>
+              <p className="mt-0.5 text-[10px] tabular-nums text-slate-500">
+                {formatArchiveDateRange(resolved.actualStartDate, resolved.actualEndDate)}
+                {' · '}
+                SET {resolved.tradeSettlements.length}
+                {' · '}
+                EXP {formatTwdTableCompact(resolved.expenseTotal)}
+              </p>
+            </div>
+            <div className="shrink-0 text-right text-xs tabular-nums">
+              <p className={`font-bold ${profitColorClass(resolved.grossProfit)}`}>
+                {formatProfit(resolved.grossProfit)}
+              </p>
+              <p className="mt-0.5 text-[10px] text-slate-400">PF</p>
+            </div>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function MonthlyClosesList({
   onOpeningBalance,
   onCabinRebalance,
+  onMonthlyClose,
   onPullProdState,
   pullProdBusy,
   onResetAll,
@@ -4381,6 +4783,9 @@ export function MonthlyClosesList({
       </button>
       <button type="button" onClick={onCabinRebalance} className={btnClass}>
         ADJ
+      </button>
+      <button type="button" onClick={onMonthlyClose} className={btnClass}>
+        M
       </button>
       {onPullProdState && (
         <button
@@ -4453,6 +4858,15 @@ export function AppNav({
       icon: (_active) => (
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18M7.5 15.75l3.75-4.5 3 2.25L19.5 7.5" />
+        </svg>
+      ),
+    },
+    {
+      tab: 'month',
+      label: '月結',
+      icon: (_active) => (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5M7.5 12h9" />
         </svg>
       ),
     },

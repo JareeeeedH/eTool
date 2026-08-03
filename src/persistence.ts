@@ -39,6 +39,7 @@ type PageTab =
   | 'expenses'
   | 'cumulative_expenses'
   | 'settlements'
+  | 'month'
   | 'monthly'
   | 'notes'
 type DailyWorkTab = 'usdt' | 'vn'
@@ -72,6 +73,9 @@ interface UsdtTransaction {
   cabinAAmount?: number
   cabinBAmount?: number
   cabin?: UsdtCabin
+  twdCabinAAmount?: number
+  twdCabinBAmount?: number
+  twdCabin?: UsdtCabin
   note?: string
 }
 
@@ -89,6 +93,9 @@ interface VnTradeTransaction {
   cabinAAmount?: number
   cabinBAmount?: number
   cabin?: UsdtCabin
+  twdCabinAAmount?: number
+  twdCabinBAmount?: number
+  twdCabin?: UsdtCabin
   note?: string
 }
 
@@ -99,6 +106,9 @@ interface ExpenseTransaction {
   expenseType: ExpenseType
   amountTwd: number
   note: string
+  twdCabinAAmount?: number
+  twdCabinBAmount?: number
+  twdCabin?: UsdtCabin
 }
 
 type Transaction = UsdtTransaction | VnTradeTransaction | ExpenseTransaction
@@ -202,6 +212,14 @@ export interface PersistedAppState {
    * 重整後用來校正期初分倉，避免互轉結果遺失。
    */
   usdtCabinSnapshot?: { a: number; b: number; c: number }
+  /** T 卡 A/B/C/D/E 備註（僅 memo，不入帳） */
+  twdCabinNotes?: { a: string; b: string; c: string; d: string; e: string }
+  /** @deprecated 舊 T 分倉期初；忽略 */
+  openingTwdCabinA?: number
+  /** @deprecated 舊 T 分倉期初；忽略 */
+  openingTwdCabinB?: number
+  /** @deprecated 舊 T 分倉快照；忽略 */
+  twdCabinSnapshot?: { a: number; b: number; c: number }
   /** 期初 VN 庫存的 VN/TWD 成本均價（來自上次結算） */
   openingVnTwdRate?: number | null
   /** 期初 VN 庫存的 VN/USDT 成本均價（來自上次結算） */
@@ -237,6 +255,20 @@ function parseUsdtCabinSnapshot(
   const c = parseNumber(value.c, NaN)
   if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) return undefined
   return { a, b, c }
+}
+
+function parseTwdCabinNotes(
+  value: unknown,
+): { a: string; b: string; c: string; d: string; e: string } | undefined {
+  if (!isRecord(value)) return undefined
+  const asString = (v: unknown) => (v === null || v === undefined ? '' : String(v))
+  return {
+    a: asString(value.a),
+    b: asString(value.b),
+    c: asString(value.c),
+    d: asString(value.d),
+    e: asString(value.e),
+  }
 }
 
 function parseVnPayCurrency(value: unknown): VnPayCurrency {
@@ -309,6 +341,9 @@ function parseVnTradeRecord(
     twdAmount,
     usdtAmount: 0,
     rate: parseNumber(value.rate),
+    twdCabin: parseUsdtCabin(value.twdCabin),
+    twdCabinAAmount: parseNullableNumber(value.twdCabinAAmount) ?? undefined,
+    twdCabinBAmount: parseNullableNumber(value.twdCabinBAmount) ?? undefined,
     note: parseTradeNote(value.note),
   }
 }
@@ -327,6 +362,9 @@ function parseTransaction(value: unknown): Transaction | null {
       expenseType: parseExpenseType(value.expenseType),
       amountTwd: parseNumber(value.amountTwd),
       note: typeof value.note === 'string' ? value.note : '',
+      twdCabin: parseUsdtCabin(value.twdCabin),
+      twdCabinAAmount: parseNullableNumber(value.twdCabinAAmount) ?? undefined,
+      twdCabinBAmount: parseNullableNumber(value.twdCabinBAmount) ?? undefined,
     }
   }
 
@@ -356,6 +394,9 @@ function parseTransaction(value: unknown): Transaction | null {
     cabin: parseUsdtCabin(value.cabin),
     cabinAAmount: parseNullableNumber(value.cabinAAmount) ?? undefined,
     cabinBAmount: parseNullableNumber(value.cabinBAmount) ?? undefined,
+    twdCabin: parseUsdtCabin(value.twdCabin),
+    twdCabinAAmount: parseNullableNumber(value.twdCabinAAmount) ?? undefined,
+    twdCabinBAmount: parseNullableNumber(value.twdCabinBAmount) ?? undefined,
     note: parseTradeNote(value.note),
   }
 }
@@ -655,6 +696,8 @@ function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
           ? 'cumulative_expenses'
         : parsed.activeTab === 'expense_settlements'
           ? 'expenses'
+          : parsed.activeTab === 'month'
+            ? 'month'
           : parsed.activeTab === 'monthly'
             ? 'monthly'
             : parsed.activeTab === 'notes'
@@ -678,6 +721,7 @@ function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
         ? undefined
         : parseNumber(parsed.openingUsdtCabinB),
     usdtCabinSnapshot: parseUsdtCabinSnapshot(parsed.usdtCabinSnapshot),
+    twdCabinNotes: parseTwdCabinNotes(parsed.twdCabinNotes),
     openingVnTwdRate: parseNullableNumber(parsed.openingVnTwdRate),
     openingVnUsdtRate: parseNullableNumber(parsed.openingVnUsdtRate),
     transactions,

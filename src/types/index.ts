@@ -5,17 +5,25 @@ export type UsdtTradeField = 'usdt' | 'fiat' | 'rate'
 export type VnTradeField = 'vn' | 'pay' | 'rate'
 export type EditingCategory = TransactionType | 'vn_buy' | 'vn_sell' | 'expense'
 export type DailyWorkTab = 'usdt' | 'vn'
-export type DailyMobileTradePane = 'buy_u' | 'sell_u' | 'buy_vn' | 'sell_vn'
+export type DailyMobileTradePane =
+  | 'buy_u'
+  | 'sell_u'
+  | 'buy_vn'
+  | 'sell_vn'
+  | 'expense'
 export type FiatCurrency = 'twd' | 'vn'
 export type VnPayCurrency = 'twd' | 'usdt'
 /** P（USDT）艙別：共用成本池，僅拆數量 */
 export type UsdtCabin = 'A' | 'B' | 'C'
+/** T（台幣）艙別：與 P 相同 A/B/C 分倉，僅拆數量 */
+export type TwdCabin = UsdtCabin
 export type ExpenseType = 'fuel' | 'parking' | 'meal' | 'traffic' | 'other'
 export type PageTab =
   | 'daily'
   | 'expenses'
   | 'cumulative_expenses'
   | 'settlements'
+  | 'month'
   | 'monthly'
   | 'notes'
 export type AccentColor = 'emerald' | 'rose' | 'violet' | 'orange'
@@ -41,6 +49,12 @@ export interface UsdtTransaction {
   cabinBAmount?: number
   /** 舊資料單艙標籤；有 cabinA/BAmount 時以數量為準 */
   cabin?: UsdtCabin
+  /** 歸 A 艙的台幣數量（fiatCurrency=twd 時）；C = fiatAmount − A − B */
+  twdCabinAAmount?: number
+  /** 歸 B 艙的台幣數量 */
+  twdCabinBAmount?: number
+  /** 台幣單艙標籤；有 twdCabinA/BAmount 時以數量為準 */
+  twdCabin?: TwdCabin
   /** 交易對象等備註 */
   note?: string
 }
@@ -67,6 +81,12 @@ export interface VnTradeTransaction {
   cabinBAmount?: number
   /** 舊資料單艙標籤；有 cabinA/BAmount 時以數量為準 */
   cabin?: UsdtCabin
+  /** 支付／收入為 TWD 時：歸 A 艙台幣數量 */
+  twdCabinAAmount?: number
+  /** 支付／收入為 TWD 時：歸 B 艙台幣數量；C = twdAmount − A − B */
+  twdCabinBAmount?: number
+  /** 台幣單艙標籤；有 twdCabinA/BAmount 時以數量為準 */
+  twdCabin?: TwdCabin
   /** 交易對象等備註 */
   note?: string
 }
@@ -78,6 +98,11 @@ export interface ExpenseTransaction {
   expenseType: ExpenseType
   amountTwd: number
   note: string
+  /** 開銷扣自 A 艙台幣數量 */
+  twdCabinAAmount?: number
+  /** 開銷扣自 B 艙台幣數量；C = amountTwd − A − B */
+  twdCabinBAmount?: number
+  twdCabin?: TwdCabin
 }
 
 export type Transaction = UsdtTransaction | VnTradeTransaction | ExpenseTransaction
@@ -212,12 +237,18 @@ export interface TradeSettleConfirmSummary {
   dayVnProfit: number | null
   dayTotalProfit: number
   hasSells: boolean
+  /** 待 AL 一併扣除的進行中開銷筆數／合計 */
+  expenseCount: number
+  expenseTotal: number
+  /** 預設帳務日 YYYY-MM-DD */
+  defaultBusinessDate: string
 }
 
 export interface ConfirmDialogState {
   title: string
   lines: string[]
   tradeSettleSummary?: TradeSettleConfirmSummary
+  monthlyCloseSummary?: MonthlyCloseConfirmSummary
   cancelLabel?: string
   confirmLabel: string
   variant: 'danger' | 'primary'
@@ -277,8 +308,20 @@ export interface MonthlyClosePreview {
   closingBookTotalAssets: number
   closingTotalAssets: number
   dateRangeLabel: string
+  periodLabel: string
   pendingTradeCount: number
   pendingExpenseCount: number
+}
+
+/** 月結確認卡顯示用（不含未日結提示） */
+export interface MonthlyCloseConfirmSummary {
+  periodLabel: string
+  tradeCount: number
+  expenseItemCount: number
+  grossProfit: number
+  expenseTotal: number
+  netProfit: number
+  dateRangeLabel: string
 }
 
 export interface NotebookEntry {
@@ -288,12 +331,23 @@ export interface NotebookEntry {
   text: string
 }
 
+export interface TwdCabinNotes {
+  a: string
+  b: string
+  c: string
+  d: string
+  e: string
+}
+
+export type TwdCabinNoteKey = keyof TwdCabinNotes
+
 export interface AppSnapshot {
   transactions: Transaction[]
   openingBalances: Balances
   openingUsdtCost: UsdtInventoryCost
   openingUsdtCabinA: number
   openingUsdtCabinB: number
+  twdCabinNotes: TwdCabinNotes
   openingVnTwdRate: number | null
   openingVnUsdtRate: number | null
   settlements: DailySettlement[]
@@ -322,8 +376,11 @@ export interface NotebookPanelProps {
 export interface DailyBalanceStripProps {
   balances: Balances
   inventoryCost: UsdtInventoryCost
-  /** P 底下顯示 A/B/C 分倉 */
+  /** P 底下顯示 A/B 分倉 */
   usdtCabinBalances?: { a: number; b: number; c: number }
+  /** T 底下 A/B/C/D/E 備註（僅 memo，不入帳） */
+  twdCabinNotes?: TwdCabinNotes
+  onTwdCabinNoteChange?: (cabin: TwdCabinNoteKey, value: string) => void
   totalAssets: TotalAssetsTwd
   vnTwdRate: number | null
   vnUsdtRate: number | null
@@ -331,16 +388,20 @@ export interface DailyBalanceStripProps {
 
 export interface CabinRebalanceModalProps {
   open: boolean
+  /** 分倉幣別標籤 */
+  currencyLabel?: 'P' | 'T'
   cabins: { a: number; b: number; c: number }
   onCancel: () => void
   onConfirm: (targetCabinA: number, targetCabinB: number) => void
 }
 
-/** 期初 P 增減：挑選作用艙位 */
+/** 期初 P／T 增減：挑選作用艙位 */
 export interface OpeningUsdtCabinPickModalProps {
   open: boolean
   /** 有號增減量，例如 +1000 / -500 */
   adjust: number
+  /** 顯示用幣別 */
+  currencyLabel?: 'P' | 'T'
   cabins: { a: number; b: number; c: number }
   onCancel: () => void
   onConfirm: (cabin: UsdtCabin) => void
@@ -349,6 +410,8 @@ export interface OpeningUsdtCabinPickModalProps {
 
 export interface DailyTradeSettleBarProps {
   tradeCount: number
+  /** 進行中開銷筆數；有交易或開銷時顯示 AL */
+  expenseCount?: number
   onSettle: () => void
 }
 
@@ -501,6 +564,12 @@ export interface SettlementRecordBodyProps {
   dayUsdtProfit: number | undefined
   dayVnProfit: number | undefined
   dayTotalProfit: number
+  /** 結帳成本價：優先當日買入均價，否則庫存加權成本 */
+  usdtCostAvg?: number | null
+  /** 結帳 VN 成本（1 NTD = ? VN） */
+  vnTwdRate?: number | null
+  /** 結帳 VN 成本（1 USDT = ? VN） */
+  vnUsdtRate?: number | null
 }
 
 
@@ -550,9 +619,16 @@ export interface OpeningBalanceModalProps {
 export interface MonthlyClosesListProps {
   onOpeningBalance: () => void
   onCabinRebalance: () => void
+  onMonthlyClose: () => void
   onPullProdState?: () => void
   pullProdBusy?: boolean
   onResetAll?: () => void
+}
+
+export interface MonthlyArchivePanelProps {
+  closes: MonthlyClose[]
+  selectedId: string | null
+  onSelect: (id: string | null) => void
 }
 
 
@@ -578,8 +654,10 @@ export interface ConfirmModalProps {
 
 export interface CabinAllocModalProps {
   open: boolean
-  /** 本筆動到的 USDT 總量 */
+  /** 本筆動到的數量總量（P 或 T） */
   totalUsdt: number
+  /** 顯示用幣別 */
+  currencyLabel?: 'P' | 'T'
   /** 買入為 +、賣出／付 U 為 −（僅顯示用） */
   direction: 'in' | 'out'
   initialCabinA: number
