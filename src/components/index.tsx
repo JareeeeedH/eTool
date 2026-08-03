@@ -741,6 +741,7 @@ export function DailyBalanceStrip({
   vnTwdRate,
   vnUsdtRate,
 }: DailyBalanceStripProps) {
+  const [twdCabinModalOpen, setTwdCabinModalOpen] = useState(false)
   const usdtCabins = usdtCabinBalances ?? { a: 0, b: 0, c: 0 }
   const notes = twdCabinNotes ?? { a: '', b: '', c: '', d: '', e: '' }
   /** A–E 輸入與表單 T 相同：萬位縮寫 → 台幣後再加總 */
@@ -763,8 +764,16 @@ export function DailyBalanceStrip({
     D: 'text-amber-600',
     E: 'text-rose-600',
   }
+  const twdNoteFieldTone: Record<'A' | 'B' | 'C' | 'D' | 'E', string> = {
+    A: 'border-sky-200 focus-within:border-sky-400 focus-within:ring-sky-200',
+    B: 'border-violet-200 focus-within:border-violet-400 focus-within:ring-violet-200',
+    C: 'border-emerald-200 focus-within:border-emerald-400 focus-within:ring-emerald-200',
+    D: 'border-amber-200 focus-within:border-amber-400 focus-within:ring-amber-200',
+    E: 'border-rose-200 focus-within:border-rose-400 focus-within:ring-rose-200',
+  }
   const twdNoteSumMismatch =
     Math.abs(twdNoteSumActual - balances.twd) > 0.5
+  const hasAnyTwdNote = (['a', 'b', 'c', 'd', 'e'] as const).some((key) => notes[key].trim() !== '')
   const renderCabinPills = (cabins: { a: number; b: number; c: number }, format?: (n: number) => string) =>
     (['A', 'B'] as const).map((cabin) => (
       <span
@@ -795,47 +804,24 @@ export function DailyBalanceStrip({
           />
         </div>
         {onTwdCabinNoteChange && (
-          <div className="w-full min-w-0 rounded bg-slate-50/90 px-1 py-0.5 sm:px-1.5 sm:py-0.5">
-            <div className="flex items-center gap-px sm:gap-0.5">
-              {(['a', 'b', 'c', 'd', 'e'] as const).map((key, index) => {
-                const cabin = key.toUpperCase() as 'A' | 'B' | 'C' | 'D' | 'E'
-                const noteActual = parseTwdTableCompactInput(notes[key], true)
-                return (
-                  <label
-                    key={key}
-                    className={`flex min-w-0 flex-1 items-baseline gap-px sm:gap-0.5 ${
-                      index > 0 ? 'border-l border-slate-200/80 pl-0.5 sm:pl-1' : ''
-                    }`}
-                    title={noteActual != null ? formatTwd(noteActual) : undefined}
-                  >
-                    <span
-                      className={`shrink-0 text-[7px] font-semibold leading-none sm:text-[8px] ${twdNoteLetterTone[cabin]}`}
-                    >
-                      {cabin}
-                    </span>
-                    <input
-                      type="text"
-                      value={notes[key]}
-                      onChange={(e) => onTwdCabinNoteChange(key, e.target.value)}
-                      placeholder="0"
-                      className="min-w-0 w-full border-0 bg-transparent p-0 text-center text-[7px] font-medium tabular-nums leading-none text-slate-600 outline-none placeholder:text-slate-300 sm:text-[8px]"
-                      inputMode="decimal"
-                      aria-label={`T 備註 ${cabin}（萬）`}
-                    />
-                  </label>
-                )
-              })}
-            </div>
-            <p
-              className={`mt-0.5 text-center text-[7px] tabular-nums leading-none sm:text-[8px] ${
-                twdNoteSumMismatch ? 'font-medium text-amber-700' : 'text-slate-400'
-              }`}
-              title={formatTwd(twdNoteSumActual)}
-            >
-              Σ {formatTwdTableCompact(twdNoteSumActual)}
-              {twdNoteSumMismatch ? ' ≠ T' : ''}
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={() => setTwdCabinModalOpen(true)}
+            className={`mt-0.5 inline-flex max-w-full items-center justify-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-medium leading-none ring-1 ring-inset transition hover:bg-slate-50 sm:text-[9px] ${
+              twdNoteSumMismatch
+                ? 'bg-amber-50 text-amber-800 ring-amber-200'
+                : hasAnyTwdNote
+                  ? 'bg-slate-50 text-slate-600 ring-slate-200'
+                  : 'bg-white text-slate-400 ring-slate-200'
+            }`}
+            title="編輯 T 分倉 A–E"
+          >
+            <span className="tracking-wide">A–E</span>
+            {hasAnyTwdNote && (
+              <span className="tabular-nums">Σ {formatTwdTableCompact(twdNoteSumActual)}</span>
+            )}
+            {twdNoteSumMismatch && <span>≠T</span>}
+          </button>
         )}
       </div>
       <div
@@ -918,6 +904,74 @@ export function DailyBalanceStrip({
         )}
       </div>
       <TotalAssetsColumn assets={totalAssets} dense />
+
+      {onTwdCabinNoteChange && twdCabinModalOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="T 分倉備註"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setTwdCabinModalOpen(false)
+          }}
+        >
+          <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl sm:p-5">
+            <div className="flex items-start justify-end">
+              <button
+                type="button"
+                onClick={() => setTwdCabinModalOpen(false)}
+                className="rounded-md px-2 py-1 text-[12px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+              >
+                關閉
+              </button>
+            </div>
+
+            <p className="mt-1 rounded-lg bg-slate-50 px-3 py-2 text-[13px] tabular-nums text-slate-700">
+              目前 T{' '}
+              <span className="font-semibold text-slate-900">
+                {formatTwdTableCompact(balances.twd)}
+              </span>
+            </p>
+
+            <div className="mt-3 grid grid-cols-5 gap-1.5">
+              {(['a', 'b', 'c', 'd', 'e'] as const).map((key) => {
+                const cabin = key.toUpperCase() as 'A' | 'B' | 'C' | 'D' | 'E'
+                return (
+                  <label
+                    key={key}
+                    className={`flex min-w-0 flex-col items-center gap-0.5 rounded-lg border px-1 py-1.5 focus-within:ring-2 ${twdNoteFieldTone[cabin]}`}
+                  >
+                    <span
+                      className={`text-[11px] font-bold leading-none ${twdNoteLetterTone[cabin]}`}
+                    >
+                      {cabin}
+                    </span>
+                    <input
+                      type="text"
+                      value={notes[key]}
+                      onChange={(e) => onTwdCabinNoteChange(key, e.target.value)}
+                      placeholder="0"
+                      className="min-w-0 w-full border-0 bg-transparent p-0 text-center text-[13px] font-medium tabular-nums leading-tight text-slate-800 outline-none placeholder:text-slate-300"
+                      inputMode="decimal"
+                      aria-label={`T 備註 ${cabin}（萬）`}
+                    />
+                  </label>
+                )
+              })}
+            </div>
+
+            <p
+              className={`mt-3 text-center text-[13px] tabular-nums ${
+                twdNoteSumMismatch ? 'font-semibold text-amber-700' : 'text-slate-500'
+              }`}
+              title={formatTwd(twdNoteSumActual)}
+            >
+              Σ {formatTwdTableCompact(twdNoteSumActual)}
+              {twdNoteSumMismatch ? ' ≠ T' : ' = T'}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
