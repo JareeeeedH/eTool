@@ -593,7 +593,6 @@ const BALANCE_LABEL_CLASS = 'shrink-0 text-[9px] font-medium leading-tight text-
 const BALANCE_VALUE_CLASS =
   'min-w-0 text-xs font-bold tabular-nums leading-tight text-slate-800 sm:text-sm'
 const BALANCE_SUB_CLASS = 'text-[9px] tabular-nums leading-tight text-slate-400 sm:mt-0.5 sm:text-[10px]'
-const BALANCE_MOBILE_ROW_CLASS = 'flex items-baseline justify-center gap-1 sm:block'
 
 const TOTAL_ASSETS_DENSE_CARD_CLASS =
   'flex h-full min-h-0 flex-col items-center justify-center rounded-md border border-indigo-200 bg-indigo-50/70 px-1 py-0.5 text-center shadow-sm sm:rounded-lg sm:px-2 sm:py-1.5'
