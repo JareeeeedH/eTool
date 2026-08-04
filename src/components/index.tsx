@@ -118,6 +118,7 @@ import {
   isUsdtTransaction,
   normalizeMonthlyCloseRecord,
   settlementHasSplitProfit,
+  summarizeSettlementTrades,
   totalAssetsFromSettlement,
   transferUsdtBetweenCabins,
   vnTradeDisplayRate,
@@ -1733,21 +1734,21 @@ export function VnTradeTableColGroup({
     if (isBuy) {
       return (
         <colgroup>
-          <col style={{ width: '13%' }} />
-          <col style={{ width: '22%' }} />
-          <col style={{ width: '27%' }} />
-          <col style={{ width: '21%' }} />
-          <col style={{ width: '17%' }} />
+          <col style={{ width: '12%' }} />
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '30%' }} />
+          <col style={{ width: '26%' }} />
+          <col style={{ width: '14%' }} />
         </colgroup>
       )
     }
     return (
       <colgroup>
-        <col style={{ width: '12%' }} />
-        <col style={{ width: '17%' }} />
-        <col style={{ width: '21%' }} />
+        <col style={{ width: '10%' }} />
         <col style={{ width: '14%' }} />
-        <col style={{ width: '20%' }} />
+        <col style={{ width: '22%' }} />
+        <col style={{ width: '24%' }} />
+        <col style={{ width: '16%' }} />
         <col style={{ width: '2.5rem' }} />
       </colgroup>
     )
@@ -3058,35 +3059,20 @@ export function VnTradeTable({
         className={`border-t-2 bg-slate-50 ${
           isBuy ? 'border-violet-200' : 'border-amber-200'
         }`}
-        style={{ height: `${TRANSACTION_FOOT_REM}rem` }}
+        style={{ minHeight: `${TRANSACTION_FOOT_REM}rem`, height: 'auto' }}
       >
         <td
           className={`${
             mobileRowIndex ? VN_MOBILE_INDEX_CELL_CLASS : TRANSACTION_CELL_CLASS
-          } whitespace-nowrap font-semibold text-slate-800`}
+          } overflow-hidden whitespace-nowrap font-semibold text-slate-800`}
         >
-          {mobileRowIndex ? null : (
-            <span>
-              總結
-              <span className="font-normal text-slate-500"> {transactions.length}筆</span>
-            </span>
-          )}
-        </td>
-        <td className={vnAmountCell('font-medium text-amber-700')}>
-          <div
-            className={`flex min-w-0 items-center ${
-              mobileRowIndex ? 'justify-end gap-0.5' : 'justify-end'
-            }`}
-          >
-            <span className="block min-w-0 whitespace-nowrap" title={formatNumber(totalVn)}>
-              {formatVnTableCompact(totalVn)}
-            </span>
-            {mobileRowIndex && isBuy && transactions.length > 0 && (
-              <div className="flex shrink-0 flex-col items-center gap-0.5">
+          {mobileRowIndex ? (
+            transactions.length > 0 ? (
+              <div className="flex flex-col items-start gap-0.5 leading-none">
                 {usdtRowCount > 0 && (
                   <span className="inline-flex items-center gap-px">
                     <VnPayCurrencyBadge currency="usdt" size="xs" />
-                    <span className="text-[9px] font-medium tabular-nums text-sky-700">
+                    <span className="text-[8px] font-medium tabular-nums text-sky-700">
                       {usdtRowCount}
                     </span>
                   </span>
@@ -3094,17 +3080,30 @@ export function VnTradeTable({
                 {twdRowCount > 0 && (
                   <span className="inline-flex items-center gap-px">
                     <VnPayCurrencyBadge currency="twd" size="xs" />
-                    <span className="text-[9px] font-medium tabular-nums text-emerald-700">
+                    <span className="text-[8px] font-medium tabular-nums text-emerald-700">
                       {twdRowCount}
                     </span>
                   </span>
                 )}
               </div>
-            )}
-          </div>
+            ) : null
+          ) : (
+            <span>
+              總結
+              <span className="font-normal text-slate-500"> {transactions.length}筆</span>
+            </span>
+          )}
+        </td>
+        <td className={vnAmountCell('overflow-hidden font-medium text-amber-700')}>
+          <span
+            className="block min-w-0 truncate whitespace-nowrap"
+            title={formatNumber(totalVn)}
+          >
+            {formatVnTableCompact(totalVn)}
+          </span>
         </td>
         {!mobileRowIndex && (
-          <td className={vnCoinCell()}>
+          <td className={vnCoinCell('overflow-hidden')}>
             {transactions.length > 0 ? (
               <div className="flex items-center justify-center gap-1">
                 {usdtRowCount > 0 && (
@@ -3129,12 +3128,12 @@ export function VnTradeTable({
             )}
           </td>
         )}
-        <td className={vnNumCell()}>
+        <td className={vnNumCell('overflow-hidden')}>
           {totalUsdtPay > 0 || totalTwdPay > 0 ? (
-            <div className="flex flex-col items-end gap-0.5 leading-tight">
+            <div className="flex min-w-0 max-w-full flex-col items-end gap-0.5 overflow-hidden leading-tight">
               {totalUsdtPay > 0 && (
                 <span
-                  className="font-medium tabular-nums text-sky-700"
+                  className="max-w-full truncate font-medium tabular-nums text-sky-700"
                   title={formatNumber(totalUsdtPay)}
                 >
                   {formatNumber(totalUsdtPay)}
@@ -3142,7 +3141,7 @@ export function VnTradeTable({
               )}
               {totalTwdPay > 0 && (
                 <span
-                  className="font-medium tabular-nums text-emerald-700"
+                  className="max-w-full truncate font-medium tabular-nums text-emerald-700"
                   title={formatTwd(totalTwdPay)}
                 >
                   {formatTwdTableCompact(totalTwdPay)}
@@ -3153,22 +3152,28 @@ export function VnTradeTable({
             <span className="text-slate-400">—</span>
           )}
         </td>
-        <td className={vnNumCell()}>
+        <td className={vnNumCell('overflow-hidden')}>
           {isBuy && showDayAverage ? (
             dayBuyUsdtAvg !== null || dayBuyTwdAvg !== null ? (
-              <div className="flex flex-col items-end gap-0.5 leading-tight">
+              <div className="flex min-w-0 max-w-full flex-col items-end gap-0.5 overflow-hidden leading-tight">
                 {dayBuyUsdtAvg !== null && (
-                  <span className="font-bold tabular-nums text-violet-600">
+                  <span
+                    className="max-w-full truncate text-[10px] font-bold tabular-nums text-violet-600 sm:text-[12px]"
+                    title={`@${formatVnTradeRateDisplay(dayBuyUsdtAvg)}${vnRateUnitSuffix('usdt')}`}
+                  >
                     @{formatVnTradeRateDisplay(dayBuyUsdtAvg)}
-                    <span className="ml-0.5 text-[9px] font-semibold text-sky-600">
+                    <span className="ml-0.5 text-[8px] font-semibold text-sky-600 sm:text-[9px]">
                       {vnRateUnitSuffix('usdt')}
                     </span>
                   </span>
                 )}
                 {dayBuyTwdAvg !== null && (
-                  <span className="font-bold tabular-nums text-violet-600">
+                  <span
+                    className="max-w-full truncate text-[10px] font-bold tabular-nums text-violet-600 sm:text-[12px]"
+                    title={`@${formatVnTradeRateDisplay(dayBuyTwdAvg)}${vnRateUnitSuffix('twd')}`}
+                  >
                     @{formatVnTradeRateDisplay(dayBuyTwdAvg)}
-                    <span className="ml-0.5 text-[9px] font-semibold text-emerald-600">
+                    <span className="ml-0.5 text-[8px] font-semibold text-emerald-600 sm:text-[9px]">
                       {vnRateUnitSuffix('twd')}
                     </span>
                   </span>
@@ -3179,19 +3184,25 @@ export function VnTradeTable({
             )
           ) : !isBuy && showSellAverage ? (
             daySellUsdtAvg !== null || daySellTwdAvg !== null ? (
-              <div className="flex flex-col items-end gap-0.5 leading-tight">
+              <div className="flex min-w-0 max-w-full flex-col items-end gap-0.5 overflow-hidden leading-tight">
                 {daySellUsdtAvg !== null && (
-                  <span className="font-bold tabular-nums text-amber-600">
+                  <span
+                    className="max-w-full truncate text-[10px] font-bold tabular-nums text-amber-600 sm:text-[12px]"
+                    title={`@${formatVnTradeRateDisplay(daySellUsdtAvg)}${vnRateUnitSuffix('usdt')}`}
+                  >
                     @{formatVnTradeRateDisplay(daySellUsdtAvg)}
-                    <span className="ml-0.5 text-[9px] font-semibold text-sky-600">
+                    <span className="ml-0.5 text-[8px] font-semibold text-sky-600 sm:text-[9px]">
                       {vnRateUnitSuffix('usdt')}
                     </span>
                   </span>
                 )}
                 {daySellTwdAvg !== null && (
-                  <span className="font-bold tabular-nums text-amber-600">
+                  <span
+                    className="max-w-full truncate text-[10px] font-bold tabular-nums text-amber-600 sm:text-[12px]"
+                    title={`@${formatVnTradeRateDisplay(daySellTwdAvg)}${vnRateUnitSuffix('twd')}`}
+                  >
                     @{formatVnTradeRateDisplay(daySellTwdAvg)}
-                    <span className="ml-0.5 text-[9px] font-semibold text-emerald-600">
+                    <span className="ml-0.5 text-[8px] font-semibold text-emerald-600 sm:text-[9px]">
                       {vnRateUnitSuffix('twd')}
                     </span>
                   </span>
@@ -3207,12 +3218,14 @@ export function VnTradeTable({
         {!isBuy && (
           <td
             className={vnNumCell(
-              `font-semibold ${
+              `overflow-hidden font-semibold ${
                 hasProfitData ? profitColorClass(totalProfit) : 'text-slate-400'
               }`,
             )}
           >
-            {hasProfitData ? formatProfit(totalProfit) : '—'}
+            <span className="block max-w-full truncate">
+              {hasProfitData ? formatProfit(totalProfit) : '—'}
+            </span>
           </td>
         )}
         <td className={mobileRowIndex ? VN_MOBILE_ACTION_CELL_CLASS : TRANSACTION_CELL_CLASS} />
@@ -3946,80 +3959,157 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                     此結算未封存明細（升級後新結帳才會保留）
                   </p>
                 ) : (
-                  <table className="w-full text-left text-[11px]">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-slate-500">
-                        <th className="py-1 pr-1 font-medium">D</th>
-                        <th className="py-1 pr-1 font-medium">C</th>
-                        <th className="py-1 pr-1 text-right font-medium">L</th>
-                        <th className="py-1 pr-1 text-right font-medium">GI</th>
-                        <th className="py-1 pr-1 text-right font-medium">R</th>
-                        <th className="py-1 pr-1 text-right font-medium">PF</th>
-                        <th className="py-1 font-medium">{'\u00a0'}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {trades.map((tx) => {
-                        const pane =
-                          isUsdtTransaction(tx)
-                            ? tx.type === 'buy'
-                              ? TRADE_PANE_CODE.buy_u
-                              : TRADE_PANE_CODE.sell_u
-                            : tx.type === 'buy'
-                              ? TRADE_PANE_CODE.buy_vn
-                              : TRADE_PANE_CODE.sell_vn
-                        const qty = isUsdtTransaction(tx)
-                          ? formatNumber(tx.usdtAmount)
-                          : formatVnTableCompact(tx.vnAmount)
-                        const pay = isUsdtTransaction(tx)
-                          ? formatTwdTableCompact(tx.fiatAmount)
-                          : tx.payCurrency === 'usdt'
-                            ? formatNumber(vnTradePayAmount(tx))
-                            : formatTwdTableCompact(vnTradePayAmount(tx))
-                        const rateText = isUsdtTransaction(tx)
-                          ? formatUsdtTradeRateDisplay(tx.rate)
-                          : formatVnTradeRateDisplay(vnTradeDisplayRate(tx))
-                        const profit =
-                          tx.type === 'sell' ? item.sellProfitById?.[tx.id] : undefined
-                        const note = tx.note?.trim() || '—'
-
-                        return (
-                          <tr key={tx.id} className="border-b border-slate-50">
-                            <td className="py-1 pr-1 tabular-nums text-slate-600">
-                              {formatTradeListDate(tx)}
-                            </td>
-                            <td className="py-1 pr-1 font-medium text-slate-700">{pane}</td>
-                            <td className="py-1 pr-1 text-right tabular-nums text-slate-800">
-                              {qty}
-                            </td>
-                            <td className="py-1 pr-1 text-right tabular-nums text-slate-700">
-                              {pay}
-                              {!isUsdtTransaction(tx) ? (
-                                <span className="ml-0.5 text-[9px] text-slate-400">
-                                  {assetCode(tx.payCurrency)}
-                                </span>
-                              ) : null}
-                            </td>
-                            <td className="py-1 pr-1 text-right tabular-nums text-slate-600">
-                              {rateText}
-                            </td>
-                            <td
-                              className={`py-1 pr-1 text-right tabular-nums ${
-                                profit === undefined
-                                  ? 'text-slate-300'
-                                  : profitColorClass(profit)
+                  <>
+                    {(() => {
+                      const vol = summarizeSettlementTrades(trades)
+                      const cells: Array<{
+                        code: string
+                        tone: string
+                        qty: string
+                        avg: string | null
+                        empty: boolean
+                      }> = [
+                        {
+                          code: 'IE',
+                          tone: 'text-emerald-700',
+                          qty: formatNumber(vol.buyUQty),
+                          avg:
+                            vol.buyUAvg != null
+                              ? formatUsdtTradeRateDisplay(vol.buyUAvg)
+                              : null,
+                          empty: vol.buyUQty <= 0,
+                        },
+                        {
+                          code: 'OE',
+                          tone: 'text-rose-700',
+                          qty: formatNumber(vol.sellUQty),
+                          avg:
+                            vol.sellUAvg != null
+                              ? formatUsdtTradeRateDisplay(vol.sellUAvg)
+                              : null,
+                          empty: vol.sellUQty <= 0,
+                        },
+                        {
+                          code: 'IV',
+                          tone: 'text-sky-700',
+                          qty: formatVnTableCompact(vol.buyVnQty),
+                          avg:
+                            vol.buyVnAvg != null
+                              ? formatVnTradeRateDisplay(vol.buyVnAvg)
+                              : null,
+                          empty: vol.buyVnQty <= 0,
+                        },
+                        {
+                          code: 'OV',
+                          tone: 'text-amber-700',
+                          qty: formatVnTableCompact(vol.sellVnQty),
+                          avg:
+                            vol.sellVnAvg != null
+                              ? formatVnTradeRateDisplay(vol.sellVnAvg)
+                              : null,
+                          empty: vol.sellVnQty <= 0,
+                        },
+                      ]
+                      return (
+                        <div className="mb-2 grid grid-cols-2 gap-1 sm:grid-cols-4">
+                          {cells.map((cell) => (
+                            <div
+                              key={cell.code}
+                              className={`rounded-md border border-slate-100 bg-slate-50/80 px-1.5 py-1 ${
+                                cell.empty ? 'opacity-40' : ''
                               }`}
                             >
-                              {profit === undefined ? '—' : formatProfit(profit)}
-                            </td>
-                            <td className="max-w-[4.5rem] truncate py-1 text-slate-500" title={note}>
-                              {note}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                              <div className="flex items-baseline justify-between gap-1">
+                                <span className={`text-[10px] font-semibold ${cell.tone}`}>
+                                  {cell.code}
+                                </span>
+                                <span className="tabular-nums text-[11px] font-semibold text-slate-800">
+                                  {cell.empty ? '—' : cell.qty}
+                                </span>
+                              </div>
+                              <p className="mt-0.5 text-right text-[10px] tabular-nums text-slate-500">
+                                {cell.empty || cell.avg == null ? '@—' : `@${cell.avg}`}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
+                    <table className="w-full text-left text-[11px]">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-slate-500">
+                          <th className="py-1 pr-1 font-medium">D</th>
+                          <th className="py-1 pr-1 font-medium">C</th>
+                          <th className="py-1 pr-1 text-right font-medium">L</th>
+                          <th className="py-1 pr-1 text-right font-medium">GI</th>
+                          <th className="py-1 pr-1 text-right font-medium">R</th>
+                          <th className="py-1 pr-1 text-right font-medium">PF</th>
+                          <th className="py-1 font-medium">{'\u00a0'}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {trades.map((tx) => {
+                          const pane =
+                            isUsdtTransaction(tx)
+                              ? tx.type === 'buy'
+                                ? TRADE_PANE_CODE.buy_u
+                                : TRADE_PANE_CODE.sell_u
+                              : tx.type === 'buy'
+                                ? TRADE_PANE_CODE.buy_vn
+                                : TRADE_PANE_CODE.sell_vn
+                          const qty = isUsdtTransaction(tx)
+                            ? formatNumber(tx.usdtAmount)
+                            : formatVnTableCompact(tx.vnAmount)
+                          const pay = isUsdtTransaction(tx)
+                            ? formatTwdTableCompact(tx.fiatAmount)
+                            : tx.payCurrency === 'usdt'
+                              ? formatNumber(vnTradePayAmount(tx))
+                              : formatTwdTableCompact(vnTradePayAmount(tx))
+                          const rateText = isUsdtTransaction(tx)
+                            ? formatUsdtTradeRateDisplay(tx.rate)
+                            : formatVnTradeRateDisplay(vnTradeDisplayRate(tx))
+                          const profit =
+                            tx.type === 'sell' ? item.sellProfitById?.[tx.id] : undefined
+                          const note = tx.note?.trim() || '—'
+
+                          return (
+                            <tr key={tx.id} className="border-b border-slate-50">
+                              <td className="py-1 pr-1 tabular-nums text-slate-600">
+                                {formatTradeListDate(tx)}
+                              </td>
+                              <td className="py-1 pr-1 font-medium text-slate-700">{pane}</td>
+                              <td className="py-1 pr-1 text-right tabular-nums text-slate-800">
+                                {qty}
+                              </td>
+                              <td className="py-1 pr-1 text-right tabular-nums text-slate-700">
+                                {pay}
+                                {!isUsdtTransaction(tx) ? (
+                                  <span className="ml-0.5 text-[9px] text-slate-400">
+                                    {assetCode(tx.payCurrency)}
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td className="py-1 pr-1 text-right tabular-nums text-slate-600">
+                                {rateText}
+                              </td>
+                              <td
+                                className={`py-1 pr-1 text-right tabular-nums ${
+                                  profit === undefined
+                                    ? 'text-slate-300'
+                                    : profitColorClass(profit)
+                                }`}
+                              >
+                                {profit === undefined ? '—' : formatProfit(profit)}
+                              </td>
+                              <td className="max-w-[4.5rem] truncate py-1 text-slate-500" title={note}>
+                                {note}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </>
                 )}
               </div>
             </CollapsibleSection>

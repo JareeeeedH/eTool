@@ -1401,6 +1401,70 @@ export function calculateBuyDayAverageRate(
   return roundUsdtCostRate(totalFiat / totalUsdt)
 }
 
+/** 結算封存明細：當日買賣 U／V 量與加權均價（供查帳摘要） */
+export type SettlementTradeVolumeSummary = {
+  buyUQty: number
+  sellUQty: number
+  buyUAvg: number | null
+  sellUAvg: number | null
+  buyVnQty: number
+  sellVnQty: number
+  buyVnAvg: number | null
+  sellVnAvg: number | null
+}
+
+function weightedUsdtRate(
+  txs: UsdtTransaction[],
+): { qty: number; avg: number | null } {
+  const qty = txs.reduce((sum, tx) => sum + tx.usdtAmount, 0)
+  if (qty <= 0) return { qty: 0, avg: null }
+  const fiat = txs.reduce((sum, tx) => sum + tx.fiatAmount, 0)
+  return { qty, avg: roundUsdtCostRate(fiat / qty) }
+}
+
+function weightedVnRate(
+  txs: VnTradeTransaction[],
+): { qty: number; avg: number | null } {
+  const qty = txs.reduce((sum, tx) => sum + tx.vnAmount, 0)
+  if (qty <= 0) return { qty: 0, avg: null }
+  const pay = txs.reduce((sum, tx) => sum + vnTradePayAmount(tx), 0)
+  if (pay <= 0) return { qty, avg: null }
+  return { qty, avg: roundVnTradeRate(qty / pay) }
+}
+
+export function summarizeSettlementTrades(
+  trades: Array<UsdtTransaction | VnTradeTransaction>,
+): SettlementTradeVolumeSummary {
+  const usdtBuys = trades.filter(
+    (tx): tx is UsdtTransaction => isUsdtTransaction(tx) && tx.type === 'buy',
+  )
+  const usdtSells = trades.filter(
+    (tx): tx is UsdtTransaction => isUsdtTransaction(tx) && tx.type === 'sell',
+  )
+  const vnBuys = trades.filter(
+    (tx): tx is VnTradeTransaction => isVnTradeTransaction(tx) && tx.type === 'buy',
+  )
+  const vnSells = trades.filter(
+    (tx): tx is VnTradeTransaction => isVnTradeTransaction(tx) && tx.type === 'sell',
+  )
+
+  const buyU = weightedUsdtRate(usdtBuys)
+  const sellU = weightedUsdtRate(usdtSells)
+  const buyVn = weightedVnRate(vnBuys)
+  const sellVn = weightedVnRate(vnSells)
+
+  return {
+    buyUQty: buyU.qty,
+    sellUQty: sellU.qty,
+    buyUAvg: buyU.avg,
+    sellUAvg: sellU.avg,
+    buyVnQty: buyVn.qty,
+    sellVnQty: sellVn.qty,
+    buyVnAvg: buyVn.avg,
+    sellVnAvg: sellVn.avg,
+  }
+}
+
 /**
  * 計算 USDT 總庫存加權成本均價
  * 延續前次結算成本，並納入當日買入；賣出時依比例扣減成本
