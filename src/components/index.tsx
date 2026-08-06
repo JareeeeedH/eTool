@@ -33,6 +33,12 @@ import type {
   UsdtTransaction,
   VnPayCurrency,
   UsdtCabin,
+  TwdCabinNoteKey,
+} from '../types'
+import {
+  EMPTY_TWD_CABIN_NOTES,
+  TWD_CABIN_NOTE_KEYS,
+  TWD_CABIN_NOTE_LABELS,
 } from '../types'
 import {
   EXPENSE_INPUT_CLASS,
@@ -74,13 +80,12 @@ import {
   formatNumber,
   formatArchiveDateRange,
   formatProfit,
-  formatProfitCompact,
   formatProfitFromParts,
-  formatProfitMarginPercent,
   sumRoundedProfitParts,
   formatUsdtTradeRateDisplay,
   formatVnTradeRateDisplay,
   formatUsdtCostRateDisplay,
+  roundTwdTableCompact,
   formatSettlementDate,
   formatSettlementDateTime,
   formatSettlementDayLabel,
@@ -113,8 +118,6 @@ import { resolveUsdtTradeFields, resolveVnTradeFields } from '../utils/form'
 import {
   calculateAverageRate,
   calculateBuyDayAverageRate,
-  computeUsdtSellProfitPreview,
-  computeVnSellProfitPreview,
   isUsdtTransaction,
   normalizeMonthlyCloseRecord,
   settlementHasSplitProfit,
@@ -743,9 +746,9 @@ export function DailyBalanceStrip({
 }: DailyBalanceStripProps) {
   const [twdCabinModalOpen, setTwdCabinModalOpen] = useState(false)
   const usdtCabins = usdtCabinBalances ?? { a: 0, b: 0, c: 0 }
-  const notes = twdCabinNotes ?? { a: '', b: '', c: '', d: '', e: '' }
-  /** A–E 輸入與表單 T 相同：萬位縮寫 → 台幣後再加總 */
-  const twdNoteSumActual = (['a', 'b', 'c', 'd', 'e'] as const).reduce((sum, key) => {
+  const notes = twdCabinNotes ?? { ...EMPTY_TWD_CABIN_NOTES }
+  /** O/B/W/H/J 輸入與表單 T 相同：萬位縮寫 → 台幣後再加總 */
+  const twdNoteSumActual = TWD_CABIN_NOTE_KEYS.reduce((sum, key) => {
     return sum + (parseTwdTableCompactInput(notes[key], true) ?? 0)
   }, 0)
   const showUsdtCost = balances.usdt > 0 && inventoryCost.twd !== null
@@ -757,32 +760,32 @@ export function DailyBalanceStrip({
     B: 'bg-violet-50 text-violet-800 ring-violet-200',
     C: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
   }
-  const twdNoteLetterTone: Record<'A' | 'B' | 'C' | 'D' | 'E', string> = {
-    A: 'text-sky-600',
-    B: 'text-violet-600',
-    C: 'text-emerald-600',
-    D: 'text-amber-600',
-    E: 'text-rose-600',
+  const twdNoteLetterTone: Record<TwdCabinNoteKey, string> = {
+    a: 'text-sky-600',
+    b: 'text-violet-600',
+    c: 'text-emerald-600',
+    d: 'text-amber-600',
+    e: 'text-rose-600',
   }
-  const twdNoteFieldTone: Record<'A' | 'B' | 'C' | 'D' | 'E', string> = {
-    A: 'border-sky-200 focus-within:border-sky-400 focus-within:ring-sky-200',
-    B: 'border-violet-200 focus-within:border-violet-400 focus-within:ring-violet-200',
-    C: 'border-emerald-200 focus-within:border-emerald-400 focus-within:ring-emerald-200',
-    D: 'border-amber-200 focus-within:border-amber-400 focus-within:ring-amber-200',
-    E: 'border-rose-200 focus-within:border-rose-400 focus-within:ring-rose-200',
+  const twdNoteFieldTone: Record<TwdCabinNoteKey, string> = {
+    a: 'border-sky-200 focus-within:border-sky-400 focus-within:ring-sky-200',
+    b: 'border-violet-200 focus-within:border-violet-400 focus-within:ring-violet-200',
+    c: 'border-emerald-200 focus-within:border-emerald-400 focus-within:ring-emerald-200',
+    d: 'border-amber-200 focus-within:border-amber-400 focus-within:ring-amber-200',
+    e: 'border-rose-200 focus-within:border-rose-400 focus-within:ring-rose-200',
   }
   const twdNoteSumMismatch =
     Math.abs(twdNoteSumActual - balances.twd) > 0.5
-  const hasAnyTwdNote = (['a', 'b', 'c', 'd', 'e'] as const).some((key) => notes[key].trim() !== '')
+  const hasAnyTwdNote = TWD_CABIN_NOTE_KEYS.some((key) => notes[key].trim() !== '')
   const renderCabinPills = (cabins: { a: number; b: number; c: number }, format?: (n: number) => string) =>
-    (['A', 'B'] as const).map((cabin) => (
+    (['A', 'B', 'C'] as const).map((cabin) => (
       <span
         key={cabin}
         className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-semibold tabular-nums ring-1 ring-inset sm:text-[10px] ${cabinTone[cabin]}`}
       >
         <span className="opacity-70">{cabin}</span>
         <AnimatedAmount
-          value={cabin === 'A' ? cabins.a : cabins.b}
+          value={cabin === 'A' ? cabins.a : cabin === 'B' ? cabins.b : cabins.c}
           format={format}
         />
       </span>
@@ -814,9 +817,9 @@ export function DailyBalanceStrip({
                   ? 'bg-slate-50 text-slate-600 ring-slate-200'
                   : 'bg-white text-slate-400 ring-slate-200'
             }`}
-            title="編輯 T 分倉 A–E"
+            title="編輯 T 分倉 O/B/W/H/J"
           >
-            <span className="tracking-wide">A–E</span>
+            <span className="tracking-wide">O–J</span>
             {hasAnyTwdNote && (
               <span className="tabular-nums">Σ {formatTwdTableCompact(twdNoteSumActual)}</span>
             )}
@@ -928,25 +931,18 @@ export function DailyBalanceStrip({
               </button>
             </div>
 
-            <p className="mt-1 rounded-lg bg-slate-50 px-3 py-2 text-[13px] tabular-nums text-slate-700">
-              目前 T{' '}
-              <span className="font-semibold text-slate-900">
-                {formatTwdTableCompact(balances.twd)}
-              </span>
-            </p>
-
-            <div className="mt-3 grid grid-cols-5 gap-1.5">
-              {(['a', 'b', 'c', 'd', 'e'] as const).map((key) => {
-                const cabin = key.toUpperCase() as 'A' | 'B' | 'C' | 'D' | 'E'
+            <div className="mt-1 grid grid-cols-5 gap-1.5">
+              {TWD_CABIN_NOTE_KEYS.map((key) => {
+                const label = TWD_CABIN_NOTE_LABELS[key]
                 return (
                   <label
                     key={key}
-                    className={`flex min-w-0 flex-col items-center gap-0.5 rounded-lg border px-1 py-1.5 focus-within:ring-2 ${twdNoteFieldTone[cabin]}`}
+                    className={`flex min-w-0 flex-col items-center gap-0.5 rounded-lg border px-1 py-1.5 focus-within:ring-2 ${twdNoteFieldTone[key]}`}
                   >
                     <span
-                      className={`text-[11px] font-bold leading-none ${twdNoteLetterTone[cabin]}`}
+                      className={`text-[11px] font-bold leading-none ${twdNoteLetterTone[key]}`}
                     >
-                      {cabin}
+                      {label}
                     </span>
                     <input
                       type="text"
@@ -955,7 +951,7 @@ export function DailyBalanceStrip({
                       placeholder="0"
                       className="min-w-0 w-full border-0 bg-transparent p-0 text-center text-[13px] font-medium tabular-nums leading-tight text-slate-800 outline-none placeholder:text-slate-300"
                       inputMode="decimal"
-                      aria-label={`T 備註 ${cabin}（萬）`}
+                      aria-label={`T 備註 ${label}（萬）`}
                     />
                   </label>
                 )
@@ -963,7 +959,7 @@ export function DailyBalanceStrip({
             </div>
 
             <p
-              className={`mt-3 text-center text-[13px] tabular-nums ${
+              className={`mt-3 mb-3 text-center text-[13px] tabular-nums ${
                 twdNoteSumMismatch ? 'font-semibold text-amber-700' : 'text-slate-500'
               }`}
               title={formatTwd(twdNoteSumActual)}
@@ -971,6 +967,21 @@ export function DailyBalanceStrip({
               Σ {formatTwdTableCompact(twdNoteSumActual)}
               {twdNoteSumMismatch ? ' ≠ T' : ' = T'}
             </p>
+
+            <div className="flex items-end justify-start">
+              <label className="flex w-[4.5rem] min-w-0 flex-col items-center gap-0.5 rounded-lg border border-slate-300 px-1 py-1.5 focus-within:border-slate-500 focus-within:ring-2 focus-within:ring-slate-200">
+                <span className="text-[11px] font-bold leading-none text-slate-600">PF</span>
+                <input
+                  type="text"
+                  value={notes.pf}
+                  onChange={(e) => onTwdCabinNoteChange('pf', e.target.value)}
+                  placeholder="0"
+                  className="min-w-0 w-full border-0 bg-transparent p-0 text-center text-[13px] font-medium tabular-nums leading-tight text-slate-800 outline-none placeholder:text-slate-300"
+                  inputMode="decimal"
+                  aria-label="T 備註 PF（獨立記錄，不入加總）"
+                />
+              </label>
+            </div>
           </div>
         </div>
       )}
@@ -1061,8 +1072,8 @@ export function OpeningUsdtCabinPickModal({
           {currencyLabel === 'T' ? formatTwdTableCompact(absAdjust) : formatNumber(absAdjust)}
         </p>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {(['A', 'B'] as const).map((cabin) => {
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {(['A', 'B', 'C'] as const).map((cabin) => {
             const bal = cabinBal(cabin)
             const enabled = canUse(cabin)
             const isSelected = selected === cabin
@@ -1176,7 +1187,7 @@ function CabinRebalanceModalContent({
 
   const confirmPendingTransfer = () => {
     if (!pendingTransfer) return
-    onConfirm(pendingTransfer.next.a, pendingTransfer.next.b)
+    onConfirm(pendingTransfer.next)
     setPendingTransfer(null)
   }
 
@@ -1206,6 +1217,7 @@ function CabinRebalanceModalContent({
                 [
                   ['A', cabins.a, pendingTransfer.next.a],
                   ['B', cabins.b, pendingTransfer.next.b],
+                  ['C', cabins.c, pendingTransfer.next.c],
                 ] as const
               )
                 .filter(([, before, after]) => before !== after)
@@ -1242,7 +1254,7 @@ function CabinRebalanceModalContent({
             </p>
 
             <div className="mt-2 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] tabular-nums">
-              {(['A', 'B'] as UsdtCabin[]).map((cabin) => (
+              {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
                 <span key={cabin} className={cabinTone[cabin]}>
                   {cabin} {formatNumber(cabinBalance(cabin))}
                 </span>
@@ -1263,7 +1275,7 @@ function CabinRebalanceModalContent({
                       }}
                       className={cabinSelectClass}
                     >
-                      {(['A', 'B'] as UsdtCabin[]).map((cabin) => (
+                      {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
                         <option key={cabin} value={cabin}>
                           {cabin}（{formatNumber(cabinBalance(cabin))}）
                         </option>
@@ -1285,7 +1297,7 @@ function CabinRebalanceModalContent({
                       }}
                       className={cabinSelectClass}
                     >
-                      {(['A', 'B'] as UsdtCabin[]).map((cabin) => (
+                      {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
                         <option key={cabin} value={cabin}>
                           {cabin}（{formatNumber(cabinBalance(cabin))}）
                         </option>
@@ -2247,10 +2259,6 @@ export function TradeForm({
   buttonClass,
   focusClass,
   balances,
-  openingBalances,
-  openingUsdtCost,
-  transactions,
-  excludeTransactionId = null,
 }: TradeFormProps) {
   const prefix = type === 'buy' ? 'buy' : 'sell'
   const inputClass = `${TRADE_INPUT_CLASS} ${focusClass}`
@@ -2270,7 +2278,6 @@ export function TradeForm({
 
   let previewText: string | null = null
   let previewWarn = false
-  let profitPreview: { text: string; value: number } | null = null
 
   if (usdtValid && fiatValid) {
     if (type === 'buy') {
@@ -2279,23 +2286,6 @@ export function TradeForm({
     } else {
       previewText = `−P ${formatNumber(usdtNum)} · +T ${formatTwdTableCompact(fiatNum)}`
       previewWarn = usdtNum > balances.usdt
-      const sellProfit = computeUsdtSellProfitPreview(
-        openingBalances,
-        openingUsdtCost,
-        transactions,
-        usdtNum,
-        fiatNum,
-        excludeTransactionId,
-      )
-      if (sellProfit !== null && sellProfit.unitCost !== null) {
-        const marginPct = formatProfitMarginPercent(sellProfit.profit, sellProfit.costBasis)
-        profitPreview = {
-          text: `PF ${formatProfitCompact(sellProfit.profit)}${
-            marginPct ? `（${marginPct}）` : ''
-          }`,
-          value: sellProfit.profit,
-        }
-      }
     }
   }
 
@@ -2383,16 +2373,6 @@ export function TradeForm({
           >
             {previewText ??
               (twdInsufficient ? '台幣餘額不足' : usdtInsufficient ? 'USDT 餘額不足' : null)}
-          </p>
-        )}
-
-        {profitPreview && (
-          <p
-            className={`mt-0.5 rounded px-1.5 py-0.5 text-[10px] tabular-nums ${
-              profitPreview.value >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-            }`}
-          >
-            {profitPreview.text}
           </p>
         )}
 
@@ -2677,12 +2657,6 @@ export function VnTradeForm({
   buttonClass,
   focusClass,
   balances,
-  openingBalances,
-  openingVnTwdRate,
-  openingVnUsdtRate,
-  openingUsdtCost,
-  transactions,
-  excludeTransactionId = null,
 }: VnTradeFormProps) {
   const prefix = type === 'buy' ? 'vnBuy' : 'vnSell'
   const inputClass = `${TRADE_INPUT_CLASS} ${focusClass}`
@@ -2706,7 +2680,6 @@ export function VnTradeForm({
 
   let previewText: string | null = null
   let previewWarn = false
-  let profitPreview: { text: string; value: number } | null = null
   if (vnValid && payValid) {
     const payDisplay =
       payCurrency === 'usdt' ? formatNumber(payNum) : formatTwdTableCompact(payNum)
@@ -2717,26 +2690,6 @@ export function VnTradeForm({
     } else {
       previewText = `−VN ${formatVnTableCompact(vnNum)} · +${payLabel} ${payDisplay}`
       previewWarn = vnNum > balances.vn
-      const sellProfit = computeVnSellProfitPreview(
-        openingBalances,
-        openingVnTwdRate,
-        openingVnUsdtRate,
-        openingUsdtCost,
-        transactions,
-        vnNum,
-        payCurrency,
-        payNum,
-        excludeTransactionId,
-      )
-      if (sellProfit !== null) {
-        const marginPct = formatProfitMarginPercent(sellProfit.profit, sellProfit.costBasis)
-        profitPreview = {
-          text: `PF ${formatProfitCompact(sellProfit.profit)}${
-            marginPct ? `（${marginPct}）` : ''
-          }`,
-          value: sellProfit.profit,
-        }
-      }
     }
   }
 
@@ -2841,16 +2794,6 @@ export function VnTradeForm({
           </p>
         )}
 
-        {profitPreview && (
-          <p
-            className={`mt-0.5 rounded px-1.5 py-0.5 text-[11px] tabular-nums ${
-              profitPreview.value >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
-            }`}
-          >
-            {profitPreview.text}
-          </p>
-        )}
-
         {error && (
           <p className="mt-1 text-[11px] text-rose-600" role="alert">
             {error}
@@ -2929,7 +2872,8 @@ export function VnTradeTable({
     for (const tx of transactions) {
       if (tx.payCurrency !== 'twd') continue
       totalVnPaid += tx.vnAmount
-      totalTwd += tx.twdAmount
+      // 與表列 T 縮寫一致：還原後再加總，避免 footer @ 與畫面金額對不上
+      totalTwd += roundTwdTableCompact(tx.twdAmount) * 10_000
     }
     return totalTwd > 0 ? totalVnPaid / totalTwd : null
   }, [isBuy, showDayAverage, transactions])
@@ -2951,7 +2895,8 @@ export function VnTradeTable({
     for (const tx of transactions) {
       if (tx.payCurrency !== 'twd') continue
       totalVn += tx.vnAmount
-      totalTwd += tx.twdAmount
+      // 例：620050000 / (39.00+38.94)萬 = 620050000 / 779400
+      totalTwd += roundTwdTableCompact(tx.twdAmount) * 10_000
     }
     return totalTwd > 0 ? totalVn / totalTwd : null
   }, [isBuy, showSellAverage, transactions])

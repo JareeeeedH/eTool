@@ -212,8 +212,8 @@ export interface PersistedAppState {
    * 重整後用來校正期初分倉，避免互轉結果遺失。
    */
   usdtCabinSnapshot?: { a: number; b: number; c: number }
-  /** T 卡 A/B/C/D/E 備註（僅 memo，不入帳） */
-  twdCabinNotes?: { a: string; b: string; c: string; d: string; e: string }
+  /** T 卡 O/B/W/H/J 備註 + 獨立 PF（僅 memo，不入帳；PF 不入加總） */
+  twdCabinNotes?: { a: string; b: string; c: string; d: string; e: string; pf?: string }
   /** @deprecated 舊 T 分倉期初；忽略 */
   openingTwdCabinA?: number
   /** @deprecated 舊 T 分倉期初；忽略 */
@@ -259,7 +259,7 @@ function parseUsdtCabinSnapshot(
 
 function parseTwdCabinNotes(
   value: unknown,
-): { a: string; b: string; c: string; d: string; e: string } | undefined {
+): { a: string; b: string; c: string; d: string; e: string; pf: string } | undefined {
   if (!isRecord(value)) return undefined
   const asString = (v: unknown) => (v === null || v === undefined ? '' : String(v))
   return {
@@ -268,6 +268,7 @@ function parseTwdCabinNotes(
     c: asString(value.c),
     d: asString(value.d),
     e: asString(value.e),
+    pf: asString(value.pf),
   }
 }
 

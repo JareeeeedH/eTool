@@ -45,6 +45,7 @@ import {
   roundUsdtCostRate,
   roundVnPoolCostRate,
   roundVnTradeRate,
+  roundTwdTableCompact,
 } from '../utils/format'
 
 /**
@@ -86,29 +87,39 @@ import {
  * 期初僅有 @台幣時，可依 @台幣 × U 池 @ 推得 @U（createVnTradePoolState）。
  *
  * -----------------------------------------------------------------------------
- * 利潤（一律台幣；顯示 formatProfit → roundTwdTableCompact 萬位，四捨五入至小數第二位）
+ * 畫面 @（凍結）與結算日寫入
  * -----------------------------------------------------------------------------
- * - 賣 U：利潤 = 收款台幣 − 賣出 E × **該筆賣出前** U 池 @（round 3 位）
- * - 賣 VN 收 T：利潤 = 收款台幣 − VN ÷ **該筆賣出前** V@台幣
- * - 賣 VN 收 U：利潤 = 收到 U × **該筆賣出前** U 池 @ − VN ÷ **該筆賣出前** V@台幣
- *
- * 單筆利潤：computeSellProfitById（U）、computeVnTradeAnalytics.sellProfitById（VN）
- * 表單預覽：computeUsdtSellProfitPreview、computeVnSellProfitPreview（須與上列同一 walk）
- * 編輯舊賣單預覽：只 walk **時間上排在該筆之前**的交易（transactionsForProfitPreview）
+ * - 日間資產卡 @／≈T：只用**前一日結算**寫入的 openingUsdtCost / openingVn*Rate，不因當日買賣即時改 @
+ * - 點結算後新 @ =（期初庫存數量 × 前日@ + 當日買入數量 × 當日買均）÷（期初 + 買入）
+ *   無當日買入則沿用前日 @（例：無 IV 則 V@ 不變）
+ * - 實作：computeSettleDayInventoryRates、computeTotalAssetsAtCostRates
  *
  * -----------------------------------------------------------------------------
- * 與「池 @」不同、勿混淆的顯示
+ * 利潤 PF（結算日；一律台幣）
  * -----------------------------------------------------------------------------
- * - 買 U 表 footer：當日買單加權 ΣT÷ΣE（calculateBuyDayAverageRate），≠ E 卡池 @
- * - 買 VN 日均：computeVnTwdCostAverageRate 等，≠ V 卡池 @
- * - 總資產 E 估值：floor(E × 池@)，可能與 twdCostTotal 差少量取整
+ * 日間 OE／OV 表格**不顯示**單筆 PF；僅在結算時算當日總 PF（可封存逐筆）。
+ * 成本用「最新 @」＝前日結算 @ 與當日買入均價加權（無買入則沿用前日；與結算快照同一套）。
+ * - 賣 U：利潤 = 收款台幣 − 賣出 E × **最新 U@**（= E ×（當日賣均 − 最新 U@））
+ * - 賣 VN 收 T：利潤 = 收款台幣（表列 T 縮寫還原加總口徑）− VN ÷ **最新 V@台幣**
+ *   （等價：收款 ×（最新 V@ − 當日賣均）÷ 最新 V@）
+ * - 賣 VN 收 U：利潤 = 收到 U × **最新 U@** − VN ÷ **最新 V@台幣**
+ *
+ * 實作：computeSettleDayUsdtSellProfitById / computeSettleDayVnSellProfitById
+ * （舊版即時池 walk：computeSellProfitById、computeVnTradeAnalytics.sellProfitById，僅供對照／測試）
+ *
+ * -----------------------------------------------------------------------------
+ * 與「凍結 @」不同、勿混淆的顯示
+ * -----------------------------------------------------------------------------
+ * - 買 U 表 footer：當日買單加權 ΣT÷ΣE（calculateBuyDayAverageRate），≠ 資產卡凍結 @
+ * - 買 VN 日均：computeVnTwdCostAverageRate 等，≠ 資產卡凍結 @
+ * - 總資產日間估值：floor(E × 前日U@)、floor(V ÷ 前日V@)
  *
  * -----------------------------------------------------------------------------
  * 精度
  * -----------------------------------------------------------------------------
- * - U 池 @、賣 U 利潤用 @：roundUsdtCostRate（四捨五入 3 位小數）
+ * - U @：roundUsdtCostRate（四捨五入 3 位小數）
  * - V 成交匯率 R：roundVnTradeRate（四捨五入 2 位小數）
- * - V 池 @：roundVnPoolCostRate（四捨五入 2 位小數）
+ * - V 池／結算 @：roundVnPoolCostRate（四捨五入 2 位小數）
  * - 利潤顯示：formatProfit → roundTwdTableCompact 萬位，四捨五入至小數第二位
  *
  * -----------------------------------------------------------------------------
@@ -122,11 +133,10 @@ import {
  * -----------------------------------------------------------------------------
  * 異動本檔時請確認
  * -----------------------------------------------------------------------------
- * 1. 預覽、表格、日結是否仍呼叫同一套 walk（勿新增第二份 U 池更新邏輯）
- * 2. 賣出是否仍為「比例扣減、@ 不變」；買入是否仍為加權重算 @
- * 3. 賣 VN 收 U 是否仍按當下 U 池 @ 入帳（@ 數字不變、只增數量）
- * 4. 編輯賣單預覽是否仍只 walk 該筆之前的交易
- * 5. 建議以固定 fixture 手測或補單元測試後再改
+ * 1. 資產卡 @／日間總資產是否仍用 opening（凍結），勿改回即時池
+ * 2. 結算 PF／新 @ 是否走 computeSettleDay*，與確認摘要一致
+ * 3. 無當日買入時結算 @ 是否沿用前日
+ * 4. 建議以固定 fixture（如本地 4 號）補單元測試後再改
  * =============================================================================
  */
 
@@ -770,6 +780,140 @@ export function computeTotalAssetsTwd(
     total,
     isComplete,
     missingNotes,
+  }
+}
+
+/**
+ * 以指定成本 @ 估值總資產（日間凍結 opening、結算寫入新 @ 後皆用此）。
+ * 不 walk 當日交易池。
+ */
+export function computeTotalAssetsAtCostRates(
+  balances: Balances,
+  usdtCostTwd: number | null,
+  vnTwdRate: number | null,
+  vnUsdtRate: number | null,
+): TotalAssetsTwd {
+  const twdCash = balances.twd
+  const missingNotes: string[] = []
+
+  let usdtInTwd: number | null = null
+  if (balances.usdt <= 0) {
+    usdtInTwd = 0
+  } else if (usdtCostTwd !== null) {
+    usdtInTwd = floorTwd(balances.usdt * usdtCostTwd)
+  } else {
+    missingNotes.push('USDT 無 TWD 料金')
+  }
+
+  let vnInTwd: number | null = null
+  if (balances.vn <= 0) {
+    vnInTwd = 0
+  } else if (vnTwdRate !== null && vnTwdRate > 0) {
+    vnInTwd = floorTwd(balances.vn / vnTwdRate)
+  } else {
+    missingNotes.push('VN 無料金均價')
+  }
+
+  const total = twdCash + (usdtInTwd ?? 0) + (vnInTwd ?? 0)
+  const isComplete =
+    (balances.usdt <= 0 || usdtInTwd !== null) &&
+    (balances.vn <= 0 || vnInTwd !== null)
+
+  return {
+    twdCash,
+    usdtInTwd,
+    vnInTwd,
+    dayVnTwdRate: vnTwdRate,
+    dayVnUsdtRate: vnUsdtRate,
+    total,
+    isComplete,
+    missingNotes,
+  }
+}
+
+/** 結算新 @：（期初數量 × 前日@ + 買入數量 × 當日買均）÷（期初 + 買入）；無買入沿用前日 */
+export function settleWeightedCostRate(
+  openingQty: number,
+  prevRate: number | null,
+  dayBuyQty: number,
+  dayBuyAvg: number | null,
+  round: (value: number) => number,
+): number | null {
+  if (dayBuyQty > 0 && dayBuyAvg !== null) {
+    if (openingQty > 0 && prevRate !== null) {
+      return round(
+        (openingQty * prevRate + dayBuyQty * dayBuyAvg) / (openingQty + dayBuyQty),
+      )
+    }
+    return round(dayBuyAvg)
+  }
+  return prevRate !== null ? round(prevRate) : null
+}
+
+export type SettleDayInventoryRates = {
+  usdt: UsdtInventoryCost
+  vnTwdRate: number | null
+  vnUsdtRate: number | null
+  dayBuyAvgTwd: number | null
+  dayBuyAvgVn: number | null
+}
+
+/** 結算時寫入的庫存 @（凍結模型） */
+export function computeSettleDayInventoryRates(
+  openingBalances: Balances,
+  openingUsdtCost: UsdtInventoryCost,
+  openingVnTwdRate: number | null,
+  openingVnUsdtRate: number | null,
+  transactions: Transaction[],
+): SettleDayInventoryRates {
+  const usdtTxs = filterUsdtTransactions(transactions)
+  const dayBuyAvgTwd = calculateBuyDayAverageRate(usdtTxs, 'twd')
+  const dayBuyQty = usdtTxs
+    .filter((tx) => tx.type === 'buy' && tx.fiatCurrency === 'twd')
+    .reduce((sum, tx) => sum + tx.usdtAmount, 0)
+
+  const dayBuyAvgVn = calculateVnBuyDayAverageRate(
+    openingBalances,
+    openingUsdtCost,
+    transactions,
+  )
+  const dayBuyAvgVnUsdt = calculateVnBuyDayAverageUsdtRate(
+    openingBalances,
+    openingUsdtCost,
+    transactions,
+  )
+  const dayBuyVnQty = filterVnTradeTransactions(transactions)
+    .filter((tx) => tx.type === 'buy')
+    .reduce((sum, tx) => sum + tx.vnAmount, 0)
+
+  return {
+    usdt: {
+      twd: settleWeightedCostRate(
+        openingBalances.usdt,
+        openingUsdtCost.twd,
+        dayBuyQty,
+        dayBuyAvgTwd,
+        roundUsdtCostRate,
+      ),
+      vn: openingUsdtCost.vn,
+    },
+    vnTwdRate: settleWeightedCostRate(
+      openingBalances.vn,
+      openingVnTwdRate,
+      dayBuyVnQty,
+      dayBuyAvgVn !== null ? roundVnPoolCostRate(dayBuyAvgVn) : null,
+      roundVnPoolCostRate,
+    ),
+    vnUsdtRate: settleWeightedCostRate(
+      openingBalances.vn,
+      openingVnUsdtRate,
+      dayBuyVnQty,
+      dayBuyAvgVnUsdt !== null ? roundVnPoolCostRate(dayBuyAvgVnUsdt) : null,
+      roundVnPoolCostRate,
+    ),
+    dayBuyAvgTwd,
+    dayBuyAvgVn:
+      dayBuyAvgVn !== null ? roundVnPoolCostRate(dayBuyAvgVn) : null,
   }
 }
 
@@ -1540,6 +1684,93 @@ export function computeUsdtDayTotalProfit(
     .reduce((sum, tx) => sum + (profitById.get(tx.id)?.profit ?? 0), 0)
 }
 
+/** 結算日 OE：成本用最新 U@（前日結算＋當日 IE 加權；無 IE 則前日） */
+export function computeSettleDayUsdtSellProfitById(
+  latestUsdtCostTwd: number | null,
+  transactions: Transaction[],
+): Map<string, SellProfitInfo> {
+  const unitCost =
+    latestUsdtCostTwd !== null ? roundUsdtCostRate(latestUsdtCostTwd) : null
+  const result = new Map<string, SellProfitInfo>()
+
+  for (const tx of filterUsdtTransactions(transactions)) {
+    if (tx.type !== 'sell') continue
+    const costBasis = unitCost !== null ? tx.usdtAmount * unitCost : 0
+    result.set(tx.id, {
+      unitCost,
+      costBasis,
+      profit: tx.fiatAmount - costBasis,
+    })
+  }
+
+  return result
+}
+
+export function computeSettleDayUsdtProfit(
+  latestUsdtCostTwd: number | null,
+  transactions: Transaction[],
+): number {
+  const profitById = computeSettleDayUsdtSellProfitById(
+    latestUsdtCostTwd,
+    transactions,
+  )
+  return filterUsdtTransactions(transactions)
+    .filter((tx) => tx.type === 'sell')
+    .reduce((sum, tx) => sum + (profitById.get(tx.id)?.profit ?? 0), 0)
+}
+
+/**
+ * 結算日 OV：成本用最新 V@（前日結算＋當日 IV 加權；無 IV 則前日）。
+ * 收 T 之收款依表列 T 縮寫還原，與 footer 賣均口徑一致。
+ */
+export function computeSettleDayVnSellProfitById(
+  latestVnTwdRate: number | null,
+  latestUsdtCostTwd: number | null,
+  transactions: Transaction[],
+): Map<string, SellProfitInfo> {
+  const vnUnit =
+    latestVnTwdRate !== null && latestVnTwdRate > 0
+      ? roundVnPoolCostRate(latestVnTwdRate)
+      : null
+  const usdtUnit =
+    latestUsdtCostTwd !== null ? roundUsdtCostRate(latestUsdtCostTwd) : null
+  const result = new Map<string, SellProfitInfo>()
+
+  for (const tx of filterVnTradeTransactions(transactions)) {
+    if (tx.type !== 'sell') continue
+    const costBasis =
+      vnUnit !== null && vnUnit > 0 ? tx.vnAmount / vnUnit : 0
+    const proceeds =
+      tx.payCurrency === 'twd'
+        ? roundTwdTableCompact(tx.twdAmount) * 10_000
+        : usdtUnit !== null
+          ? tx.usdtAmount * usdtUnit
+          : 0
+    result.set(tx.id, {
+      unitCost: vnUnit,
+      costBasis,
+      profit: proceeds - costBasis,
+    })
+  }
+
+  return result
+}
+
+export function computeSettleDayVnProfit(
+  latestVnTwdRate: number | null,
+  latestUsdtCostTwd: number | null,
+  transactions: Transaction[],
+): number {
+  const profitById = computeSettleDayVnSellProfitById(
+    latestVnTwdRate,
+    latestUsdtCostTwd,
+    transactions,
+  )
+  return filterVnTradeTransactions(transactions)
+    .filter((tx) => tx.type === 'sell')
+    .reduce((sum, tx) => sum + (profitById.get(tx.id)?.profit ?? 0), 0)
+}
+
 export function computeDayExpenseTotal(transactions: Transaction[]): number {
   return filterExpenseTransactions(transactions).reduce(
     (sum, tx) => sum + tx.amountTwd,
@@ -1888,16 +2119,20 @@ export function buildTradeSettleConfirmSummary(
   const usdtSell = usdtTxs.filter((tx) => tx.type === 'sell').length
   const vnBuy = vnTxs.filter((tx) => tx.type === 'buy').length
   const vnSell = vnTxs.filter((tx) => tx.type === 'sell').length
-  const dayUsdtProfit = computeUsdtDayTotalProfit(
+  const settleRates = computeSettleDayInventoryRates(
     openingBalances,
     openingUsdtCost,
-    transactions,
-  )
-  const dayVnProfit = computeVnDayTotalProfit(
-    openingBalances,
     openingVnTwdRate,
     openingVnUsdtRate,
-    openingUsdtCost,
+    transactions,
+  )
+  const dayUsdtProfit = computeSettleDayUsdtProfit(
+    settleRates.usdt.twd,
+    transactions,
+  )
+  const dayVnProfit = computeSettleDayVnProfit(
+    settleRates.vnTwdRate,
+    settleRates.usdt.twd,
     transactions,
   )
   const hasSells = usdtSell > 0 || vnSell > 0

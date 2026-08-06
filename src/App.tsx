@@ -26,6 +26,7 @@ import type {
   Transaction,
   TransactionType,
   TwdCabinNotes,
+  TwdCabinNoteFieldKey,
   UsdtCabin,
   UsdtInventoryCost,
   UsdtTransaction,
@@ -33,6 +34,7 @@ import type {
   VnTradeTransaction,
 } from './types'
 import { EMPTY_USDT_COST, INITIAL_BALANCES, TRADE_PANE_CODE, tradePaneEditLabel, tradePaneEditingBannerLabel } from './constants'
+import { EMPTY_TWD_CABIN_NOTES } from './types'
 import {
   formatRateCalc,
   formatVnRateCalc,
@@ -50,16 +52,14 @@ import {
   buildMonthlyClose,
   buildMonthlyClosePreview,
   buildTradeSettleConfirmSummary,
-  calculateBuyDayAverageRate,
-  calculateVnBuyDayAverageRate,
   computeArchivedDateRange,
-  computeInventoryCost,
-  computeSellProfitById,
-  computeTotalAssetsTwd,
+  computeSettleDayInventoryRates,
+  computeSettleDayUsdtProfit,
+  computeSettleDayUsdtSellProfitById,
+  computeSettleDayVnProfit,
+  computeSettleDayVnSellProfitById,
+  computeTotalAssetsAtCostRates,
   computeUsdtCabinBalances,
-  computeUsdtDayTotalProfit,
-  computeVnDayTotalProfit,
-  computeVnTradeAnalytics,
   expenseSettlementsFromCumulative,
   filterExpenseTransactions,
   filterTradeTransactions,
@@ -79,7 +79,6 @@ import {
   normalizeVnTradeTransaction,
   openingBalanceToForm,
   alignOpeningUsdtCabinsToSnapshot,
-  openingUsdtCabinsAfterRebalance,
   recalculateBalances,
   suggestMonthlyPeriodLabel,
   resolveCabinAAmount,
@@ -218,13 +217,7 @@ function App() {
   const [openingUsdtCost, setOpeningUsdtCost] = useState<UsdtInventoryCost>({ ...EMPTY_USDT_COST })
   const [openingUsdtCabinA, setOpeningUsdtCabinA] = useState(0)
   const [openingUsdtCabinB, setOpeningUsdtCabinB] = useState(0)
-  const [twdCabinNotes, setTwdCabinNotes] = useState<TwdCabinNotes>({
-    a: '',
-    b: '',
-    c: '',
-    d: '',
-    e: '',
-  })
+  const [twdCabinNotes, setTwdCabinNotes] = useState<TwdCabinNotes>({ ...EMPTY_TWD_CABIN_NOTES })
   const [openingVnTwdRate, setOpeningVnTwdRate] = useState<number | null>(null)
   const [openingVnUsdtRate, setOpeningVnUsdtRate] = useState<number | null>(null)
   const [settlements, setSettlements] = useState<DailySettlement[]>([])
@@ -376,8 +369,9 @@ function App() {
                   c: String(data.twdCabinNotes.c ?? ''),
                   d: String(data.twdCabinNotes.d ?? ''),
                   e: String(data.twdCabinNotes.e ?? ''),
+                  pf: String(data.twdCabinNotes.pf ?? ''),
                 }
-              : { a: '', b: '', c: '', d: '', e: '' },
+              : { ...EMPTY_TWD_CABIN_NOTES },
           )
           setTransactions(migrated.transactions)
           setOpeningBalanceForm(
@@ -524,10 +518,8 @@ function App() {
     [transactions],
   )
 
-  const inventoryCost = useMemo(
-    () => computeInventoryCost(openingBalances, openingUsdtCost, transactions),
-    [openingBalances, openingUsdtCost, transactions],
-  )
+  /** 資產卡顯示用：凍結為前一日結算 @（不因當日買賣即時變動） */
+  const displayInventoryCost = openingUsdtCost
 
   const vnTradeTransactions = useMemo(
     () => filterVnTradeTransactions(transactions),
@@ -569,7 +561,10 @@ function App() {
     setOpeningUsdtCost(snapshot.openingUsdtCost)
     setOpeningUsdtCabinA(snapshot.openingUsdtCabinA ?? 0)
     setOpeningUsdtCabinB(snapshot.openingUsdtCabinB ?? 0)
-    setTwdCabinNotes(snapshot.twdCabinNotes ?? { a: '', b: '', c: '', d: '', e: '' })
+    setTwdCabinNotes({
+      ...EMPTY_TWD_CABIN_NOTES,
+      ...(snapshot.twdCabinNotes ?? {}),
+    })
     setOpeningVnTwdRate(snapshot.openingVnTwdRate ?? null)
     setOpeningVnUsdtRate(snapshot.openingVnUsdtRate ?? null)
     setSettlements(snapshot.settlements.map(normalizeLoadedSettlement))
@@ -622,35 +617,16 @@ function App() {
         .sort(compareTradeListOrder),
     [vnTradeTransactions],
   )
-  const sellProfitById = useMemo(
-    () => computeSellProfitById(openingBalances, openingUsdtCost, transactions),
-    [openingBalances, openingUsdtCost, transactions],
-  )
-
-  const vnTradeAnalytics = useMemo(
-    () =>
-      computeVnTradeAnalytics(
-        openingBalances,
-        openingVnTwdRate,
-        openingVnUsdtRate,
-        openingUsdtCost,
-        transactions,
-      ),
-    [openingBalances, openingVnTwdRate, openingVnUsdtRate, openingUsdtCost, transactions],
-  )
 
   const totalAssets = useMemo(
     () =>
-      computeTotalAssetsTwd(
+      computeTotalAssetsAtCostRates(
         balances,
-        inventoryCost,
-        openingBalances,
-        openingUsdtCost,
+        openingUsdtCost.twd,
         openingVnTwdRate,
         openingVnUsdtRate,
-        transactions,
       ),
-    [balances, inventoryCost, openingBalances, openingUsdtCost, openingVnTwdRate, openingVnUsdtRate, transactions],
+    [balances, openingUsdtCost.twd, openingVnTwdRate, openingVnUsdtRate],
   )
 
   const resetBuyForm = () => {
@@ -1055,7 +1031,7 @@ function App() {
       })
     }
 
-    const rateCheck = assessRateDeviation(rate, inventoryCost.twd)
+    const rateCheck = assessRateDeviation(rate, openingUsdtCost.twd)
     if (rateCheck?.level === 'confirm') {
       setConfirmDialog({
         title: formatRateDeviationConfirmTitle('usdt'),
@@ -1247,9 +1223,7 @@ function App() {
     }
 
     const vnReferenceRate =
-      payCurrency === 'twd'
-        ? vnTradeAnalytics.currentVnTwdRate
-        : vnTradeAnalytics.currentVnUsdtRate
+      payCurrency === 'twd' ? openingVnTwdRate : openingVnUsdtRate
     const rateCheck = assessRateDeviation(rate, vnReferenceRate)
     if (rateCheck?.level === 'confirm') {
       setConfirmDialog({
@@ -1656,52 +1630,46 @@ function App() {
     const pendingExpenses = filterExpenseTransactions(transactions)
     const expenseTotal = pendingExpenses.reduce((sum, tx) => sum + tx.amountTwd, 0)
 
-    const inventoryAtSettle = computeInventoryCost(
+    const settleRates = computeSettleDayInventoryRates(
       openingBalances,
       openingUsdtCost,
+      openingVnTwdRate,
+      openingVnUsdtRate,
       transactions,
     )
+    const inventoryAtSettle = settleRates.usdt
 
-    const assetsAtSettle = computeTotalAssetsTwd(
+    const assetsAtSettle = computeTotalAssetsAtCostRates(
       balances,
-      inventoryAtSettle,
-      openingBalances,
-      openingUsdtCost,
-      openingVnTwdRate,
-      openingVnUsdtRate,
+      inventoryAtSettle.twd,
+      settleRates.vnTwdRate,
+      settleRates.vnUsdtRate,
+    )
+    const settledDayUsdtProfit = computeSettleDayUsdtProfit(
+      inventoryAtSettle.twd,
       transactions,
     )
-    const settledDayUsdtProfit = computeUsdtDayTotalProfit(
-      openingBalances,
-      openingUsdtCost,
-      transactions,
-    )
-    const settledDayVnProfit = computeVnDayTotalProfit(
-      openingBalances,
-      openingVnTwdRate,
-      openingVnUsdtRate,
-      openingUsdtCost,
+    const settledDayVnProfit = computeSettleDayVnProfit(
+      settleRates.vnTwdRate,
+      inventoryAtSettle.twd,
       transactions,
     )
     const settledDayProfit = settledDayUsdtProfit + settledDayVnProfit
 
-    const usdtSellProfits = computeSellProfitById(
-      openingBalances,
-      openingUsdtCost,
+    const usdtSellProfits = computeSettleDayUsdtSellProfitById(
+      inventoryAtSettle.twd,
       transactions,
     )
-    const vnAnalytics = computeVnTradeAnalytics(
-      openingBalances,
-      openingVnTwdRate,
-      openingVnUsdtRate,
-      openingUsdtCost,
+    const vnSellProfits = computeSettleDayVnSellProfitById(
+      settleRates.vnTwdRate,
+      inventoryAtSettle.twd,
       transactions,
     )
     const sellProfitById: Record<string, number> = {}
     for (const [id, info] of usdtSellProfits) {
       sellProfitById[id] = info.profit
     }
-    for (const [id, info] of vnAnalytics.sellProfitById) {
+    for (const [id, info] of vnSellProfits) {
       sellProfitById[id] = info.profit
     }
 
@@ -1720,12 +1688,8 @@ function App() {
         vnBalance: balances.vn,
         usdtInventoryAvgTwd: inventoryAtSettle.twd,
         usdtInventoryAvgVn: inventoryAtSettle.vn,
-        dayBuyAvgTwd: calculateBuyDayAverageRate(usdtTransactions, 'twd'),
-        dayBuyAvgVn: calculateVnBuyDayAverageRate(
-          openingBalances,
-          openingUsdtCost,
-          transactions,
-        ),
+        dayBuyAvgTwd: settleRates.dayBuyAvgTwd,
+        dayBuyAvgVn: settleRates.dayBuyAvgVn,
         ...settlementFromTotalAssets(assetsAtSettle),
         transactionCount: tradeTxs.length,
         dayUsdtProfit: settledDayUsdtProfit,
@@ -1743,8 +1707,8 @@ function App() {
       setOpeningUsdtCost(inventoryAtSettle)
       setOpeningUsdtCabinA(usdtCabinBalances.a)
       setOpeningUsdtCabinB(usdtCabinBalances.b)
-      setOpeningVnTwdRate(assetsAtSettle.dayVnTwdRate)
-      setOpeningVnUsdtRate(assetsAtSettle.dayVnUsdtRate)
+      setOpeningVnTwdRate(settleRates.vnTwdRate)
+      setOpeningVnUsdtRate(settleRates.vnUsdtRate)
     }
 
     // AL 時一併扣除進行中開銷（key-in 當下不扣總帳）
@@ -1950,7 +1914,7 @@ function App() {
     setOpeningUsdtCost({ ...EMPTY_USDT_COST })
     setOpeningUsdtCabinA(0)
     setOpeningUsdtCabinB(0)
-    setTwdCabinNotes({ a: '', b: '', c: '', d: '', e: '' })
+    setTwdCabinNotes({ ...EMPTY_TWD_CABIN_NOTES })
     setOpeningVnTwdRate(null)
     setOpeningVnUsdtRate(null)
     resetBuyForm()
@@ -2198,24 +2162,18 @@ function App() {
     })
   }
 
-  const handleRebalanceCabins = (targetCabinA: number, targetCabinB: number) => {
-    const total = balances.usdt
-    const snapshot = normalizeUsdtCabinSnapshot(
-      total,
-      targetCabinA,
-      targetCabinB,
-      Math.max(0, total - targetCabinA - targetCabinB),
-    )
-    const next = openingUsdtCabinsAfterRebalance(
-      openingUsdtCabinA,
-      openingUsdtCabinB,
-      { a: usdtCabinBalances.a, b: usdtCabinBalances.b },
-      snapshot.a,
-      snapshot.b,
-      total,
-    )
-    setOpeningUsdtCabinA(next.a)
-    setOpeningUsdtCabinB(next.b)
+  const handleRebalanceCabins = (nextCabins: { a: number; b: number; c: number }) => {
+    const current = usdtCabinBalances
+    // 直接套用互轉後的 A/B 差值，避免用 balances.usdt 重算時把 B 的增量 clamp 進 C
+    const nextOpeningA = openingUsdtCabinA + (nextCabins.a - current.a)
+    const nextOpeningB = openingUsdtCabinB + (nextCabins.b - current.b)
+    const snapshot = {
+      a: Math.max(0, nextCabins.a),
+      b: Math.max(0, nextCabins.b),
+      c: Math.max(0, nextCabins.c),
+    }
+    setOpeningUsdtCabinA(nextOpeningA)
+    setOpeningUsdtCabinB(nextOpeningB)
     setCabinRebalanceModalOpen(false)
     handleSelectTab('daily')
     // 戶轉分倉後立刻寫入 A/B/C 絕對數量，避免 debounce 內重整遺失
@@ -2225,8 +2183,8 @@ function App() {
         dailyWorkTab,
         openingBalances,
         openingUsdtCost,
-        openingUsdtCabinA: next.a,
-        openingUsdtCabinB: next.b,
+        openingUsdtCabinA: nextOpeningA,
+        openingUsdtCabinB: nextOpeningB,
         usdtCabinSnapshot: snapshot,
         twdCabinNotes,
         openingVnTwdRate,
@@ -2294,7 +2252,7 @@ function App() {
     promptOpeningBalanceConfirm(null)
   }
 
-  const handleTwdCabinNoteChange = (cabin: 'a' | 'b' | 'c' | 'd' | 'e', value: string) => {
+  const handleTwdCabinNoteChange = (cabin: TwdCabinNoteFieldKey, value: string) => {
     setTwdCabinNotes((prev) => ({ ...prev, [cabin]: value }))
   }
 
@@ -2458,13 +2416,13 @@ function App() {
               )}
               <DailyBalanceStrip
                 balances={balances}
-                inventoryCost={inventoryCost}
+                inventoryCost={displayInventoryCost}
                 usdtCabinBalances={usdtCabinBalances}
                 twdCabinNotes={twdCabinNotes}
                 onTwdCabinNoteChange={handleTwdCabinNoteChange}
                 totalAssets={totalAssets}
-                vnTwdRate={vnTradeAnalytics.currentVnTwdRate}
-                vnUsdtRate={vnTradeAnalytics.currentVnUsdtRate}
+                vnTwdRate={openingVnTwdRate}
+                vnUsdtRate={openingVnUsdtRate}
               />
               <DailyMobileTradeTabBar
                 value={mobileTradePane}
@@ -2566,7 +2524,6 @@ function App() {
                       accent="sell"
                       sideLabel="賣出"
                       showDayAverage
-                      sellProfitById={sellProfitById}
                       visibleRows={tableVisibleRows}
                       bodyScrollRef={sellBodyScrollRef}
                       onBodyScroll={(scrollTop) => syncTransactionBodyScroll('sell', scrollTop)}
@@ -2602,7 +2559,7 @@ function App() {
                       buttonClass="bg-violet-600 hover:bg-violet-700 focus:ring-violet-600/30"
                       focusClass="focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
                       balances={balances}
-                      usdtInventoryCostTwd={inventoryCost.twd}
+                      usdtInventoryCostTwd={openingUsdtCost.twd}
                       openingBalances={openingBalances}
                       openingVnTwdRate={openingVnTwdRate}
                       openingVnUsdtRate={openingVnUsdtRate}
@@ -2655,7 +2612,7 @@ function App() {
                       buttonClass="bg-amber-600 hover:bg-amber-700 focus:ring-amber-600/30"
                       focusClass="focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                       balances={balances}
-                      usdtInventoryCostTwd={inventoryCost.twd}
+                      usdtInventoryCostTwd={openingUsdtCost.twd}
                       openingBalances={openingBalances}
                       openingVnTwdRate={openingVnTwdRate}
                       openingVnUsdtRate={openingVnUsdtRate}
@@ -2677,7 +2634,6 @@ function App() {
                       openingBalances={openingBalances}
                       openingUsdtCost={openingUsdtCost}
                       allTransactions={transactions}
-                      sellProfitById={vnTradeAnalytics.sellProfitById}
                       visibleRows={tableVisibleRows}
                       bodyScrollRef={vnSellBodyScrollRef}
                       onBodyScroll={(scrollTop) => syncVnBodyScroll('sell', scrollTop)}

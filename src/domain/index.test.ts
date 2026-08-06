@@ -14,6 +14,9 @@ import {
   buildTradeSettleConfirmSummary,
   computeInventoryCost,
   computeSellProfitById,
+  computeSettleDayInventoryRates,
+  computeSettleDayUsdtProfit,
+  computeSettleDayVnProfit,
   computeUsdtCabinBalances,
   computeUsdtDayTotalProfit,
   computeUsdtSellProfitPreview,
@@ -580,35 +583,20 @@ describe('完整營業日整合', () => {
     }
   })
 
-  it('日結毛利 = 各賣單利潤加總', () => {
-    const uMap = computeSellProfitById(opening, cost, fullDay)
-    const vMap = computeVnTradeAnalytics(
+  it('日結毛利 = 結算日最新 @ 賣出利潤加總', () => {
+    const rates = computeSettleDayInventoryRates(
       opening,
+      cost,
       vnTwdRate,
       vnUsdtRate,
-      cost,
       fullDay,
-    ).sellProfitById
-
-    const uSum = usdtSells(fullDay).reduce(
-      (sum, tx) => sum + (uMap.get(tx.id)?.profit ?? 0),
-      0,
     )
-    const vSum = vnSells(fullDay).reduce(
-      (sum, tx) => sum + (vMap.get(tx.id)?.profit ?? 0),
-      0,
+    const uSum = computeSettleDayUsdtProfit(rates.usdt.twd, fullDay)
+    const vSum = computeSettleDayVnProfit(
+      rates.vnTwdRate,
+      rates.usdt.twd,
+      fullDay,
     )
-
-    expect(computeUsdtDayTotalProfit(opening, cost, fullDay)).toBe(uSum)
-    expect(
-      computeVnDayTotalProfit(
-        opening,
-        vnTwdRate,
-        vnUsdtRate,
-        cost,
-        fullDay,
-      ),
-    ).toBe(vSum)
 
     const settle = buildTradeSettleConfirmSummary(
       fullDay,
@@ -864,6 +852,45 @@ describe('usdt cabin quantity (shared cost)', () => {
     expect(transferUsdtBetweenCabins(before, 'A', 'C', 20_000).ok).toBe(false)
   })
 
+  it('A→B transfer via opening delta keeps B increase (does not spill into C)', () => {
+    const opening: Balances = { twd: 0, usdt: 82_053, vn: 0 }
+    const openingA = 21_956
+    const openingB = 60_097
+    const before = computeUsdtCabinBalances(opening, openingA, [], null, openingB)
+    expect(before).toEqual({ a: 21_956, b: 60_097, c: 0 })
+
+    const transferred = transferUsdtBetweenCabins(before, 'A', 'B', 21_956)
+    expect(transferred.ok).toBe(true)
+    if (!transferred.ok) return
+
+    // 模擬修正後 handleRebalanceCabins：直接套用差值
+    const nextOpeningA = openingA + (transferred.next.a - before.a)
+    const nextOpeningB = openingB + (transferred.next.b - before.b)
+    const after = computeUsdtCabinBalances(opening, nextOpeningA, [], null, nextOpeningB)
+    expect(after).toEqual({ a: 0, b: 82_053, c: 0 })
+  })
+
+  it('A→B with existing C preserves C and credits B', () => {
+    const opening: Balances = { twd: 0, usdt: 82_053, vn: 0 }
+    const openingA = 21_956
+    const openingB = 50_097 // implies C = 10000
+    const before = computeUsdtCabinBalances(opening, openingA, [], null, openingB)
+    expect(before.c).toBe(10_000)
+
+    const transferred = transferUsdtBetweenCabins(before, 'A', 'B', 5_000)
+    expect(transferred.ok).toBe(true)
+    if (!transferred.ok) return
+
+    const nextOpeningA = openingA + (transferred.next.a - before.a)
+    const nextOpeningB = openingB + (transferred.next.b - before.b)
+    const after = computeUsdtCabinBalances(opening, nextOpeningA, [], null, nextOpeningB)
+    expect(after).toEqual({
+      a: 16_956,
+      b: 55_097,
+      c: 10_000,
+    })
+  })
+
   it('allows USDT spend when history TWD replay fails but current P/cabin is enough', () => {
     const err = resolveUsdtSpendValidationError('台幣庫存不足', {
       spendsTwd: false,
@@ -971,5 +998,99 @@ describe('usdt cabin quantity (shared cost)', () => {
   it('rejects opening P decrease when chosen cabin is short', () => {
     const current = { a: 30, b: 40, c: 30 }
     expect(applyOpeningUsdtDeltaToCabin(30, 40, current, -50, 'C', 50).ok).toBe(false)
+  })
+})
+
+describe('結算日凍結 @ 利潤（本地 4 號情境）', () => {
+  /** 3 號結算後期初 */
+  const opening: Balances = { twd: 2_848_758, usdt: 5_737, vn: 1_912_560_000 }
+  const cost: UsdtInventoryCost = { twd: 32.48, vn: null }
+  const vnTwdRate = 808.76
+  const vnUsdtRate = 26_209
+
+  const day4: Transaction[] = [
+    usdtBuy('ie-1', at(9), 13_850, 450_000),
+    usdtBuy('ie-2', at(9, 1), 42_835, 1_390_400),
+    usdtBuy('ie-3', at(9, 2), 19_917, 647_400),
+    usdtBuy('ie-4', at(9, 3), 5_000, 162_400),
+    usdtSell('oe-1', at(10), 12_304, 402_700),
+    usdtBuy('ie-5', at(11), 7_018, 228_000),
+    vnSellTwd('ov-1', at(12), 310_050_000, 390_000),
+    vnSellTwd('ov-2', at(12, 1), 310_000_000, 389_400),
+  ]
+
+  it('OE PF = 賣出量 ×（當日賣均 − 最新 U@）；最新 U@＝前日＋IE 加權', () => {
+    const rates = computeSettleDayInventoryRates(
+      opening,
+      cost,
+      vnTwdRate,
+      vnUsdtRate,
+      day4,
+    )
+    const latestU = rates.usdt.twd!
+    const sellAvg = 402_700 / 12_304
+    const pf = computeSettleDayUsdtProfit(latestU, day4)
+    expect(pf).toBeCloseTo(12_304 * (sellAvg - latestU), 5)
+    expect(latestU).toBeCloseTo(32.478, 3)
+  })
+
+  it('OV PF = 收款 − VN ÷ 最新 V@；無 IV 則最新＝前日', () => {
+    const rates = computeSettleDayInventoryRates(
+      opening,
+      cost,
+      vnTwdRate,
+      vnUsdtRate,
+      day4,
+    )
+    expect(rates.vnTwdRate).toBe(808.76)
+    const pf = computeSettleDayVnProfit(rates.vnTwdRate, rates.usdt.twd, day4)
+    // 表列 T 縮寫還原：390000+389400=779400；賣均 = ΣVN/ΣT
+    const sellAvg = 620_050_000 / 779_400
+    expect(pf).toBeCloseTo(779_400 - 620_050_000 / 808.76, 2)
+    expect(pf).toBeCloseTo((779_400 * (808.76 - sellAvg)) / 808.76, 2)
+  })
+
+  it('結算確認摘要利潤與最新 @ 公式一致', () => {
+    const rates = computeSettleDayInventoryRates(
+      opening,
+      cost,
+      vnTwdRate,
+      vnUsdtRate,
+      day4,
+    )
+    const summary = buildTradeSettleConfirmSummary(
+      day4,
+      opening,
+      cost,
+      vnTwdRate,
+      vnUsdtRate,
+    )
+    expect(summary.dayUsdtProfit).toBeCloseTo(
+      computeSettleDayUsdtProfit(rates.usdt.twd, day4),
+      5,
+    )
+    expect(summary.dayVnProfit).toBeCloseTo(
+      computeSettleDayVnProfit(rates.vnTwdRate, rates.usdt.twd, day4),
+      5,
+    )
+  })
+
+  it('結算新 U@ = 期初×前日@ + 當日買入加權；無 IV 則 V@ 不變', () => {
+    const rates = computeSettleDayInventoryRates(
+      opening,
+      cost,
+      vnTwdRate,
+      vnUsdtRate,
+      day4,
+    )
+    const buyQty = 13_850 + 42_835 + 19_917 + 5_000 + 7_018
+    const buyFiat = 450_000 + 1_390_400 + 647_400 + 162_400 + 228_000
+    const dayBuyAvg = buyFiat / buyQty
+    const expectedU =
+      (opening.usdt * 32.48 + buyQty * dayBuyAvg) / (opening.usdt + buyQty)
+
+    expect(rates.usdt.twd).toBeCloseTo(expectedU, 3)
+    expect(rates.vnTwdRate).toBe(808.76)
+    expect(rates.vnUsdtRate).toBe(26_209)
   })
 })

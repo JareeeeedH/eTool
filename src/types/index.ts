@@ -337,9 +337,34 @@ export interface TwdCabinNotes {
   c: string
   d: string
   e: string
+  /** 獨立 PF 備註；不與 O/B/W/H/J 關聯、不入加總 */
+  pf: string
 }
 
-export type TwdCabinNoteKey = keyof TwdCabinNotes
+/** O/B/W/H/J 五艙 key（不含 pf） */
+export type TwdCabinNoteKey = 'a' | 'b' | 'c' | 'd' | 'e'
+
+export type TwdCabinNoteFieldKey = TwdCabinNoteKey | 'pf'
+
+/** T 備註艙顯示名稱（內部 key 仍為 a–e，相容既有存檔） */
+export const TWD_CABIN_NOTE_LABELS: Record<TwdCabinNoteKey, string> = {
+  a: 'O',
+  b: 'B',
+  c: 'W',
+  d: 'H',
+  e: 'J',
+}
+
+export const TWD_CABIN_NOTE_KEYS = ['a', 'b', 'c', 'd', 'e'] as const satisfies readonly TwdCabinNoteKey[]
+
+export const EMPTY_TWD_CABIN_NOTES: TwdCabinNotes = {
+  a: '',
+  b: '',
+  c: '',
+  d: '',
+  e: '',
+  pf: '',
+}
 
 export interface AppSnapshot {
   transactions: Transaction[]
@@ -378,9 +403,9 @@ export interface DailyBalanceStripProps {
   inventoryCost: UsdtInventoryCost
   /** P 底下顯示 A/B 分倉 */
   usdtCabinBalances?: { a: number; b: number; c: number }
-  /** T 底下 A/B/C/D/E 備註（僅 memo，不入帳） */
+  /** T 底下 O/B/W/H/J 備註（僅 memo，不入帳）；另含獨立 PF */
   twdCabinNotes?: TwdCabinNotes
-  onTwdCabinNoteChange?: (cabin: TwdCabinNoteKey, value: string) => void
+  onTwdCabinNoteChange?: (cabin: TwdCabinNoteFieldKey, value: string) => void
   totalAssets: TotalAssetsTwd
   vnTwdRate: number | null
   vnUsdtRate: number | null
@@ -392,7 +417,8 @@ export interface CabinRebalanceModalProps {
   currencyLabel?: 'P' | 'T'
   cabins: { a: number; b: number; c: number }
   onCancel: () => void
-  onConfirm: (targetCabinA: number, targetCabinB: number) => void
+  /** 確認後的 A/B/C 絕對數量（總和應不變） */
+  onConfirm: (next: { a: number; b: number; c: number }) => void
 }
 
 /** 期初 P／T 增減：挑選作用艙位 */
