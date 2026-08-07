@@ -164,6 +164,29 @@ export function filterExpenseTransactions(transactions: Transaction[]): ExpenseT
   return transactions.filter(isExpenseTransaction)
 }
 
+/** 舊資料缺省視為日結開銷 */
+export function expenseSourceOf(
+  tx: ExpenseTransaction,
+): NonNullable<ExpenseTransaction['expenseSource']> {
+  return tx.expenseSource === 'standalone' ? 'standalone' : 'daily'
+}
+
+export function filterDailyExpenseTransactions(
+  transactions: Transaction[],
+): ExpenseTransaction[] {
+  return filterExpenseTransactions(transactions).filter(
+    (tx) => expenseSourceOf(tx) === 'daily',
+  )
+}
+
+export function filterStandaloneExpenseTransactions(
+  transactions: Transaction[],
+): ExpenseTransaction[] {
+  return filterExpenseTransactions(transactions).filter(
+    (tx) => expenseSourceOf(tx) === 'standalone',
+  )
+}
+
 export function filterTradeTransactions(transactions: Transaction[]): Array<
   UsdtTransaction | VnTradeTransaction
 > {
@@ -1778,6 +1801,53 @@ export function computeDayExpenseTotal(transactions: Transaction[]): number {
   )
 }
 
+/** 開銷付款幣別；舊資料缺省 twd */
+export function expensePayCurrency(tx: ExpenseTransaction): VnPayCurrency {
+  return tx.payCurrency === 'usdt' ? 'usdt' : 'twd'
+}
+
+export function expenseUsdtAmount(tx: ExpenseTransaction): number {
+  return expensePayCurrency(tx) === 'usdt' ? (tx.amountUsdt ?? 0) : 0
+}
+
+/** AL 從 T 餘額扣除的開銷（不含 U 開銷的台幣等值） */
+export function computeDayExpenseTwdCashTotal(transactions: Transaction[]): number {
+  return filterExpenseTransactions(transactions).reduce((sum, tx) => {
+    return expensePayCurrency(tx) === 'twd' ? sum + tx.amountTwd : sum
+  }, 0)
+}
+
+export function computeDayExpenseUsdtTotal(transactions: Transaction[]): number {
+  return filterExpenseTransactions(transactions).reduce(
+    (sum, tx) => sum + expenseUsdtAmount(tx),
+    0,
+  )
+}
+
+/**
+ * AL 扣 P 開銷時，依 B→A→C 順序扣艙數量。
+ */
+export function deductUsdtFromCabinsBAC(
+  cabins: { a: number; b: number; c: number },
+  amount: number,
+): { a: number; b: number; c: number } {
+  let remaining = Math.max(0, amount)
+  let { a, b, c } = cabins
+  const take = (avail: number): number => {
+    const d = Math.min(Math.max(0, avail), remaining)
+    remaining -= d
+    return avail - d
+  }
+  b = take(b)
+  a = take(a)
+  c = take(c)
+  return {
+    a: Math.max(0, a),
+    b: Math.max(0, b),
+    c: Math.max(0, c),
+  }
+}
+
 export function computePendingExpenseBreakdown(
   expenses: ExpenseTransaction[],
 ): { label: string; amount: number }[] {
@@ -1815,6 +1885,8 @@ export function buildExpenseSettlementFromPending(
       amountTwd: tx.amountTwd,
       note: tx.note,
       timestamp: tx.timestamp,
+      payCurrency: expensePayCurrency(tx),
+      amountUsdt: expensePayCurrency(tx) === 'usdt' ? expenseUsdtAmount(tx) : undefined,
     })),
   }
 }
@@ -2084,7 +2156,11 @@ export function defaultSettleBusinessDate(transactions: Transaction[]): string {
 export function buildDeleteConfirmLines(tx: Transaction): string[] {
   if (isExpenseTransaction(tx)) {
     const note = tx.note.trim()
-    return note ? [formatTwd(tx.amountTwd), note] : [formatTwd(tx.amountTwd)]
+    const amountLine =
+      expensePayCurrency(tx) === 'usdt'
+        ? `P ${formatNumber(expenseUsdtAmount(tx))}`
+        : formatTwd(tx.amountTwd)
+    return note ? [amountLine, note] : [amountLine]
   }
 
   if (isVnTradeTransaction(tx)) {
@@ -2136,7 +2212,7 @@ export function buildTradeSettleConfirmSummary(
     transactions,
   )
   const hasSells = usdtSell > 0 || vnSell > 0
-  const pendingExpenses = filterExpenseTransactions(transactions)
+  const pendingExpenses = filterDailyExpenseTransactions(transactions)
   const expenseTotal = pendingExpenses.reduce((sum, tx) => sum + tx.amountTwd, 0)
 
   return {
@@ -2156,6 +2232,12 @@ export function buildTradeSettleConfirmSummary(
   }
 }
 export function applyExpenseTransaction(balances: Balances, tx: ExpenseTransaction): Balances {
+  if (expensePayCurrency(tx) === 'usdt') {
+    return {
+      ...balances,
+      usdt: balances.usdt - expenseUsdtAmount(tx),
+    }
+  }
   return {
     ...balances,
     twd: balances.twd - tx.amountTwd,

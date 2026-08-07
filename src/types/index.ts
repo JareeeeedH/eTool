@@ -96,7 +96,22 @@ export interface ExpenseTransaction {
   timestamp: Date
   category: 'expense'
   expenseType: ExpenseType
+  /**
+   * 開銷來源：
+   * - daily：日結 EXP，AL 時扣帳並封存
+   * - standalone：選單 EXP，RECON 時扣帳並封存
+   * 舊資料缺省視為 daily
+   */
+  expenseSource?: 'daily' | 'standalone'
+  /** 付款幣別；舊資料缺省視為 twd */
+  payCurrency?: VnPayCurrency
+  /**
+   * 台幣金額（或 U 開銷以凍結 U@ 換算的台幣等值，供 EXP.SUM／月結）。
+   * 扣帳：僅 payCurrency=twd 時從 T 餘額扣此數。
+   */
   amountTwd: number
+  /** 付款為 USDT 時的數量；結算從 P 扣此數 */
+  amountUsdt?: number
   note: string
   /** 開銷扣自 A 艙台幣數量 */
   twdCabinAAmount?: number
@@ -104,6 +119,8 @@ export interface ExpenseTransaction {
   twdCabinBAmount?: number
   twdCabin?: TwdCabin
 }
+
+export type ExpenseSource = NonNullable<ExpenseTransaction['expenseSource']>
 
 export type Transaction = UsdtTransaction | VnTradeTransaction | ExpenseTransaction
 
@@ -152,6 +169,8 @@ export interface ExpenseSettlementItem {
   amountTwd: number
   note: string
   timestamp: Date
+  payCurrency?: VnPayCurrency
+  amountUsdt?: number
 }
 
 export interface ExpenseSettlement {
@@ -168,6 +187,8 @@ export interface CumulativeExpenseItem {
   amountTwd: number
   note: string
   timestamp: Date
+  payCurrency?: VnPayCurrency
+  amountUsdt?: number
 }
 
 export interface CumulativeExpenseEntry {
@@ -334,35 +355,51 @@ export interface NotebookEntry {
 export interface TwdCabinNotes {
   a: string
   b: string
+  /** T 艙（O/B/T/W/H/J/C 之 T） */
+  t: string
   c: string
   d: string
   e: string
-  /** 獨立 PF 備註；不與 O/B/W/H/J 關聯、不入加總 */
+  /** C 艙（O/B/T/W/H/J/C 之 C） */
+  f: string
+  /** 獨立 PF 備註；不與七艙關聯、不入加總 */
   pf: string
 }
 
-/** O/B/W/H/J 五艙 key（不含 pf） */
-export type TwdCabinNoteKey = 'a' | 'b' | 'c' | 'd' | 'e'
+/** O/B/T/W/H/J/C 七艙 key（不含 pf） */
+export type TwdCabinNoteKey = 'a' | 'b' | 't' | 'c' | 'd' | 'e' | 'f'
 
 export type TwdCabinNoteFieldKey = TwdCabinNoteKey | 'pf'
 
-/** T 備註艙顯示名稱（內部 key 仍為 a–e，相容既有存檔） */
+/** T 備註艙顯示名稱（a/b/c/d/e 相容既有存檔；t、f 為新增） */
 export const TWD_CABIN_NOTE_LABELS: Record<TwdCabinNoteKey, string> = {
   a: 'O',
   b: 'B',
+  t: 'T',
   c: 'W',
   d: 'H',
   e: 'J',
+  f: 'C',
 }
 
-export const TWD_CABIN_NOTE_KEYS = ['a', 'b', 'c', 'd', 'e'] as const satisfies readonly TwdCabinNoteKey[]
+export const TWD_CABIN_NOTE_KEYS = [
+  'a',
+  'b',
+  't',
+  'c',
+  'd',
+  'e',
+  'f',
+] as const satisfies readonly TwdCabinNoteKey[]
 
 export const EMPTY_TWD_CABIN_NOTES: TwdCabinNotes = {
   a: '',
   b: '',
+  t: '',
   c: '',
   d: '',
   e: '',
+  f: '',
   pf: '',
 }
 
@@ -403,7 +440,7 @@ export interface DailyBalanceStripProps {
   inventoryCost: UsdtInventoryCost
   /** P 底下顯示 A/B 分倉 */
   usdtCabinBalances?: { a: number; b: number; c: number }
-  /** T 底下 O/B/W/H/J 備註（僅 memo，不入帳）；另含獨立 PF */
+  /** T 底下 O/B/T/W/H/J/C 備註（僅 memo，不入帳）；另含獨立 PF */
   twdCabinNotes?: TwdCabinNotes
   onTwdCabinNoteChange?: (cabin: TwdCabinNoteFieldKey, value: string) => void
   totalAssets: TotalAssetsTwd
@@ -552,6 +589,8 @@ export interface ExpenseFormProps {
   amount: string
   note: string
   expenseDate: string
+  payCurrency: VnPayCurrency
+  onPayCurrencyChange: (currency: VnPayCurrency) => void
   error: string
   isEditing: boolean
   disabled: boolean

@@ -104,7 +104,10 @@ interface ExpenseTransaction {
   timestamp: Date
   category: 'expense'
   expenseType: ExpenseType
+  expenseSource?: 'daily' | 'standalone'
+  payCurrency?: VnPayCurrency
   amountTwd: number
+  amountUsdt?: number
   note: string
   twdCabinAAmount?: number
   twdCabinBAmount?: number
@@ -149,6 +152,8 @@ interface ExpenseSettlementItem {
   amountTwd: number
   note: string
   timestamp: Date
+  payCurrency?: VnPayCurrency
+  amountUsdt?: number
 }
 
 interface ExpenseSettlement {
@@ -165,6 +170,8 @@ interface CumulativeExpenseItem {
   amountTwd: number
   note: string
   timestamp: Date
+  payCurrency?: VnPayCurrency
+  amountUsdt?: number
 }
 
 interface CumulativeExpenseEntry {
@@ -212,8 +219,17 @@ export interface PersistedAppState {
    * 重整後用來校正期初分倉，避免互轉結果遺失。
    */
   usdtCabinSnapshot?: { a: number; b: number; c: number }
-  /** T 卡 O/B/W/H/J 備註 + 獨立 PF（僅 memo，不入帳；PF 不入加總） */
-  twdCabinNotes?: { a: string; b: string; c: string; d: string; e: string; pf?: string }
+  /** T 卡 O/B/T/W/H/J/C 備註 + 獨立 PF（僅 memo，不入帳；PF 不入加總） */
+  twdCabinNotes?: {
+    a: string
+    b: string
+    t?: string
+    c: string
+    d: string
+    e: string
+    f?: string
+    pf?: string
+  }
   /** @deprecated 舊 T 分倉期初；忽略 */
   openingTwdCabinA?: number
   /** @deprecated 舊 T 分倉期初；忽略 */
@@ -259,15 +275,26 @@ function parseUsdtCabinSnapshot(
 
 function parseTwdCabinNotes(
   value: unknown,
-): { a: string; b: string; c: string; d: string; e: string; pf: string } | undefined {
+): {
+  a: string
+  b: string
+  t: string
+  c: string
+  d: string
+  e: string
+  f: string
+  pf: string
+} | undefined {
   if (!isRecord(value)) return undefined
   const asString = (v: unknown) => (v === null || v === undefined ? '' : String(v))
   return {
     a: asString(value.a),
     b: asString(value.b),
+    t: asString(value.t),
     c: asString(value.c),
     d: asString(value.d),
     e: asString(value.e),
+    f: asString(value.f),
     pf: asString(value.pf),
   }
 }
@@ -356,12 +383,21 @@ function parseTransaction(value: unknown): Transaction | null {
   if (Number.isNaN(timestamp.getTime())) return null
 
   if (value.category === 'expense') {
+    const payCurrency = parseVnPayCurrency(value.payCurrency)
+    const amountUsdt = parseNullableNumber(value.amountUsdt) ?? undefined
+    const expenseSource =
+      value.expenseSource === 'standalone' || value.expenseSource === 'daily'
+        ? value.expenseSource
+        : undefined
     return {
       id: value.id,
       timestamp,
       category: 'expense',
       expenseType: parseExpenseType(value.expenseType),
+      expenseSource,
+      payCurrency,
       amountTwd: parseNumber(value.amountTwd),
+      amountUsdt: payCurrency === 'usdt' ? amountUsdt : undefined,
       note: typeof value.note === 'string' ? value.note : '',
       twdCabin: parseUsdtCabin(value.twdCabin),
       twdCabinAAmount: parseNullableNumber(value.twdCabinAAmount) ?? undefined,
@@ -408,10 +444,17 @@ function parseCumulativeExpenseItem(value: unknown): CumulativeExpenseItem | nul
   if (Number.isNaN(timestamp.getTime())) return null
   const amountTwd = parseNumber(value.amountTwd)
   if (amountTwd <= 0) return null
+  const payCurrency =
+    value.payCurrency === 'usdt' || value.payCurrency === 'twd'
+      ? value.payCurrency
+      : undefined
+  const amountUsdt = parseNullableNumber(value.amountUsdt) ?? undefined
   return {
     amountTwd,
     note: typeof value.note === 'string' ? value.note : '',
     timestamp,
+    payCurrency,
+    amountUsdt: payCurrency === 'usdt' ? amountUsdt : undefined,
   }
 }
 
@@ -521,11 +564,18 @@ function parseExpenseSettlementItem(value: unknown): ExpenseSettlementItem | nul
   if (!isRecord(value)) return null
   const timestamp = new Date(String(value.timestamp))
   if (Number.isNaN(timestamp.getTime())) return null
+  const payCurrency =
+    value.payCurrency === 'usdt' || value.payCurrency === 'twd'
+      ? value.payCurrency
+      : undefined
+  const amountUsdt = parseNullableNumber(value.amountUsdt) ?? undefined
   return {
     expenseType: parseExpenseType(value.expenseType),
     amountTwd: parseNumber(value.amountTwd),
     note: typeof value.note === 'string' ? value.note : '',
     timestamp,
+    payCurrency,
+    amountUsdt: payCurrency === 'usdt' ? amountUsdt : undefined,
   }
 }
 

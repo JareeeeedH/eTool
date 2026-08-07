@@ -55,9 +55,23 @@ export function parseExpenseTwdInput(value: string): number | null {
   return Math.trunc(n)
 }
 
+/** 開銷金額輸入：USDT 正數 */
+export function parseExpenseUsdtInput(value: string): number | null {
+  const trimmed = value.trim().replace(/,/g, '')
+  if (!trimmed) return null
+  const n = Number(trimmed)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return n
+}
+
 /** 開銷金額編輯欄顯示：完整台幣 */
 export function formatExpenseTwdInput(value: number): string {
   return String(Math.trunc(value))
+}
+
+/** 開銷金額編輯欄顯示：USDT */
+export function formatExpenseUsdtInput(value: number): string {
+  return (Math.round(value * 100) / 100).toString()
 }
 
 /** T 欄縮寫（總覽／交易明細）：以萬為單位，四捨五入至小數第二位 */

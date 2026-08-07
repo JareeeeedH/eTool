@@ -747,7 +747,7 @@ export function DailyBalanceStrip({
   const [twdCabinModalOpen, setTwdCabinModalOpen] = useState(false)
   const usdtCabins = usdtCabinBalances ?? { a: 0, b: 0, c: 0 }
   const notes = twdCabinNotes ?? { ...EMPTY_TWD_CABIN_NOTES }
-  /** O/B/W/H/J 輸入與表單 T 相同：萬位縮寫 → 台幣後再加總 */
+  /** O/B/T/W/H/J/C 輸入與表單 T 相同：萬位縮寫 → 台幣後再加總 */
   const twdNoteSumActual = TWD_CABIN_NOTE_KEYS.reduce((sum, key) => {
     return sum + (parseTwdTableCompactInput(notes[key], true) ?? 0)
   }, 0)
@@ -763,16 +763,20 @@ export function DailyBalanceStrip({
   const twdNoteLetterTone: Record<TwdCabinNoteKey, string> = {
     a: 'text-sky-600',
     b: 'text-violet-600',
+    t: 'text-cyan-600',
     c: 'text-emerald-600',
     d: 'text-amber-600',
     e: 'text-rose-600',
+    f: 'text-indigo-600',
   }
   const twdNoteFieldTone: Record<TwdCabinNoteKey, string> = {
     a: 'border-sky-200 focus-within:border-sky-400 focus-within:ring-sky-200',
     b: 'border-violet-200 focus-within:border-violet-400 focus-within:ring-violet-200',
+    t: 'border-cyan-200 focus-within:border-cyan-400 focus-within:ring-cyan-200',
     c: 'border-emerald-200 focus-within:border-emerald-400 focus-within:ring-emerald-200',
     d: 'border-amber-200 focus-within:border-amber-400 focus-within:ring-amber-200',
     e: 'border-rose-200 focus-within:border-rose-400 focus-within:ring-rose-200',
+    f: 'border-indigo-200 focus-within:border-indigo-400 focus-within:ring-indigo-200',
   }
   const twdNoteSumMismatch =
     Math.abs(twdNoteSumActual - balances.twd) > 0.5
@@ -817,9 +821,9 @@ export function DailyBalanceStrip({
                   ? 'bg-slate-50 text-slate-600 ring-slate-200'
                   : 'bg-white text-slate-400 ring-slate-200'
             }`}
-            title="編輯 T 分倉 O/B/W/H/J"
+            title="編輯 T 分倉 O/B/T/W/H/J/C"
           >
-            <span className="tracking-wide">O–J</span>
+            <span className="tracking-wide">O–C</span>
             {hasAnyTwdNote && (
               <span className="tabular-nums">Σ {formatTwdTableCompact(twdNoteSumActual)}</span>
             )}
@@ -920,7 +924,7 @@ export function DailyBalanceStrip({
             if (event.target === event.currentTarget) setTwdCabinModalOpen(false)
           }}
         >
-          <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl sm:p-5">
+          <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl sm:p-5">
             <div className="flex items-start justify-end">
               <button
                 type="button"
@@ -931,13 +935,13 @@ export function DailyBalanceStrip({
               </button>
             </div>
 
-            <div className="mt-1 grid grid-cols-5 gap-1.5">
+            <div className="mt-1 grid grid-cols-7 gap-1">
               {TWD_CABIN_NOTE_KEYS.map((key) => {
                 const label = TWD_CABIN_NOTE_LABELS[key]
                 return (
                   <label
                     key={key}
-                    className={`flex min-w-0 flex-col items-center gap-0.5 rounded-lg border px-1 py-1.5 focus-within:ring-2 ${twdNoteFieldTone[key]}`}
+                    className={`flex min-w-0 flex-col items-center gap-0.5 rounded-lg border px-0.5 py-1.5 focus-within:ring-2 ${twdNoteFieldTone[key]}`}
                   >
                     <span
                       className={`text-[11px] font-bold leading-none ${twdNoteLetterTone[key]}`}
@@ -949,7 +953,7 @@ export function DailyBalanceStrip({
                       value={notes[key]}
                       onChange={(e) => onTwdCabinNoteChange(key, e.target.value)}
                       placeholder="0"
-                      className="min-w-0 w-full border-0 bg-transparent p-0 text-center text-[13px] font-medium tabular-nums leading-tight text-slate-800 outline-none placeholder:text-slate-300"
+                      className="min-w-0 w-full border-0 bg-transparent p-0 text-center text-[12px] font-medium tabular-nums leading-tight text-slate-800 outline-none placeholder:text-slate-300 sm:text-[13px]"
                       inputMode="decimal"
                       aria-label={`T 備註 ${label}（萬）`}
                     />
@@ -3374,10 +3378,51 @@ export function VnTradeTable({
   )
 }
 
+export function ExpensePayCurrencyToggle({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: VnPayCurrency
+  onChange: (currency: VnPayCurrency) => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="inline-flex shrink-0 rounded-md bg-slate-100 p-0.5">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange('twd')}
+        className={`rounded px-1.5 py-0.5 text-[11px] font-medium leading-none transition-colors disabled:cursor-not-allowed sm:px-2 sm:py-1 sm:text-xs ${
+          value === 'twd'
+            ? 'bg-emerald-100 text-emerald-800 shadow-sm ring-1 ring-emerald-200'
+            : 'text-slate-600 hover:text-emerald-700'
+        }`}
+      >
+        T
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange('usdt')}
+        className={`rounded px-1.5 py-0.5 text-[11px] font-medium leading-none transition-colors disabled:cursor-not-allowed sm:px-2 sm:py-1 sm:text-xs ${
+          value === 'usdt'
+            ? 'bg-sky-100 text-sky-800 shadow-sm ring-1 ring-sky-200'
+            : 'text-slate-600 hover:text-sky-700'
+        }`}
+      >
+        U
+      </button>
+    </div>
+  )
+}
+
 export function ExpenseForm({
   amount,
   note,
   expenseDate,
+  payCurrency,
+  onPayCurrencyChange,
   error,
   isEditing,
   disabled,
@@ -3396,6 +3441,11 @@ export function ExpenseForm({
           onChange={onExpenseDateChange}
           disabled={disabled}
         />
+        <ExpensePayCurrencyToggle
+          value={payCurrency}
+          onChange={onPayCurrencyChange}
+          disabled={disabled}
+        />
         <input
           type="number"
           inputMode="decimal"
@@ -3405,8 +3455,8 @@ export function ExpenseForm({
           disabled={disabled}
           onChange={(e) => onAmountChange(e.target.value)}
           className={`w-[5rem] shrink-0 ${EXPENSE_INPUT_CLASS}`}
-          placeholder="—"
-          aria-label="金額"
+          placeholder={payCurrency === 'usdt' ? 'U' : 'T'}
+          aria-label={payCurrency === 'usdt' ? '金額 USDT' : '金額台幣'}
         />
         <input
           type="text"
@@ -3442,13 +3492,24 @@ export function ExpenseForm({
 }
 
 export function ExpensePageSummary({ transactions, onReconcile }: ExpensePageSummaryProps) {
-  const totalAmount = transactions.reduce((sum, tx) => sum + tx.amountTwd, 0)
+  const twdCash = transactions.reduce(
+    (sum, tx) => (tx.payCurrency === 'usdt' ? sum : sum + tx.amountTwd),
+    0,
+  )
+  const usdtTotal = transactions.reduce(
+    (sum, tx) => (tx.payCurrency === 'usdt' ? sum + (tx.amountUsdt ?? 0) : sum),
+    0,
+  )
   if (transactions.length === 0) return null
 
   return (
-    <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/60 px-3 py-2">
-      <span className="text-sm font-semibold tabular-nums tracking-tight text-rose-600">
-        −{formatTwd(totalAmount)}
+    <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 border-t border-slate-100 bg-slate-50/60 px-3 py-2">
+      <span className="flex flex-wrap items-center justify-end gap-x-2 text-sm font-semibold tabular-nums tracking-tight text-rose-600">
+        {twdCash > 0 && <span>−{formatTwd(twdCash)} T</span>}
+        {usdtTotal > 0 && <span>−{formatNumber(usdtTotal)} U</span>}
+        {twdCash <= 0 && usdtTotal <= 0 && (
+          <span>−{formatTwd(transactions.reduce((s, tx) => s + tx.amountTwd, 0))}</span>
+        )}
       </span>
       {onReconcile && (
         <button
@@ -3585,6 +3646,7 @@ export function ExpenseTable({
     <ul className="divide-y divide-slate-100/80">
       {transactions.map((tx) => {
         const note = tx.note.trim()
+        const isUsdt = tx.payCurrency === 'usdt'
         return (
           <li
             key={tx.id}
@@ -3596,11 +3658,24 @@ export function ExpenseTable({
             <span className="w-[2.75rem] shrink-0 tabular-nums text-[11px] text-slate-400">
               {formatSettlementDate(tx.timestamp)}
             </span>
-            <span className="w-[4.25rem] shrink-0 text-right font-medium tabular-nums text-rose-600">
-              −{formatTwd(tx.amountTwd)}
+            <span className="flex w-[5.5rem] shrink-0 items-baseline justify-end gap-0.5 font-medium tabular-nums text-rose-600">
+              {isUsdt ? (
+                <>
+                  <span>−{formatNumber(tx.amountUsdt ?? 0)}</span>
+                  <span className="text-[9px] font-semibold text-sky-600">U</span>
+                </>
+              ) : (
+                <>
+                  <span>−{formatTwd(tx.amountTwd)}</span>
+                  <span className="text-[9px] font-semibold text-emerald-600">T</span>
+                </>
+              )}
             </span>
             <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
               {note}
+              {isUsdt && tx.amountTwd > 0 ? (
+                <span className="ml-1 text-slate-400">≈T {formatTwd(tx.amountTwd)}</span>
+              ) : null}
             </span>
             <div className="shrink-0 opacity-70 transition-opacity group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
               <RowActionButtons onEdit={() => onEdit(tx)} onDelete={() => onDelete(tx.id)} />
@@ -4011,7 +4086,6 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                     <table className="w-full text-left text-[11px]">
                       <thead>
                         <tr className="border-b border-slate-100 text-slate-500">
-                          <th className="py-1 pr-1 font-medium">D</th>
                           <th className="py-1 pr-1 font-medium">L</th>
                           <th className="py-1 pr-1 font-medium">GI</th>
                           <th className="py-1 pr-1 font-medium">R</th>
@@ -4024,7 +4098,7 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                           <Fragment key={group.code}>
                             <tr className="border-b border-slate-100 bg-slate-50/90">
                               <td
-                                colSpan={6}
+                                colSpan={5}
                                 className={`py-1 pr-1 text-[10px] font-semibold tracking-wide ${group.tone}`}
                               >
                                 {group.code}
@@ -4053,9 +4127,6 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
 
                               return (
                                 <tr key={tx.id} className="border-b border-slate-50">
-                                  <td className="py-1 pr-1 tabular-nums text-slate-600">
-                                    {formatTradeListDate(tx)}
-                                  </td>
                                   <td className="py-1 pr-1 tabular-nums text-slate-800">
                                     {qty}
                                   </td>
@@ -4198,7 +4269,18 @@ export function ExpenseSettlementsPanel({ settlements }: ExpenseSettlementsPanel
                           {formatTableDateTime(row.timestamp)}
                         </td>
                         <td className="py-1 text-right tabular-nums text-rose-700">
-                          −{formatTwd(row.amountTwd)}
+                          {row.payCurrency === 'usdt' ? (
+                            <>
+                              −{formatNumber(row.amountUsdt ?? 0)} U
+                              {row.amountTwd > 0 ? (
+                                <span className="ml-1 text-[10px] text-slate-400">
+                                  ≈T {formatTwd(row.amountTwd)}
+                                </span>
+                              ) : null}
+                            </>
+                          ) : (
+                            <>−{formatTwd(row.amountTwd)} T</>
+                          )}
                         </td>
                         <td className="max-w-[6rem] truncate py-1 text-slate-500">
                           {row.note.trim() || '—'}
@@ -4419,8 +4501,14 @@ export function CumulativeExpensesPanel({
                     <span className="w-[2.75rem] shrink-0 tabular-nums text-[11px] text-slate-400">
                       {formatSettlementDate(item.timestamp)}
                     </span>
-                    <span className="w-[4.25rem] shrink-0 text-right font-medium tabular-nums text-rose-600">
-                      −{formatTwd(item.amountTwd)}
+                    <span className="w-[5.5rem] shrink-0 text-right font-medium tabular-nums text-rose-600">
+                      {item.payCurrency === 'usdt' ? (
+                        <>
+                          −{formatNumber(item.amountUsdt ?? 0)} U
+                        </>
+                      ) : (
+                        <>−{formatTwd(item.amountTwd)}</>
+                      )}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
                       {item.note.trim()}

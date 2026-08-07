@@ -9,9 +9,13 @@ import type {
 import { roundUsdtCostRate } from '../utils/format'
 import {
   adjustOpeningUsdtCabins,
+  applyExpenseTransaction,
   applyOpeningUsdtDeltaToCabin,
   buildMonthlyClose,
   buildTradeSettleConfirmSummary,
+  computeDayExpenseTotal,
+  computeDayExpenseTwdCashTotal,
+  computeDayExpenseUsdtTotal,
   computeInventoryCost,
   computeSellProfitById,
   computeSettleDayInventoryRates,
@@ -21,6 +25,7 @@ import {
   computeUsdtSellProfitPreview,
   computeVnSellProfitPreview,
   computeVnTradeAnalytics,
+  deductUsdtFromCabinsBAC,
   migrateUsdtCabinAttribution,
   alignOpeningUsdtCabinsToSnapshot,
   openingUsdtCabinsAfterRebalance,
@@ -665,6 +670,69 @@ describe('營業開銷與月結', () => {
 
     expect(withExpenseBal).toEqual(tradeOnly)
     expect(withExpenseBal.twd).toBe(opening.twd - 320_000)
+  })
+
+  it('T／U 開銷合計：台幣現金與 USDT 分開', () => {
+    const expenses: Transaction[] = [
+      {
+        id: 'e-t',
+        timestamp: at(10),
+        category: 'expense',
+        expenseType: 'fuel',
+        payCurrency: 'twd',
+        amountTwd: 1_000,
+        note: '油資',
+      },
+      {
+        id: 'e-u',
+        timestamp: at(11),
+        category: 'expense',
+        expenseType: 'other',
+        payCurrency: 'usdt',
+        amountUsdt: 100,
+        amountTwd: 3_227,
+        note: '買 trx',
+      },
+    ]
+    expect(computeDayExpenseTwdCashTotal(expenses)).toBe(1_000)
+    expect(computeDayExpenseUsdtTotal(expenses)).toBe(100)
+    expect(computeDayExpenseTotal(expenses)).toBe(4_227)
+  })
+
+  it('U 開銷 AL 艙扣減：B→A→C', () => {
+    expect(
+      deductUsdtFromCabinsBAC({ a: 50, b: 80, c: 20 }, 100),
+    ).toEqual({ a: 30, b: 0, c: 20 })
+    expect(
+      deductUsdtFromCabinsBAC({ a: 10, b: 5, c: 50 }, 40),
+    ).toEqual({ a: 0, b: 0, c: 25 })
+  })
+
+  it('applyExpenseTransaction：U 扣 P、T 扣台幣', () => {
+    const bal: Balances = { twd: 10_000, usdt: 200, vn: 0 }
+    expect(
+      applyExpenseTransaction(bal, {
+        id: 'e1',
+        timestamp: at(10),
+        category: 'expense',
+        expenseType: 'other',
+        payCurrency: 'usdt',
+        amountUsdt: 50,
+        amountTwd: 1_600,
+        note: '',
+      }),
+    ).toEqual({ twd: 10_000, usdt: 150, vn: 0 })
+    expect(
+      applyExpenseTransaction(bal, {
+        id: 'e2',
+        timestamp: at(10),
+        category: 'expense',
+        expenseType: 'fuel',
+        payCurrency: 'twd',
+        amountTwd: 1_000,
+        note: '',
+      }),
+    ).toEqual({ twd: 9_000, usdt: 200, vn: 0 })
   })
 
   it('月結：實際總資產 = 庫存計價帳面 − 開銷', () => {
