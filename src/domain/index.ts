@@ -126,9 +126,9 @@ import {
  * 營業開銷
  * -----------------------------------------------------------------------------
  * - 進行中開銷僅紀錄，不參與 recalculateBalances（不扣台幣餘額、不影響總資產）
- * - 每日明細總覽、日結封存之庫存／總資產皆不含開銷
- * - AL 結帳時一併自期初台幣扣除進行中開銷，並封存至 EXP.SUM
- * - 月結時：毛利 − 開銷 = 淨利；實際總資產 = 庫存計價帳面 − 本期開銷
+ * - EXP 頁 RECON：彙總寫入 EXP.SUM、清除進行中開銷，並自帳上扣除（T／U）
+ * - AL 結帳只封存交易，不處理開銷
+ * - 月結時：毛利 − 開銷 = 淨利；實際總資產已含 RECON 扣帳（與帳面一致）
  *
  * -----------------------------------------------------------------------------
  * 異動本檔時請確認
@@ -2031,7 +2031,8 @@ export function buildMonthlyClosePreview(
     expenseTotal,
     netProfit: grossProfit - expenseTotal,
     closingBookTotalAssets: totalAssets,
-    closingTotalAssets: totalAssets - expenseTotal,
+    // RECON 已扣帳，帳面即實際總資產
+    closingTotalAssets: totalAssets,
     dateRangeLabel: formatArchiveDateRange(start, end),
     periodLabel: suggestMonthlyPeriodLabel(end ?? new Date()),
     pendingTradeCount,
@@ -2040,23 +2041,26 @@ export function buildMonthlyClosePreview(
 }
 
 /**
- * 由本期庫存成本計價帳面與毛利反推期初帳面（開銷不計入帳面 walk，僅月結損益扣減）。
- * 期初 + 毛利 = 期末帳面（未扣開銷）。
+ * 由期末實際總資產與淨利反推期初帳面。
+ * 期初 + 淨利 = 期末（開銷已於 RECON 扣帳）。
  */
 export function inferOpeningTotalAssets(
-  closingBookTotal: number,
-  grossProfit: number,
+  closingTotal: number,
+  netProfit: number,
 ): number {
-  return closingBookTotal - grossProfit
+  return closingTotal - netProfit
 }
 
 export function normalizeMonthlyCloseRecord(item: MonthlyClose): MonthlyClose & { openingTotalAssets: number } {
-  const hasExplicitBook = item.closingBookTotalAssets !== undefined
   const closingBookTotalAssets = item.closingBookTotalAssets ?? item.closingTotalAssets
-  const openingTotalAssets = closingBookTotalAssets - item.grossProfit
-  const closingTotalAssets = hasExplicitBook
-    ? item.closingBookTotalAssets! - item.expenseTotal
-    : item.closingTotalAssets
+  const closingTotalAssets = item.closingTotalAssets
+  const openingTotalAssets =
+    item.openingTotalAssets ??
+    (item.closingBookTotalAssets !== undefined &&
+    item.closingBookTotalAssets !== item.closingTotalAssets
+      ? // 舊資料：帳面未含開銷，以毛利反推期初
+        closingBookTotalAssets - item.grossProfit
+      : inferOpeningTotalAssets(closingTotalAssets, item.netProfit))
 
   return {
     ...item,
@@ -2101,8 +2105,9 @@ export function buildMonthlyClose(
   const expenseTotal = archivedExpense.reduce((sum, item) => sum + item.expenseTotal, 0)
   const netProfit = grossProfit - expenseTotal
   const closingBookTotalAssets = fallbackTotalAssets
-  const closingTotalAssets = closingBookTotalAssets - expenseTotal
-  const openingTotalAssets = inferOpeningTotalAssets(closingBookTotalAssets, grossProfit)
+  // RECON 已自期初台幣扣開銷，帳面即實際總資產
+  const closingTotalAssets = closingBookTotalAssets
+  const openingTotalAssets = inferOpeningTotalAssets(closingTotalAssets, netProfit)
 
   return {
     id: crypto.randomUUID(),
@@ -2212,8 +2217,6 @@ export function buildTradeSettleConfirmSummary(
     transactions,
   )
   const hasSells = usdtSell > 0 || vnSell > 0
-  const pendingExpenses = filterDailyExpenseTransactions(transactions)
-  const expenseTotal = pendingExpenses.reduce((sum, tx) => sum + tx.amountTwd, 0)
 
   return {
     tradeCount: usdtTxs.length + vnTxs.length,
@@ -2226,8 +2229,6 @@ export function buildTradeSettleConfirmSummary(
     dayVnProfit: vnSell > 0 ? dayVnProfit : null,
     dayTotalProfit: dayUsdtProfit + dayVnProfit,
     hasSells,
-    expenseCount: pendingExpenses.length,
-    expenseTotal,
     defaultBusinessDate: defaultSettleBusinessDate(transactions),
   }
 }

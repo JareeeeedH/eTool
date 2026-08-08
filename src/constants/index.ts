@@ -6,7 +6,6 @@ export const TRADE_PANE_CODE: Record<DailyMobileTradePane, string> = {
   sell_u: 'OE',
   buy_vn: 'IV',
   sell_vn: 'OV',
-  expense: 'EXP',
 }
 
 export function tradePaneEditLabel(pane: DailyMobileTradePane): string {

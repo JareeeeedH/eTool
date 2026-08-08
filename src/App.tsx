@@ -62,11 +62,9 @@ import {
   computeUsdtCabinBalances,
   deductUsdtFromCabinsBAC,
   expensePayCurrency as resolveExpensePayCurrency,
-  expenseSourceOf,
   expenseSettlementsFromCumulative,
   expenseUsdtAmount,
-  filterDailyExpenseTransactions,
-  filterStandaloneExpenseTransactions,
+  filterExpenseTransactions,
   filterTradeTransactions,
   getLastTradeSettlementAt,
   filterUsdtTransactions,
@@ -194,20 +192,10 @@ function dailyTradePaneClass(
   pane: DailyMobileTradePane,
   parentTab: DailyWorkTab,
 ): string {
-  const expenseSelected = mobilePane === 'expense'
   return [
     'flex flex-col gap-1 sm:gap-1.5',
-    expenseSelected || mobilePane !== pane ? 'max-lg:hidden' : '',
-    expenseSelected || desktopTab !== parentTab ? 'lg:hidden' : '',
-  ]
-    .filter(Boolean)
-    .join(' ')
-}
-
-function dailyExpensePaneClass(mobilePane: DailyMobileTradePane): string {
-  return [
-    'flex flex-col gap-1 sm:gap-1.5',
-    mobilePane !== 'expense' ? 'hidden' : '',
+    mobilePane !== pane ? 'max-lg:hidden' : '',
+    desktopTab !== parentTab ? 'lg:hidden' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -539,12 +527,8 @@ function App() {
     [transactions],
   )
 
-  const dailyExpenseTransactions = useMemo(
-    () => filterDailyExpenseTransactions(transactions),
-    [transactions],
-  )
-  const standaloneExpenseTransactions = useMemo(
-    () => filterStandaloneExpenseTransactions(transactions),
+  const expenseTransactions = useMemo(
+    () => filterExpenseTransactions(transactions),
     [transactions],
   )
 
@@ -855,7 +839,7 @@ function App() {
     else if (editingCategory === 'sell' && pane !== 'sell_u') resetSellForm()
     else if (editingCategory === 'vn_buy' && pane !== 'buy_vn') resetVnBuyForm()
     else if (editingCategory === 'vn_sell' && pane !== 'sell_vn') resetVnSellForm()
-    else if (editingCategory === 'expense' && pane !== 'expense') resetExpenseForm()
+    else if (editingCategory === 'expense') resetExpenseForm()
     setMobileTradePane(pane)
     if (pane === 'buy_u' || pane === 'sell_u') setDailyWorkTab('usdt')
     else if (pane === 'buy_vn' || pane === 'sell_vn') setDailyWorkTab('vn')
@@ -909,8 +893,6 @@ function App() {
     }
 
     const isEditing = editingId !== null && editingCategory === 'expense'
-    const sourceForNew: 'daily' | 'standalone' =
-      activeTab === 'expenses' ? 'standalone' : 'daily'
 
     const buildUpdatedList = (list: Transaction[]): Transaction[] => {
       if (isEditing) {
@@ -920,7 +902,7 @@ function App() {
                 ...tx,
                 timestamp: timestampFromDateInput(expenseDate, tx.timestamp),
                 expenseType: 'other' as const,
-                expenseSource: expenseSourceOf(tx),
+                expenseSource: 'standalone' as const,
                 payCurrency: expenseFormPayCurrency,
                 amountTwd,
                 amountUsdt,
@@ -934,7 +916,7 @@ function App() {
         timestamp: timestampFromDateInput(expenseDate),
         category: 'expense',
         expenseType: 'other',
-        expenseSource: sourceForNew,
+        expenseSource: 'standalone',
         payCurrency: expenseFormPayCurrency,
         amountTwd,
         amountUsdt,
@@ -987,7 +969,7 @@ function App() {
   }
 
   const executeExpenseReconcile = (note = '') => {
-    const pending = filterStandaloneExpenseTransactions(transactions)
+    const pending = filterExpenseTransactions(transactions)
     if (pending.length === 0) return
 
     const expenseTwdEquivTotal = computeDayExpenseTotal(pending)
@@ -1011,11 +993,7 @@ function App() {
       setOpeningUsdtCabinB(cabinsAfterExpense.b)
     }
 
-    setTransactions((prev) =>
-      prev.filter(
-        (tx) => !(isExpenseTransaction(tx) && expenseSourceOf(tx) === 'standalone'),
-      ),
-    )
+    setTransactions((prev) => prev.filter((tx) => !isExpenseTransaction(tx)))
     setCumulativeExpenses((prev) => [
       {
         id: crypto.randomUUID(),
@@ -1046,7 +1024,7 @@ function App() {
   }
 
   const handleExpenseReconcile = () => {
-    const pending = filterStandaloneExpenseTransactions(transactions)
+    const pending = filterExpenseTransactions(transactions)
     if (pending.length === 0) return
 
     const twdCash = computeDayExpenseTwdCashTotal(pending)
@@ -1630,13 +1608,7 @@ function App() {
 
   const handleEditExpense = (tx: ExpenseTransaction) => {
     resetNoteForm()
-    const source = expenseSourceOf(tx)
-    if (source === 'standalone') {
-      setActiveTab('expenses')
-    } else {
-      setActiveTab('daily')
-      setMobileTradePane('expense')
-    }
+    setActiveTab('expenses')
     setEditingId(tx.id)
     setEditingCategory('expense')
     setBuyError('')
@@ -1716,7 +1688,7 @@ function App() {
           : editingCategory === 'vn_sell'
             ? tradePaneEditingBannerLabel('sell_vn')
             : editingCategory === 'expense'
-              ? tradePaneEditingBannerLabel('expense')
+              ? '正在編輯 EXP'
               : isEditingNote
                 ? '正在編輯筆記'
               : null
@@ -1724,10 +1696,7 @@ function App() {
   const executeTradeSettle = (businessDate?: string) => {
     const snapshot = createSnapshot()
     const tradeTxs = filterTradeTransactions(transactions)
-    const pendingExpenses = filterDailyExpenseTransactions(transactions)
-    const expenseTwdEquivTotal = computeDayExpenseTotal(pendingExpenses)
-    const expenseTwdCashTotal = computeDayExpenseTwdCashTotal(pendingExpenses)
-    const expenseUsdtTotal = computeDayExpenseUsdtTotal(pendingExpenses)
+    if (tradeTxs.length === 0) return
 
     const settleRates = computeSettleDayInventoryRates(
       openingBalances,
@@ -1777,78 +1746,40 @@ function App() {
       ? formatSettlementDateTimeForBusinessDate(businessDate, now)
       : formatSettlementDateTime(now)
 
-    if (tradeTxs.length > 0) {
-      const settlement: DailySettlement = {
-        id: crypto.randomUUID(),
-        settledAt: now,
-        dateLabel,
-        twdBalance: balances.twd,
-        usdtBalance: balances.usdt,
-        vnBalance: balances.vn,
-        usdtInventoryAvgTwd: inventoryAtSettle.twd,
-        usdtInventoryAvgVn: inventoryAtSettle.vn,
-        dayBuyAvgTwd: settleRates.dayBuyAvgTwd,
-        dayBuyAvgVn: settleRates.dayBuyAvgVn,
-        ...settlementFromTotalAssets(assetsAtSettle),
-        transactionCount: tradeTxs.length,
-        dayUsdtProfit: settledDayUsdtProfit,
-        dayVnProfit: settledDayVnProfit,
-        dayTotalProfit: settledDayProfit,
-        trades: tradeTxs.map((tx) => ({
-          ...tx,
-          timestamp: new Date(tx.timestamp),
-        })),
-        sellProfitById:
-          Object.keys(sellProfitById).length > 0 ? sellProfitById : undefined,
-      }
-
-      setSettlements((prev) => [settlement, ...prev])
-      setOpeningUsdtCost(inventoryAtSettle)
-      setOpeningVnTwdRate(settleRates.vnTwdRate)
-      setOpeningVnUsdtRate(settleRates.vnUsdtRate)
+    const settlement: DailySettlement = {
+      id: crypto.randomUUID(),
+      settledAt: now,
+      dateLabel,
+      twdBalance: balances.twd,
+      usdtBalance: balances.usdt,
+      vnBalance: balances.vn,
+      usdtInventoryAvgTwd: inventoryAtSettle.twd,
+      usdtInventoryAvgVn: inventoryAtSettle.vn,
+      dayBuyAvgTwd: settleRates.dayBuyAvgTwd,
+      dayBuyAvgVn: settleRates.dayBuyAvgVn,
+      ...settlementFromTotalAssets(assetsAtSettle),
+      transactionCount: tradeTxs.length,
+      dayUsdtProfit: settledDayUsdtProfit,
+      dayVnProfit: settledDayVnProfit,
+      dayTotalProfit: settledDayProfit,
+      trades: tradeTxs.map((tx) => ({
+        ...tx,
+        timestamp: new Date(tx.timestamp),
+      })),
+      sellProfitById:
+        Object.keys(sellProfitById).length > 0 ? sellProfitById : undefined,
     }
 
-    // AL 時一併扣除進行中開銷（key-in 當下不扣總帳）
-    const cabinsAfterExpense =
-      expenseUsdtTotal > 0
-        ? deductUsdtFromCabinsBAC(usdtCabinBalances, expenseUsdtTotal)
-        : usdtCabinBalances
-    const nextOpeningBalances = {
-      ...balances,
-      twd: balances.twd - expenseTwdCashTotal,
-      usdt: balances.usdt - expenseUsdtTotal,
-    }
-    setOpeningBalances(nextOpeningBalances)
-    if (tradeTxs.length > 0 || expenseUsdtTotal > 0) {
-      setOpeningUsdtCabinA(cabinsAfterExpense.a)
-      setOpeningUsdtCabinB(cabinsAfterExpense.b)
-    }
+    setSettlements((prev) => [settlement, ...prev])
+    setOpeningUsdtCost(inventoryAtSettle)
+    setOpeningVnTwdRate(settleRates.vnTwdRate)
+    setOpeningVnUsdtRate(settleRates.vnUsdtRate)
+    setOpeningBalances({ ...balances })
+    setOpeningUsdtCabinA(usdtCabinBalances.a)
+    setOpeningUsdtCabinB(usdtCabinBalances.b)
 
-    if (pendingExpenses.length > 0 && expenseTwdEquivTotal > 0) {
-      setCumulativeExpenses((prev) => [
-        {
-          id: crypto.randomUUID(),
-          timestamp: now,
-          amountTwd: expenseTwdEquivTotal,
-          note: tradeTxs.length > 0 ? `AL ${dateLabel}` : `AL EXP ${dateLabel}`,
-          items: pendingExpenses.map((tx) => ({
-            amountTwd: tx.amountTwd,
-            note: tx.note,
-            timestamp: tx.timestamp,
-            payCurrency: resolveExpensePayCurrency(tx),
-            amountUsdt:
-              resolveExpensePayCurrency(tx) === 'usdt' ? expenseUsdtAmount(tx) : undefined,
-          })),
-        },
-        ...prev,
-      ])
-    }
-
-    setTransactions((prev) =>
-      prev.filter(
-        (tx) => isExpenseTransaction(tx) && expenseSourceOf(tx) === 'standalone',
-      ),
-    )
+    // 保留進行中開銷（由 EXP 頁 RECON 處理）
+    setTransactions((prev) => prev.filter(isExpenseTransaction))
     resetBuyForm()
     resetSellForm()
     resetVnBuyForm()
@@ -1856,26 +1787,14 @@ function App() {
     resetExpenseForm()
     setEditingId(null)
     setEditingCategory(null)
-    setActiveTab(tradeTxs.length > 0 ? 'settlements' : 'cumulative_expenses')
+    setActiveTab('settlements')
 
     setUndoSnapshot(snapshot)
-    const expenseNoteParts: string[] = []
-    if (expenseTwdCashTotal > 0) expenseNoteParts.push(`−${formatTwd(expenseTwdCashTotal)} T`)
-    if (expenseUsdtTotal > 0) expenseNoteParts.push(`−${formatNumber(expenseUsdtTotal)} U`)
-    const expenseNoteText = expenseNoteParts.join(' · ')
-    setUndoMessage(
-      tradeTxs.length > 0
-        ? expenseNoteText
-          ? `已完成 ${dateLabel} 交易結算（含開銷 ${expenseNoteText}）`
-          : `已完成 ${dateLabel} 交易結算`
-        : expenseNoteText
-          ? `已扣除開銷 ${expenseNoteText}`
-          : `已完成 ${dateLabel} 開銷結算`,
-    )
+    setUndoMessage(`已完成 ${dateLabel} 交易結算`)
   }
 
   const handleTradeSettle = () => {
-    if (tradeTransactions.length === 0 && dailyExpenseTransactions.length === 0) {
+    if (tradeTransactions.length === 0) {
       setConfirmDialog({
         title: '',
         lines: ['無交易'],
@@ -2548,11 +2467,7 @@ function App() {
                 onChange={handleMobileTradePaneChange}
               />
 
-              <section
-                className={`grid shrink-0 gap-1 sm:gap-2 ${
-                  mobileTradePane === 'expense' ? '' : 'lg:grid-cols-2 lg:items-start'
-                }`}
-              >
+              <section className="grid shrink-0 gap-1 sm:gap-2 lg:grid-cols-2 lg:items-start">
                 <div
                   className={dailyTradePaneClass(mobileTradePane, dailyWorkTab, 'buy_u', 'usdt')}
                 >
@@ -2759,48 +2674,9 @@ function App() {
                     />
                   </div>
                 </div>
-
-                <div className={dailyExpensePaneClass(mobileTradePane)}>
-                  <div
-                    className={`overflow-hidden rounded-xl border bg-white shadow-sm ${
-                      isEditingExpense
-                        ? 'border-amber-300 ring-1 ring-amber-100'
-                        : 'border-slate-200/90'
-                    }`}
-                  >
-                    <div className="border-b border-slate-100 px-3 py-2.5">
-                      <ExpenseForm
-                        amount={expenseAmount}
-                        note={expenseNote}
-                        expenseDate={expenseDate}
-                        payCurrency={expenseFormPayCurrency}
-                        onPayCurrencyChange={setExpenseFormPayCurrency}
-                        error={expenseError}
-                        isEditing={isEditingExpense}
-                        disabled={isEditingAny && !isEditingExpense}
-                        onAmountChange={setExpenseAmount}
-                        onNoteChange={setExpenseNote}
-                        onExpenseDateChange={setExpenseDate}
-                        onSubmit={handleExpenseSubmit}
-                        onCancel={resetExpenseForm}
-                      />
-                    </div>
-                    <div className="px-2.5 py-1">
-                      <ExpenseTable
-                        transactions={dailyExpenseTransactions}
-                        editingId={editingId}
-                        onEdit={handleEditExpense}
-                        onDelete={handleDelete}
-                        visibleRows={tableVisibleRows}
-                      />
-                    </div>
-                    <ExpensePageSummary transactions={dailyExpenseTransactions} />
-                  </div>
-                </div>
               </section>
               <DailyTradeSettleBar
                 tradeCount={tradeTransactions.length}
-                expenseCount={dailyExpenseTransactions.length}
                 onSettle={handleTradeSettle}
               />
             </div>
@@ -2836,7 +2712,7 @@ function App() {
                   </div>
                   <div className="px-2.5 py-1">
                     <ExpenseTable
-                      transactions={standaloneExpenseTransactions}
+                      transactions={expenseTransactions}
                       editingId={editingId}
                       onEdit={handleEditExpense}
                       onDelete={handleDelete}
@@ -2844,7 +2720,7 @@ function App() {
                     />
                   </div>
                   <ExpensePageSummary
-                    transactions={standaloneExpenseTransactions}
+                    transactions={expenseTransactions}
                     onReconcile={handleExpenseReconcile}
                   />
                 </div>

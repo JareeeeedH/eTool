@@ -699,7 +699,7 @@ describe('營業開銷與月結', () => {
     expect(computeDayExpenseTotal(expenses)).toBe(4_227)
   })
 
-  it('U 開銷 AL 艙扣減：B→A→C', () => {
+  it('U 開銷艙扣減：B→A→C', () => {
     expect(
       deductUsdtFromCabinsBAC({ a: 50, b: 80, c: 20 }, 100),
     ).toEqual({ a: 30, b: 0, c: 20 })
@@ -735,7 +735,9 @@ describe('營業開銷與月結', () => {
     ).toEqual({ twd: 9_000, usdt: 200, vn: 0 })
   })
 
-  it('月結：實際總資產 = 庫存計價帳面 − 開銷', () => {
+  it('月結：RECON 已扣帳時實際總資產與帳面一致；淨利 = 毛利 − 開銷', () => {
+    // 帳面已含 RECON 扣帳後餘額（例：原 1,000,000 − 開銷 30,000）
+    const bookAfterRecon = 970_000
     const close = buildMonthlyClose(
       '6月份',
       [
@@ -743,15 +745,15 @@ describe('營業開銷與月結', () => {
           id: 's1',
           settledAt: at(18),
           dateLabel: '06/20',
-          twdBalance: 680_000,
+          twdBalance: 650_000,
           usdtBalance: 100,
           vnBalance: 0,
           usdtInventoryAvgTwd: 32,
           usdtInventoryAvgVn: null,
           dayBuyAvgTwd: 32,
           dayBuyAvgVn: null,
-          totalAssetsTwd: 1_000_000,
-          totalAssetsTwdCash: 680_000,
+          totalAssetsTwd: bookAfterRecon,
+          totalAssetsTwdCash: 650_000,
           totalAssetsUsdtInTwd: 320_000,
           totalAssetsVnInTwd: 0,
           dayVnTwdRate: null,
@@ -767,7 +769,7 @@ describe('營業開銷與月結', () => {
           id: 'ex1',
           settledAt: at(19),
           dateLabel: '06/20 月結封存',
-          twdBalance: 680_000,
+          twdBalance: 650_000,
           expenseCount: 1,
           expenseTotal: 30_000,
           items: [
@@ -784,12 +786,13 @@ describe('營業開銷與月結', () => {
       cost,
       null,
       null,
-      1_000_000,
+      bookAfterRecon,
     )
 
-    expect(close.closingBookTotalAssets).toBe(1_000_000)
-    expect(close.closingTotalAssets).toBe(970_000)
+    expect(close.closingBookTotalAssets).toBe(bookAfterRecon)
+    expect(close.closingTotalAssets).toBe(bookAfterRecon)
     expect(close.netProfit).toBe(10_000 - 30_000)
+    expect(close.openingTotalAssets).toBe(bookAfterRecon - close.netProfit)
   })
 })
 

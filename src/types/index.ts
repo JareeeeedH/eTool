@@ -10,7 +10,6 @@ export type DailyMobileTradePane =
   | 'sell_u'
   | 'buy_vn'
   | 'sell_vn'
-  | 'expense'
 export type FiatCurrency = 'twd' | 'vn'
 export type VnPayCurrency = 'twd' | 'usdt'
 /** P（USDT）艙別：共用成本池，僅拆數量 */
@@ -217,9 +216,9 @@ export interface MonthlyClose {
   closingUsdtCost: UsdtInventoryCost
   closingVnTwdRate: number | null
   closingVnUsdtRate: number | null
-  /** 月結實際總資產（庫存計價帳面 − 本期開銷） */
+  /** 月結實際總資產（RECON 已扣帳，與帳面一致） */
   closingTotalAssets: number
-  /** 月結當下庫存成本計價帳面（未扣開銷） */
+  /** 月結當下庫存成本計價帳面 */
   closingBookTotalAssets?: number
   tradeSettlements: DailySettlement[]
   expenseSettlements: ExpenseSettlement[]
@@ -258,9 +257,6 @@ export interface TradeSettleConfirmSummary {
   dayVnProfit: number | null
   dayTotalProfit: number
   hasSells: boolean
-  /** 待 AL 一併扣除的進行中開銷筆數／合計 */
-  expenseCount: number
-  expenseTotal: number
   /** 預設帳務日 YYYY-MM-DD */
   defaultBusinessDate: string
 }
@@ -473,8 +469,6 @@ export interface OpeningUsdtCabinPickModalProps {
 
 export interface DailyTradeSettleBarProps {
   tradeCount: number
-  /** 進行中開銷筆數；有交易或開銷時顯示 AL */
-  expenseCount?: number
   onSettle: () => void
 }
 

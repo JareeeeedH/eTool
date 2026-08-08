@@ -439,18 +439,6 @@ function TradeSettleConfirmBody({
         )}
       </div>
 
-      {summary.expenseCount > 0 && (
-        <div className="rounded-lg border border-orange-200 bg-orange-50/70 px-2.5 py-1.5">
-          <div className="flex items-baseline justify-between gap-2 text-xs tabular-nums">
-            <span className="font-semibold text-orange-800">
-              EXP #{summary.expenseCount}
-            </span>
-            <span className="font-semibold text-rose-600">
-              −{formatTwd(summary.expenseTotal)}
-            </span>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -1542,10 +1530,9 @@ export function CabinAllocModal({
 
 export function DailyTradeSettleBar({
   tradeCount,
-  expenseCount = 0,
   onSettle,
 }: DailyTradeSettleBarProps) {
-  if (tradeCount <= 0 && expenseCount <= 0) return null
+  if (tradeCount <= 0) return null
 
   return (
     <div className="mt-1 flex justify-end sm:mt-1.5">
@@ -2482,11 +2469,6 @@ const MOBILE_TRADE_PANES: {
     activeClass: 'bg-amber-600 text-white shadow-sm ring-1 ring-amber-600/25',
     idleClass: 'text-amber-900/70 hover:bg-white/70 hover:text-amber-950',
   },
-  {
-    id: 'expense',
-    activeClass: 'bg-orange-600 text-white shadow-sm ring-1 ring-orange-600/25',
-    idleClass: 'text-orange-800/70 hover:bg-white/70 hover:text-orange-900',
-  },
 ]
 
 export function DailyMobileTradeTabBar({
@@ -2504,7 +2486,7 @@ export function DailyMobileTradeTabBar({
       role="tablist"
       aria-label="主功能"
     >
-      <div className="grid grid-cols-5 gap-0.5">
+      <div className="grid grid-cols-4 gap-0.5">
         {MOBILE_TRADE_PANES.map((pane) => {
           const selected = value === pane.id
           return (
