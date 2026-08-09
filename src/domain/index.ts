@@ -1825,6 +1825,34 @@ export function computeDayExpenseUsdtTotal(transactions: Transaction[]): number 
 }
 
 /**
+ * EXP.SUM 一筆對帳上的影響（僅 RECON 封存含 items 者曾扣帳；手動新增無 items → 0）。
+ * twdCash／usdt 為「當時從帳上扣除」的數量，刪除 SUM 時應加回。
+ */
+export function balanceImpactFromCumulativeExpense(entry: {
+  amountTwd: number
+  items?: Array<{
+    amountTwd: number
+    payCurrency?: VnPayCurrency
+    amountUsdt?: number
+  }>
+}): { twdCash: number; usdt: number } {
+  const items = entry.items
+  if (!items || items.length === 0) {
+    return { twdCash: 0, usdt: 0 }
+  }
+  let twdCash = 0
+  let usdt = 0
+  for (const item of items) {
+    if (item.payCurrency === 'usdt') {
+      usdt += item.amountUsdt ?? 0
+    } else {
+      twdCash += item.amountTwd
+    }
+  }
+  return { twdCash, usdt }
+}
+
+/**
  * AL 扣 P 開銷時，依 B→A→C 順序扣艙數量。
  */
 export function deductUsdtFromCabinsBAC(
@@ -2164,7 +2192,7 @@ export function buildDeleteConfirmLines(tx: Transaction): string[] {
     const amountLine =
       expensePayCurrency(tx) === 'usdt'
         ? `P ${formatNumber(expenseUsdtAmount(tx))}`
-        : formatTwd(tx.amountTwd)
+        : `T ${formatTwdTableCompact(tx.amountTwd)}`
     return note ? [amountLine, note] : [amountLine]
   }
 

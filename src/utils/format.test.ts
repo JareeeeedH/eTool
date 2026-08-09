@@ -76,13 +76,16 @@ describe('formatTwdAdjustToZero', () => {
 })
 
 describe('expense twd input', () => {
-  it('parses full twd amount without 萬 scaling', () => {
-    expect(parseExpenseTwdInput('2600000')).toBe(2_600_000)
-    expect(formatExpenseTwdInput(2_600_000)).toBe('2600000')
+  it('parses 萬位縮寫 like trade T', () => {
+    expect(parseExpenseTwdInput('0.12')).toBe(1_200)
+    expect(parseExpenseTwdInput('1')).toBe(10_000)
+    expect(parseExpenseTwdInput('260')).toBe(2_600_000)
+    expect(formatExpenseTwdInput(2_600_000)).toBe('260.00')
+    expect(formatExpenseTwdInput(1_200)).toBe('0.12')
   })
 
-  it('parses comma-separated twd amount', () => {
-    expect(parseExpenseTwdInput('2,600,300')).toBe(2_600_300)
+  it('parses comma-separated 萬位輸入', () => {
+    expect(parseExpenseTwdInput('2,600.03')).toBe(26_000_300)
   })
 })
 

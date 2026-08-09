@@ -13,6 +13,7 @@ import {
   applyOpeningUsdtDeltaToCabin,
   buildMonthlyClose,
   buildTradeSettleConfirmSummary,
+  balanceImpactFromCumulativeExpense,
   computeDayExpenseTotal,
   computeDayExpenseTwdCashTotal,
   computeDayExpenseUsdtTotal,
@@ -697,6 +698,25 @@ describe('營業開銷與月結', () => {
     expect(computeDayExpenseTwdCashTotal(expenses)).toBe(1_000)
     expect(computeDayExpenseUsdtTotal(expenses)).toBe(100)
     expect(computeDayExpenseTotal(expenses)).toBe(4_227)
+  })
+
+  it('EXP.SUM 刪除加回：僅 RECON items 有帳面影響', () => {
+    expect(
+      balanceImpactFromCumulativeExpense({
+        amountTwd: 20_000,
+        note: 'manual',
+      } as { amountTwd: number }),
+    ).toEqual({ twdCash: 0, usdt: 0 })
+
+    expect(
+      balanceImpactFromCumulativeExpense({
+        amountTwd: 23_227,
+        items: [
+          { amountTwd: 20_000, payCurrency: 'twd' },
+          { amountTwd: 3_227, payCurrency: 'usdt', amountUsdt: 100 },
+        ],
+      }),
+    ).toEqual({ twdCash: 20_000, usdt: 100 })
   })
 
   it('U 開銷艙扣減：B→A→C', () => {

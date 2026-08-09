@@ -46,15 +46,6 @@ export function formatTwd(value: number): string {
   })
 }
 
-/** 開銷金額輸入：完整台幣（非萬位縮寫） */
-export function parseExpenseTwdInput(value: string): number | null {
-  const trimmed = value.trim().replace(/,/g, '')
-  if (!trimmed) return null
-  const n = Number(trimmed)
-  if (!Number.isFinite(n) || n <= 0) return null
-  return Math.trunc(n)
-}
-
 /** 開銷金額輸入：USDT 正數 */
 export function parseExpenseUsdtInput(value: string): number | null {
   const trimmed = value.trim().replace(/,/g, '')
@@ -62,11 +53,6 @@ export function parseExpenseUsdtInput(value: string): number | null {
   const n = Number(trimmed)
   if (!Number.isFinite(n) || n <= 0) return null
   return n
-}
-
-/** 開銷金額編輯欄顯示：完整台幣 */
-export function formatExpenseTwdInput(value: number): string {
-  return String(Math.trunc(value))
 }
 
 /** 開銷金額編輯欄顯示：USDT */
@@ -101,12 +87,22 @@ const VN_TABLE_COMPACT_UNIT = 100_000_000
 
 /** 表單 T 輸入：萬位縮寫 → 台幣 */
 export function parseTwdTableCompactInput(value: string, allowZero = false): number | null {
-  const trimmed = value.trim()
+  const trimmed = value.trim().replace(/,/g, '')
   if (!trimmed) return null
   const n = Number(trimmed)
   if (Number.isNaN(n) || n < 0 || (!allowZero && n <= 0)) return null
   const compact = Math.round(n * 100) / 100
   return Math.round(compact * TWD_TABLE_COMPACT_UNIT)
+}
+
+/** 開銷台幣輸入：萬位縮寫 → 台幣（與交易 T 相同） */
+export function parseExpenseTwdInput(value: string): number | null {
+  return parseTwdTableCompactInput(value)
+}
+
+/** 開銷台幣編輯欄顯示：萬位縮寫 */
+export function formatExpenseTwdInput(value: number): string {
+  return formatTwdTableCompact(value)
 }
 
 /** 表單 VN 輸入：億位縮寫 → VN 數量 */

@@ -90,6 +90,7 @@ import {
   validateTransactions,
   resolveUsdtSpendValidationError,
   resolveVnTwdLegValidationError,
+  balanceImpactFromCumulativeExpense,
   computeDayExpenseTwdCashTotal,
   computeDayExpenseUsdtTotal,
   computeDayExpenseTotal,
@@ -105,6 +106,7 @@ import {
   formatSettlementDateTimeForBusinessDate,
   formatTwd,
   formatTwdCompactInput,
+  formatTwdTableCompact,
   formatVnCompactInput,
   isValidDateInputValue,
   coerceDisplayZeroBalance,
@@ -948,16 +950,50 @@ function App() {
   }
 
   const executeDeleteCumulativeExpense = (id: string) => {
-    setCumulativeExpenses((prev) => prev.filter((entry) => entry.id !== id))
+    const entry = cumulativeExpenses.find((item) => item.id === id)
+    if (!entry) return
+
+    const snapshot = createSnapshot()
+    const { twdCash, usdt } = balanceImpactFromCumulativeExpense(entry)
+
+    if (twdCash > 0 || usdt > 0) {
+      setOpeningBalances((prev) => ({
+        ...prev,
+        twd: prev.twd + twdCash,
+        usdt: prev.usdt + usdt,
+      }))
+      if (usdt > 0) {
+        // RECON 扣艙為 B→A→C；加回時歸 B
+        setOpeningUsdtCabinB((prev) => prev + usdt)
+      }
+    }
+
+    setCumulativeExpenses((prev) => prev.filter((item) => item.id !== id))
+    setUndoSnapshot(snapshot)
+    const parts: string[] = []
+    if (twdCash > 0) parts.push(`+${formatTwdTableCompact(twdCash)} T`)
+    if (usdt > 0) parts.push(`+${formatNumber(usdt)} U`)
+    setUndoMessage(
+      parts.length > 0 ? `已刪除 EXP.SUM 並加回帳上（${parts.join(' · ')}）` : '已刪除 EXP.SUM',
+    )
   }
 
   const handleDeleteCumulativeExpense = (id: string) => {
     const entry = cumulativeExpenses.find((item) => item.id === id)
     if (!entry) return
 
+    const { twdCash, usdt } = balanceImpactFromCumulativeExpense(entry)
+    const lines = [formatTwdTableCompact(entry.amountTwd), entry.note.trim() || '—']
+    if (twdCash > 0 || usdt > 0) {
+      const restore: string[] = []
+      if (twdCash > 0) restore.push(`+${formatTwdTableCompact(twdCash)} T`)
+      if (usdt > 0) restore.push(`+${formatNumber(usdt)} U`)
+      lines.push(`將加回 ${restore.join(' · ')}`)
+    }
+
     setConfirmDialog({
       title: '',
-      lines: [formatTwd(entry.amountTwd), entry.note.trim() || '—'],
+      lines,
       cancelLabel: 'C',
       confirmLabel: 'Del',
       variant: 'danger',
@@ -983,11 +1019,12 @@ function App() {
       expenseUsdtTotal > 0
         ? deductUsdtFromCabinsBAC(usdtCabinBalances, expenseUsdtTotal)
         : usdtCabinBalances
-    setOpeningBalances({
-      ...balances,
-      twd: balances.twd - expenseTwdCashTotal,
-      usdt: balances.usdt - expenseUsdtTotal,
-    })
+    // 只從期初扣開銷，勿用 balances 覆寫（避免進行中交易被灌進期初而多扣／錯帳）
+    setOpeningBalances((prev) => ({
+      ...prev,
+      twd: prev.twd - expenseTwdCashTotal,
+      usdt: prev.usdt - expenseUsdtTotal,
+    }))
     if (expenseUsdtTotal > 0) {
       setOpeningUsdtCabinA(cabinsAfterExpense.a)
       setOpeningUsdtCabinB(cabinsAfterExpense.b)
@@ -1014,7 +1051,7 @@ function App() {
     resetExpenseForm()
     setUndoSnapshot(snapshot)
     const parts: string[] = []
-    if (expenseTwdCashTotal > 0) parts.push(`−${formatTwd(expenseTwdCashTotal)} T`)
+    if (expenseTwdCashTotal > 0) parts.push(`−${formatTwdTableCompact(expenseTwdCashTotal)} T`)
     if (expenseUsdtTotal > 0) parts.push(`−${formatNumber(expenseUsdtTotal)} U`)
     setUndoMessage(
       parts.length > 0
@@ -1030,7 +1067,7 @@ function App() {
     const twdCash = computeDayExpenseTwdCashTotal(pending)
     const usdtTotal = computeDayExpenseUsdtTotal(pending)
     const lines = [`#${pending.length}`]
-    if (twdCash > 0) lines.push(`−${formatTwd(twdCash)} T`)
+    if (twdCash > 0) lines.push(`−${formatTwdTableCompact(twdCash)} T`)
     if (usdtTotal > 0) lines.push(`−${formatNumber(usdtTotal)} U`)
     setConfirmDialog({
       title: 'RECON 扣帳並封存',

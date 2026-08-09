@@ -3438,7 +3438,7 @@ export function ExpenseForm({
           onChange={(e) => onAmountChange(e.target.value)}
           className={`w-[5rem] shrink-0 ${EXPENSE_INPUT_CLASS}`}
           placeholder={payCurrency === 'usdt' ? 'U' : 'T'}
-          aria-label={payCurrency === 'usdt' ? '金額 USDT' : '金額台幣'}
+          aria-label={payCurrency === 'usdt' ? '金額 USDT' : '金額台幣（萬）'}
         />
         <input
           type="text"
@@ -3487,10 +3487,12 @@ export function ExpensePageSummary({ transactions, onReconcile }: ExpensePageSum
   return (
     <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 border-t border-slate-100 bg-slate-50/60 px-3 py-2">
       <span className="flex flex-wrap items-center justify-end gap-x-2 text-sm font-semibold tabular-nums tracking-tight text-rose-600">
-        {twdCash > 0 && <span>−{formatTwd(twdCash)} T</span>}
+        {twdCash > 0 && <span>−{formatTwdTableCompact(twdCash)} T</span>}
         {usdtTotal > 0 && <span>−{formatNumber(usdtTotal)} U</span>}
         {twdCash <= 0 && usdtTotal <= 0 && (
-          <span>−{formatTwd(transactions.reduce((s, tx) => s + tx.amountTwd, 0))}</span>
+          <span>
+            −{formatTwdTableCompact(transactions.reduce((s, tx) => s + tx.amountTwd, 0))}
+          </span>
         )}
       </span>
       {onReconcile && (
@@ -3648,7 +3650,7 @@ export function ExpenseTable({
                 </>
               ) : (
                 <>
-                  <span>−{formatTwd(tx.amountTwd)}</span>
+                  <span title={formatTwd(tx.amountTwd)}>−{formatTwdTableCompact(tx.amountTwd)}</span>
                   <span className="text-[9px] font-semibold text-emerald-600">T</span>
                 </>
               )}
@@ -3656,7 +3658,9 @@ export function ExpenseTable({
             <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
               {note}
               {isUsdt && tx.amountTwd > 0 ? (
-                <span className="ml-1 text-slate-400">≈T {formatTwd(tx.amountTwd)}</span>
+                <span className="ml-1 text-slate-400" title={formatTwd(tx.amountTwd)}>
+                  ≈T {formatTwdTableCompact(tx.amountTwd)}
+                </span>
               ) : null}
             </span>
             <div className="shrink-0 opacity-70 transition-opacity group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
@@ -4350,12 +4354,14 @@ export function CumulativeExpensesPanel({
               onChange={setDate}
             />
             <input
-              type="text"
-              inputMode="numeric"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="any"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
-              placeholder="—"
-              aria-label="金額"
+              placeholder="T"
+              aria-label="金額台幣（萬）"
               className={`w-[5rem] shrink-0 ${EXPENSE_INPUT_CLASS}`}
             />
             <input
@@ -4408,8 +4414,11 @@ export function CumulativeExpensesPanel({
                     <span className="w-[2.75rem] shrink-0 tabular-nums text-[11px] text-slate-400">
                       {formatSettlementDate(row.timestamp)}
                     </span>
-                    <span className="w-[4.25rem] shrink-0 text-right font-medium tabular-nums text-rose-600">
-                      −{formatTwd(row.amountTwd)}
+                    <span
+                      className="w-[4.25rem] shrink-0 text-right font-medium tabular-nums text-rose-600"
+                      title={formatTwd(row.amountTwd)}
+                    >
+                      −{formatTwdTableCompact(row.amountTwd)}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
                       {noteText}
@@ -4436,8 +4445,11 @@ export function CumulativeExpensesPanel({
 
         {rows.length > 0 && (
           <div className="flex items-center justify-end border-t border-slate-100 bg-slate-50/60 px-3 py-2">
-            <span className="text-sm font-semibold tabular-nums tracking-tight text-rose-600">
-              −{formatTwd(total)}
+            <span
+              className="text-sm font-semibold tabular-nums tracking-tight text-rose-600"
+              title={formatTwd(total)}
+            >
+              −{formatTwdTableCompact(total)}
             </span>
           </div>
         )}
@@ -4469,8 +4481,11 @@ export function CumulativeExpensesPanel({
                   </p>
                 ) : null}
               </div>
-              <p className="text-sm font-semibold tabular-nums text-rose-600">
-                −{formatTwd(detailEntry.amountTwd)}
+              <p
+                className="text-sm font-semibold tabular-nums text-rose-600"
+                title={formatTwd(detailEntry.amountTwd)}
+              >
+                −{formatTwdTableCompact(detailEntry.amountTwd)}
               </p>
             </div>
             <div className="max-h-[50vh] overflow-y-auto px-3 py-1">
@@ -4483,13 +4498,18 @@ export function CumulativeExpensesPanel({
                     <span className="w-[2.75rem] shrink-0 tabular-nums text-[11px] text-slate-400">
                       {formatSettlementDate(item.timestamp)}
                     </span>
-                    <span className="w-[5.5rem] shrink-0 text-right font-medium tabular-nums text-rose-600">
+                    <span
+                      className="w-[5.5rem] shrink-0 text-right font-medium tabular-nums text-rose-600"
+                      title={
+                        item.payCurrency === 'usdt' ? undefined : formatTwd(item.amountTwd)
+                      }
+                    >
                       {item.payCurrency === 'usdt' ? (
                         <>
                           −{formatNumber(item.amountUsdt ?? 0)} U
                         </>
                       ) : (
-                        <>−{formatTwd(item.amountTwd)}</>
+                        <>−{formatTwdTableCompact(item.amountTwd)}</>
                       )}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-[11px] text-slate-500">
