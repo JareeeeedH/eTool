@@ -104,7 +104,6 @@ import {
   formatNumber,
   formatSettlementDateTime,
   formatSettlementDateTimeForBusinessDate,
-  formatTwd,
   formatTwdCompactInput,
   formatTwdTableCompact,
   formatVnCompactInput,

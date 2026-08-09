@@ -36,7 +36,6 @@ import {
   formatNumber,
   formatSettlementDate,
   formatUsdtTradeRateDisplay,
-  formatTwd,
   formatTwdTableCompact,
   formatVnTableCompact,
   formatVnTradeRateDisplay,
