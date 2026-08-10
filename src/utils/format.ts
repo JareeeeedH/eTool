@@ -95,6 +95,16 @@ export function parseTwdTableCompactInput(value: string, allowZero = false): num
   return Math.round(compact * TWD_TABLE_COMPACT_UNIT)
 }
 
+/** T 艙位備註：萬位縮寫 → 台幣（允許 0／負數，空白當 0） */
+export function parseTwdCabinNoteCompactInput(value: string): number {
+  const trimmed = value.trim().replace(/,/g, '')
+  if (!trimmed) return 0
+  const n = Number(trimmed)
+  if (Number.isNaN(n)) return 0
+  const compact = Math.round(n * 100) / 100
+  return Math.round(compact * TWD_TABLE_COMPACT_UNIT)
+}
+
 /** 開銷台幣輸入：萬位縮寫 → 台幣（與交易 T 相同） */
 export function parseExpenseTwdInput(value: string): number | null {
   return parseTwdTableCompactInput(value)

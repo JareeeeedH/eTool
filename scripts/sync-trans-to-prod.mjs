@@ -76,7 +76,8 @@ function summarize(label, state) {
       ` | tradeTx=${trade.length} expenseTx=${expense.length}` +
       ` | settlements=${state?.settlements?.length ?? 0}` +
       ` | cumulativeExpenses=${state?.cumulativeExpenses?.length ?? 0}` +
-      ` | expenseSettlements=${state?.expenseSettlements?.length ?? 0}`,
+      ` | expenseSettlements=${state?.expenseSettlements?.length ?? 0}` +
+      ` | twdNotes=${state?.twdCabinNotes ? 'yes' : 'no'}`,
   )
 }
 
@@ -92,6 +93,7 @@ function mergeTransOntoProd(local, prod) {
     openingUsdtCabinA: local.openingUsdtCabinA,
     openingUsdtCabinB: local.openingUsdtCabinB,
     usdtCabinSnapshot: local.usdtCabinSnapshot,
+    twdCabinNotes: local.twdCabinNotes ?? prod.twdCabinNotes,
     openingVnTwdRate: local.openingVnTwdRate ?? null,
     openingVnUsdtRate: local.openingVnUsdtRate ?? null,
     settlements: local.settlements ?? [],
@@ -139,7 +141,12 @@ async function main() {
   ) {
     throw new Error('verify failed: openingBalances mismatch')
   }
-  console.log('OK: TRANS synced to prod; EXP/EXP.SUM/monthly kept from prod.')
+  const localNotes = JSON.stringify(local.twdCabinNotes ?? null)
+  const prodNotes = JSON.stringify(prodAfter.twdCabinNotes ?? null)
+  if (local.twdCabinNotes && localNotes !== prodNotes) {
+    throw new Error('verify failed: twdCabinNotes mismatch')
+  }
+  console.log('OK: TRANS + T 分艙備註 synced to prod; EXP/EXP.SUM/monthly kept from prod.')
 }
 
 main().catch((err) => {

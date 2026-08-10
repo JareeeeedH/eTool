@@ -1029,7 +1029,20 @@ describe('usdt cabin quantity (shared cost)', () => {
     expect(err).toBeNull()
   })
 
-  it('still blocks USDT buy when current TWD is insufficient', () => {
+  it('allows IE buy U when current TWD is insufficient (T overdraft)', () => {
+    const err = resolveUsdtSpendValidationError('台幣庫存不足', {
+      spendsTwd: true,
+      balances: { twd: 100_000, usdt: 0, vn: 0 },
+      cabins: { a: 0, b: 0, c: 0 },
+      usdtAmount: 10_000,
+      cabinAAmount: 0,
+      cabinBAmount: 10_000,
+      fiatAmount: 324_700,
+    })
+    expect(err).toBeNull()
+  })
+
+  it('allows IE buy U even when history reports USDT short and TWD is short', () => {
     const err = resolveUsdtSpendValidationError('USDT 庫存不足', {
       spendsTwd: true,
       balances: { twd: 100_000, usdt: -3_248, vn: 0 },
@@ -1039,7 +1052,36 @@ describe('usdt cabin quantity (shared cost)', () => {
       cabinBAmount: 10_000,
       fiatAmount: 324_700,
     })
-    expect(err).toBe('台幣庫存不足')
+    expect(err).toBeNull()
+  })
+
+  it('IE validateTransactions allows T overdraft; IV pay T still blocked', () => {
+    const opening: Balances = { twd: 50_000, usdt: 0, vn: 0 }
+    const ieBuy: UsdtTransaction = {
+      id: 'ie1',
+      timestamp: at(10),
+      category: 'usdt',
+      type: 'buy',
+      fiatCurrency: 'twd',
+      usdtAmount: 10_000,
+      fiatAmount: 320_000,
+      rate: 32,
+    }
+    expect(validateTransactions([ieBuy], opening)).toBeNull()
+    expect(recalculateBalances([ieBuy], opening).twd).toBe(50_000 - 320_000)
+
+    const ivBuyT: VnTradeTransaction = {
+      id: 'iv1',
+      timestamp: at(11),
+      category: 'vn_trade',
+      type: 'buy',
+      payCurrency: 'twd',
+      vnAmount: 1_000_000_000,
+      twdAmount: 100_000,
+      usdtAmount: 0,
+      rate: 10_000,
+    }
+    expect(validateTransactions([ivBuyT], opening)).toBe('台幣庫存不足')
   })
 
   it('allows VN sell for TWD when history reports A cabin short', () => {

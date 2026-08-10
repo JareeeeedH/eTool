@@ -2397,11 +2397,8 @@ export function validateTransactions(
       return '請輸入有效的正數金額'
     }
 
-    if (tx.type === 'buy') {
-      if (tx.fiatAmount > balances.twd) {
-        return '台幣庫存不足'
-      }
-    } else {
+    // IE 買 U 允許台幣透支（T 可為負）；賣出仍檢查 P／分艙
+    if (tx.type === 'sell') {
       if (tx.usdtAmount > balances.usdt) {
         return 'USDT 庫存不足'
       }
@@ -2453,7 +2450,7 @@ export function validateCurrentUsdtCabinSpend(
 /**
  * 全量驗證失敗時的救援：
  * - 出 P（不花台幣）：歷史重播誤報台幣／USDT／分艙不足時，改以目前 P／分艙檢查
- * - 進 P（花台幣）：歷史重播因既有透支報「USDT 庫存不足」時，改以目前台幣檢查（允許補倉）
+ * - 進 P（花台幣／IE）：允許 T 透支；歷史重播 USDT／分艙雜訊直接放行
  */
 export function resolveUsdtSpendValidationError(
   fullError: string | null,
@@ -2483,15 +2480,15 @@ export function resolveUsdtSpendValidationError(
       options.cabinBAmount,
     )
   }
-  if (
-    options.spendsTwd &&
-    (fullError === 'USDT 庫存不足' || /艙 USDT 不足$/.test(fullError))
-  ) {
-    const fiat = options.fiatAmount
-    if (fiat !== undefined && fiat > options.balances.twd + 1e-9) {
-      return '台幣庫存不足'
+  // IE 買 U：允許台幣透支；歷史重播若誤報 USDT／分艙不足也放行
+  if (options.spendsTwd) {
+    if (
+      fullError === '台幣庫存不足' ||
+      fullError === 'USDT 庫存不足' ||
+      /艙 USDT 不足$/.test(fullError)
+    ) {
+      return null
     }
-    return null
   }
   return fullError
 }

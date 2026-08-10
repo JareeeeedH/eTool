@@ -11,6 +11,7 @@ import {
   sumRoundedProfitParts,
   parseExpenseTwdInput,
   parseTwdAdjustInput,
+  parseTwdCabinNoteCompactInput,
   parseTwdTableCompactInput,
   parseVnTableCompactInput,
   timestampForNewTrade,
@@ -38,6 +39,14 @@ describe('compact input parsing', () => {
   it('allows zero for opening balance', () => {
     expect(parseTwdTableCompactInput('0', true)).toBe(0)
     expect(parseVnTableCompactInput('0', true)).toBe(0)
+  })
+
+  it('cabin note sum parser keeps negatives', () => {
+    expect(parseTwdCabinNoteCompactInput('-101.78')).toBe(-1_017_800)
+    expect(parseTwdCabinNoteCompactInput('-28')).toBe(-280_000)
+    expect(parseTwdCabinNoteCompactInput('5.16')).toBe(51_600)
+    expect(parseTwdCabinNoteCompactInput('')).toBe(0)
+    expect(parseTwdTableCompactInput('-101.78')).toBeNull()
   })
 })
 

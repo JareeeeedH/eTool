@@ -100,7 +100,7 @@ import {
   formatVnCompactInput,
   formatVnTableCompact,
   parseTwdAdjustInput,
-  parseTwdTableCompactInput,
+  parseTwdCabinNoteCompactInput,
   parseExpenseTwdInput,
   parseUsdtAdjustInput,
   parseVnAdjustInput,
@@ -735,9 +735,9 @@ export function DailyBalanceStrip({
   const [twdCabinModalOpen, setTwdCabinModalOpen] = useState(false)
   const usdtCabins = usdtCabinBalances ?? { a: 0, b: 0, c: 0 }
   const notes = twdCabinNotes ?? { ...EMPTY_TWD_CABIN_NOTES }
-  /** O/B/T/W/H/J/C 輸入與表單 T 相同：萬位縮寫 → 台幣後再加總 */
+  /** O/B/T/W/H/J/C：萬位縮寫 → 台幣後加總（含負數） */
   const twdNoteSumActual = TWD_CABIN_NOTE_KEYS.reduce((sum, key) => {
-    return sum + (parseTwdTableCompactInput(notes[key], true) ?? 0)
+    return sum + parseTwdCabinNoteCompactInput(notes[key])
   }, 0)
   const showUsdtCost = balances.usdt > 0 && inventoryCost.twd !== null
   const showVnRates =
@@ -2264,7 +2264,7 @@ export function TradeForm({
   const fiatNum = resolvedPreview?.fiat ?? NaN
   const usdtValid = !Number.isNaN(usdtNum) && usdtNum > 0
   const fiatValid = !Number.isNaN(fiatNum) && fiatNum > 0
-  const twdInsufficient = type === 'buy' && fiatValid && fiatNum > balances.twd
+  const twdOverdraft = type === 'buy' && fiatValid && fiatNum > balances.twd
   const usdtInsufficient = type === 'sell' && usdtValid && usdtNum > balances.usdt
 
   let previewText: string | null = null
@@ -2272,15 +2272,17 @@ export function TradeForm({
 
   if (usdtValid && fiatValid) {
     if (type === 'buy') {
-      previewText = `−T ${formatTwdTableCompact(fiatNum)} · +P ${formatNumber(usdtNum)}`
-      previewWarn = fiatNum > balances.twd
+      previewText = twdOverdraft
+        ? `−T ${formatTwdTableCompact(fiatNum)} · +P ${formatNumber(usdtNum)}（T 透支）`
+        : `−T ${formatTwdTableCompact(fiatNum)} · +P ${formatNumber(usdtNum)}`
+      previewWarn = false
     } else {
       previewText = `−P ${formatNumber(usdtNum)} · +T ${formatTwdTableCompact(fiatNum)}`
       previewWarn = usdtNum > balances.usdt
     }
   }
 
-  const showTradeHint = previewText || twdInsufficient || usdtInsufficient
+  const showTradeHint = previewText || twdOverdraft || usdtInsufficient
 
   return (
     <>
@@ -2357,13 +2359,19 @@ export function TradeForm({
         {showTradeHint && (
           <p
             className={`mt-0.5 text-[10px] tabular-nums ${
-              twdInsufficient || usdtInsufficient || previewWarn
+              usdtInsufficient || previewWarn
                 ? 'text-rose-600'
-                : 'text-slate-500'
+                : twdOverdraft
+                  ? 'text-amber-700'
+                  : 'text-slate-500'
             }`}
           >
             {previewText ??
-              (twdInsufficient ? '台幣餘額不足' : usdtInsufficient ? 'USDT 餘額不足' : null)}
+              (twdOverdraft
+                ? '台幣將透支（允許）'
+                : usdtInsufficient
+                  ? 'USDT 餘額不足'
+                  : null)}
           </p>
         )}
 
