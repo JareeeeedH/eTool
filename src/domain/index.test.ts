@@ -1346,14 +1346,25 @@ describe('settlementDisplaySplitProfits（逐筆 PF 與卡片一致）', () => {
     // 模擬：raw 加總 round 後會是 1.78，但 1.08+0.69=1.77
     const p1 = 10_845 // → 1.08
     const p2 = 6_935 // → 0.69；raw sum 17_780 → 1.78
-    const item = {
+    const item: DailySettlement = {
       id: 's5',
       settledAt: new Date(),
+      dateLabel: '5 12:00',
       twdBalance: 0,
       usdtBalance: 0,
       vnBalance: 0,
       usdtInventoryAvgTwd: null,
       usdtInventoryAvgVn: null,
+      dayBuyAvgTwd: null,
+      dayBuyAvgVn: null,
+      totalAssetsTwd: 0,
+      totalAssetsTwdCash: 0,
+      totalAssetsUsdtInTwd: 0,
+      totalAssetsVnInTwd: 0,
+      dayVnTwdRate: null,
+      dayVnUsdtRate: null,
+      totalAssetsComplete: true,
+      totalAssetsMissingNotes: '',
       transactionCount: 2,
       dayUsdtProfit: 0,
       dayVnProfit: p1 + p2,
