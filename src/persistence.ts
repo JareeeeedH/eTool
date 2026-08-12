@@ -220,15 +220,20 @@ export interface PersistedAppState {
    * 重整後用來校正期初分倉，避免互轉結果遺失。
    */
   usdtCabinSnapshot?: { a: number; b: number; c: number }
-  /** T 卡 O/B/T/W/H/J/C 備註 + 獨立 PF（僅 memo，不入帳；PF 不入加總） */
+  /** T 卡 O/B/T/F/W/H/J/C + 備用 # + 獨立 PF（僅 memo；PF 不入加總；# 入 Σ） */
   twdCabinNotes?: {
     a: string
     b: string
     t?: string
+    g?: string
     c: string
     d: string
     e: string
     f?: string
+    n1?: string
+    n2?: string
+    n3?: string
+    n4?: string
     pf?: string
   }
   /** @deprecated 舊 T 分倉期初；忽略 */
@@ -280,10 +285,15 @@ function parseTwdCabinNotes(
   a: string
   b: string
   t: string
+  g: string
   c: string
   d: string
   e: string
   f: string
+  n1: string
+  n2: string
+  n3: string
+  n4: string
   pf: string
 } | undefined {
   if (!isRecord(value)) return undefined
@@ -292,10 +302,15 @@ function parseTwdCabinNotes(
     a: asString(value.a),
     b: asString(value.b),
     t: asString(value.t),
+    g: asString(value.g),
     c: asString(value.c),
     d: asString(value.d),
     e: asString(value.e),
     f: asString(value.f),
+    n1: asString(value.n1),
+    n2: asString(value.n2),
+    n3: asString(value.n3),
+    n4: asString(value.n4),
     pf: asString(value.pf),
   }
 }

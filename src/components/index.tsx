@@ -41,6 +41,10 @@ import {
   EMPTY_TWD_CABIN_NOTES,
   TWD_CABIN_NOTE_KEYS,
   TWD_CABIN_NOTE_LABELS,
+  TWD_CABIN_NOTE_ROW1_KEYS,
+  TWD_CABIN_NOTE_ROW2_KEYS,
+  TWD_CABIN_NOTE_ROW3_KEYS,
+  TWD_CABIN_NOTE_SUM_KEYS,
 } from '../types'
 import {
   EXPENSE_INPUT_CLASS,
@@ -739,8 +743,8 @@ export function DailyBalanceStrip({
   const [twdCabinModalOpen, setTwdCabinModalOpen] = useState(false)
   const usdtCabins = usdtCabinBalances ?? { a: 0, b: 0, c: 0 }
   const notes = twdCabinNotes ?? { ...EMPTY_TWD_CABIN_NOTES }
-  /** O/B/T/W/H/J/C：萬位縮寫 → 台幣後加總（含負數） */
-  const twdNoteSumActual = TWD_CABIN_NOTE_KEYS.reduce((sum, key) => {
+  /** O/B/T/F/W/H/J/C/#：萬位縮寫 → 台幣後加總（含備用 #） */
+  const twdNoteSumActual = TWD_CABIN_NOTE_SUM_KEYS.reduce((sum, key) => {
     return sum + parseTwdCabinNoteCompactInput(notes[key])
   }, 0)
   const showUsdtCost = balances.usdt > 0 && inventoryCost.twd !== null
@@ -756,19 +760,29 @@ export function DailyBalanceStrip({
     a: 'text-sky-600',
     b: 'text-violet-600',
     t: 'text-cyan-600',
+    g: 'text-teal-600',
     c: 'text-emerald-600',
     d: 'text-amber-600',
     e: 'text-rose-600',
     f: 'text-indigo-600',
+    n1: 'text-slate-400',
+    n2: 'text-slate-400',
+    n3: 'text-slate-400',
+    n4: 'text-slate-400',
   }
   const twdNoteFieldTone: Record<TwdCabinNoteKey, string> = {
     a: 'border-sky-200 focus-within:border-sky-400 focus-within:ring-sky-200',
     b: 'border-violet-200 focus-within:border-violet-400 focus-within:ring-violet-200',
     t: 'border-cyan-200 focus-within:border-cyan-400 focus-within:ring-cyan-200',
+    g: 'border-teal-200 focus-within:border-teal-400 focus-within:ring-teal-200',
     c: 'border-emerald-200 focus-within:border-emerald-400 focus-within:ring-emerald-200',
     d: 'border-amber-200 focus-within:border-amber-400 focus-within:ring-amber-200',
     e: 'border-rose-200 focus-within:border-rose-400 focus-within:ring-rose-200',
     f: 'border-indigo-200 focus-within:border-indigo-400 focus-within:ring-indigo-200',
+    n1: 'border-dashed border-slate-200 focus-within:border-slate-400 focus-within:ring-slate-200',
+    n2: 'border-dashed border-slate-200 focus-within:border-slate-400 focus-within:ring-slate-200',
+    n3: 'border-dashed border-slate-200 focus-within:border-slate-400 focus-within:ring-slate-200',
+    n4: 'border-dashed border-slate-200 focus-within:border-slate-400 focus-within:ring-slate-200',
   }
   const twdNoteSumMismatch =
     Math.abs(twdNoteSumActual - balances.twd) > 0.5
@@ -916,42 +930,62 @@ export function DailyBalanceStrip({
             if (event.target === event.currentTarget) setTwdCabinModalOpen(false)
           }}
         >
-          <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl sm:p-5">
+          <div className="w-full max-w-lg rounded-xl bg-white p-4 shadow-xl sm:p-5">
             <div className="flex items-start justify-end">
               <button
                 type="button"
                 onClick={() => setTwdCabinModalOpen(false)}
-                className="rounded-md px-2 py-1 text-[12px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label="關閉"
               >
-                關閉
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  aria-hidden
+                >
+                  <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+                </svg>
               </button>
             </div>
 
-            <div className="mt-1 grid grid-cols-7 gap-1">
-              {TWD_CABIN_NOTE_KEYS.map((key) => {
-                const label = TWD_CABIN_NOTE_LABELS[key]
-                return (
-                  <label
-                    key={key}
-                    className={`flex min-w-0 flex-col items-center gap-0.5 rounded-lg border px-0.5 py-1.5 focus-within:ring-2 ${twdNoteFieldTone[key]}`}
-                  >
-                    <span
-                      className={`text-[11px] font-bold leading-none ${twdNoteLetterTone[key]}`}
-                    >
-                      {label}
-                    </span>
-                    <input
-                      type="text"
-                      value={notes[key]}
-                      onChange={(e) => onTwdCabinNoteChange(key, e.target.value)}
-                      placeholder="0"
-                      className="min-w-0 w-full border-0 bg-transparent p-0 text-center text-[12px] font-medium tabular-nums leading-tight text-slate-800 outline-none placeholder:text-slate-300 sm:text-[13px]"
-                      inputMode="decimal"
-                      aria-label={`T 備註 ${label}（萬）`}
-                    />
-                  </label>
-                )
-              })}
+            <div className="mt-1 space-y-1.5">
+              {(
+                [
+                  TWD_CABIN_NOTE_ROW1_KEYS,
+                  TWD_CABIN_NOTE_ROW2_KEYS,
+                  TWD_CABIN_NOTE_ROW3_KEYS,
+                ] as const
+              ).map((rowKeys, rowIdx) => (
+                  <div key={rowIdx} className="grid grid-cols-4 gap-1.5">
+                    {rowKeys.map((key) => {
+                      const label = TWD_CABIN_NOTE_LABELS[key]
+                      return (
+                        <label
+                          key={key}
+                          className={`flex min-w-0 flex-col items-center gap-0.5 rounded-lg border px-0.5 py-1.5 focus-within:ring-2 ${twdNoteFieldTone[key]}`}
+                        >
+                          <span
+                            className={`text-[11px] font-bold leading-none ${twdNoteLetterTone[key]}`}
+                          >
+                            {label}
+                          </span>
+                          <input
+                            type="text"
+                            value={notes[key]}
+                            onChange={(e) => onTwdCabinNoteChange(key, e.target.value)}
+                            placeholder="0"
+                            className="min-w-0 w-full border-0 bg-transparent p-0 text-center text-[12px] font-medium tabular-nums leading-tight text-slate-800 outline-none placeholder:text-slate-300 sm:text-[13px]"
+                            inputMode="decimal"
+                            aria-label={`T 備註 ${label}（萬）`}
+                          />
+                        </label>
+                      )
+                    })}
+                  </div>
+                ))}
             </div>
 
             <p
@@ -3887,6 +3921,11 @@ function SettlementGroupFooter({
         : code === 'IV'
           ? 'border-b border-sky-200/80 bg-sky-100/90'
           : 'border-b border-amber-200/80 bg-amber-100/90'
+  const spacer = (
+    <tr aria-hidden="true" className="h-2 border-0">
+      <td colSpan={5} className="border-0 p-0" />
+    </tr>
+  )
 
   if (code === 'IE' || code === 'OE') {
     const usdtRows = rows.filter(isUsdtTransaction)
@@ -3898,25 +3937,28 @@ function SettlementGroupFooter({
     const hasPf = pfParts.some((p) => p != null)
     const pfSum = hasPf ? sumRoundedProfitParts(...pfParts) : null
     return (
-      <tr className={footerRowClass}>
-        <td className="py-1 pr-1 font-semibold tabular-nums text-slate-800">
-          {formatNumber(lTotal)}
-        </td>
-        <td className="py-1 pr-1 font-semibold tabular-nums text-slate-800">
-          {formatTwdTableCompact(giTotal)}
-        </td>
-        <td className="py-1 pr-1 font-semibold tabular-nums text-slate-800">
-          {rAvg != null ? formatUsdtTradeRateDisplay(rAvg) : '—'}
-        </td>
-        <td
-          className={`py-1 pr-1 font-semibold tabular-nums ${
-            pfSum == null ? 'text-slate-300' : profitColorClass(pfSum)
-          }`}
-        >
-          {pfSum == null ? '' : formatProfitFromParts(...pfParts)}
-        </td>
-        <td />
-      </tr>
+      <>
+        {spacer}
+        <tr className={footerRowClass}>
+          <td className="py-1.5 pr-2 font-semibold tabular-nums text-slate-800">
+            {formatNumber(lTotal)}
+          </td>
+          <td className="py-1.5 pr-2 font-semibold tabular-nums text-slate-800">
+            {formatTwdTableCompact(giTotal)}
+          </td>
+          <td className="py-1.5 pr-2 font-semibold tabular-nums text-slate-800">
+            {rAvg != null ? formatUsdtTradeRateDisplay(rAvg) : '—'}
+          </td>
+          <td
+            className={`py-1.5 pr-2 font-semibold tabular-nums ${
+              pfSum == null ? 'text-slate-300' : profitColorClass(pfSum)
+            }`}
+          >
+            {pfSum == null ? '' : formatProfitFromParts(...pfParts)}
+          </td>
+          <td />
+        </tr>
+      </>
     )
   }
 
@@ -3939,39 +3981,42 @@ function SettlementGroupFooter({
   const pfSum = hasPf ? sumRoundedProfitParts(...pfParts) : null
 
   return (
-    <tr className={footerRowClass}>
-      <td className="py-1 pr-1 font-semibold tabular-nums text-slate-800">
-        {formatVnTableCompact(lTotal)}
-      </td>
-      <td className="py-1 pr-1 font-semibold tabular-nums text-slate-800">
-        <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
-          {giUsdtTotal > 0 ? (
-            <span>
-              {formatNumber(giUsdtTotal)}
-              <span className="ml-0.5 text-[9px] font-medium text-slate-500">P</span>
-            </span>
-          ) : null}
-          {giTwdTotal > 0 ? (
-            <span>
-              {formatTwdTableCompact(giTwdTotal)}
-              <span className="ml-0.5 text-[9px] font-medium text-slate-500">T</span>
-            </span>
-          ) : null}
-          {giUsdtTotal <= 0 && giTwdTotal <= 0 ? '—' : null}
-        </span>
-      </td>
-      <td className="py-1 pr-1 font-semibold tabular-nums text-slate-800">
-        {rAvg != null ? formatVnTradeRateDisplay(rAvg) : '—'}
-      </td>
-      <td
-        className={`py-1 pr-1 font-semibold tabular-nums ${
-          pfSum == null ? 'text-slate-300' : profitColorClass(pfSum)
-        }`}
-      >
-        {pfSum == null ? '' : formatProfitFromParts(...pfParts)}
-      </td>
-      <td />
-    </tr>
+    <>
+      {spacer}
+      <tr className={footerRowClass}>
+        <td className="py-1.5 pr-2 font-semibold tabular-nums text-slate-800">
+          {formatVnTableCompact(lTotal)}
+        </td>
+        <td className="py-1.5 pr-2 font-semibold tabular-nums text-slate-800">
+          <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
+            {giUsdtTotal > 0 ? (
+              <span>
+                {formatNumber(giUsdtTotal)}
+                <span className="ml-0.5 text-[9px] font-medium text-slate-500">P</span>
+              </span>
+            ) : null}
+            {giTwdTotal > 0 ? (
+              <span>
+                {formatTwdTableCompact(giTwdTotal)}
+                <span className="ml-0.5 text-[9px] font-medium text-slate-500">T</span>
+              </span>
+            ) : null}
+            {giUsdtTotal <= 0 && giTwdTotal <= 0 ? '—' : null}
+          </span>
+        </td>
+        <td className="py-1.5 pr-2 font-semibold tabular-nums text-slate-800">
+          {rAvg != null ? formatVnTradeRateDisplay(rAvg) : '—'}
+        </td>
+        <td
+          className={`py-1.5 pr-2 font-semibold tabular-nums ${
+            pfSum == null ? 'text-slate-300' : profitColorClass(pfSum)
+          }`}
+        >
+          {pfSum == null ? '' : formatProfitFromParts(...pfParts)}
+        </td>
+        <td />
+      </tr>
+    </>
   )
 }
 
@@ -4256,88 +4301,20 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                   </p>
                 ) : (
                   <>
-                    {(() => {
-                      const vol = summarizeSettlementTrades(trades)
-                      const cells: Array<{
-                        code: string
-                        tone: string
-                        qty: string
-                        avg: string | null
-                        empty: boolean
-                      }> = [
-                        {
-                          code: 'IE',
-                          tone: 'text-emerald-700',
-                          qty: formatNumber(vol.buyUQty),
-                          avg:
-                            vol.buyUAvg != null
-                              ? formatUsdtTradeRateDisplay(vol.buyUAvg)
-                              : null,
-                          empty: vol.buyUQty <= 0,
-                        },
-                        {
-                          code: 'OE',
-                          tone: 'text-rose-700',
-                          qty: formatNumber(vol.sellUQty),
-                          avg:
-                            vol.sellUAvg != null
-                              ? formatUsdtTradeRateDisplay(vol.sellUAvg)
-                              : null,
-                          empty: vol.sellUQty <= 0,
-                        },
-                        {
-                          code: 'IV',
-                          tone: 'text-sky-700',
-                          qty: formatVnTableCompact(vol.buyVnQty),
-                          avg:
-                            vol.buyVnAvg != null
-                              ? formatVnTradeRateDisplay(vol.buyVnAvg)
-                              : null,
-                          empty: vol.buyVnQty <= 0,
-                        },
-                        {
-                          code: 'OV',
-                          tone: 'text-amber-700',
-                          qty: formatVnTableCompact(vol.sellVnQty),
-                          avg:
-                            vol.sellVnAvg != null
-                              ? formatVnTradeRateDisplay(vol.sellVnAvg)
-                              : null,
-                          empty: vol.sellVnQty <= 0,
-                        },
-                      ]
-                      return (
-                        <div className="mb-2 grid grid-cols-2 gap-1 sm:grid-cols-4">
-                          {cells.map((cell) => (
-                            <div
-                              key={cell.code}
-                              className={`rounded-md border border-slate-100 bg-slate-50/80 px-1.5 py-1 ${
-                                cell.empty ? 'opacity-40' : ''
-                              }`}
-                            >
-                              <div className="flex items-baseline gap-1">
-                                <span className={`text-[10px] font-semibold ${cell.tone}`}>
-                                  {cell.code}
-                                </span>
-                                <span className="tabular-nums text-[11px] font-semibold text-slate-800">
-                                  {cell.empty ? '—' : cell.qty}
-                                </span>
-                              </div>
-                              <p className="mt-0.5 text-left text-[10px] tabular-nums text-slate-500">
-                                {cell.empty || cell.avg == null ? '@—' : `@${cell.avg}`}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      )
-                    })()}
-                    <table className="w-full text-left text-[11px]">
+                    <table className="w-full table-fixed text-left text-[11px]">
+                      <colgroup>
+                        <col className="w-[22%]" />
+                        <col className="w-[22%]" />
+                        <col className="w-[18%]" />
+                        <col className="w-[14%]" />
+                        <col className="w-[24%]" />
+                      </colgroup>
                       <thead>
                         <tr className="border-b border-slate-100 text-slate-500">
-                          <th className="py-1 pr-1 font-medium">L</th>
-                          <th className="py-1 pr-1 font-medium">GI</th>
-                          <th className="py-1 pr-1 font-medium">R</th>
-                          <th className="py-1 pr-1 font-medium">PF</th>
+                          <th className="py-1 pr-2 font-medium">L</th>
+                          <th className="py-1 pr-2 font-medium">GI</th>
+                          <th className="py-1 pr-2 font-medium">R</th>
+                          <th className="py-1 pr-2 font-medium">PF</th>
                           <th className="py-1 font-medium">{'\u00a0'}</th>
                         </tr>
                       </thead>
@@ -4375,10 +4352,10 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
 
                               return (
                                 <tr key={tx.id} className="border-b border-slate-50">
-                                  <td className="py-1 pr-1 tabular-nums text-slate-800">
+                                  <td className="py-1 pr-2 tabular-nums text-slate-800">
                                     {qty}
                                   </td>
-                                  <td className="py-1 pr-1 tabular-nums text-slate-700">
+                                  <td className="py-1 pr-2 tabular-nums text-slate-700">
                                     {pay}
                                     {!isUsdtTransaction(tx) ? (
                                       <span className="ml-0.5 text-[9px] text-slate-400">
@@ -4386,11 +4363,11 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                                       </span>
                                     ) : null}
                                   </td>
-                                  <td className="py-1 pr-1 tabular-nums text-slate-600">
+                                  <td className="py-1 pr-2 tabular-nums text-slate-600">
                                     {rateText}
                                   </td>
                                   <td
-                                    className={`py-1 pr-1 tabular-nums ${
+                                    className={`py-1 pr-2 tabular-nums ${
                                       profit === undefined
                                         ? 'text-slate-300'
                                         : profitColorClass(profit)
@@ -4399,7 +4376,7 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                                     {profit === undefined ? '—' : formatProfit(profit)}
                                   </td>
                                   <td
-                                    className="max-w-[4.5rem] truncate py-1 font-medium text-slate-700"
+                                    className="truncate py-1 font-medium text-slate-700"
                                     title={note}
                                   >
                                     {note}

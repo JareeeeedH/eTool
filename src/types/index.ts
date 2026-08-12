@@ -352,51 +352,107 @@ export interface NotebookEntry {
 export interface TwdCabinNotes {
   a: string
   b: string
-  /** T 艙（O/B/T/W/H/J/C 之 T） */
+  /** T 艙 */
   t: string
+  /** F 艙 */
+  g: string
+  /** W 艙 */
   c: string
+  /** H 艙 */
   d: string
+  /** J 艙 */
   e: string
-  /** C 艙（O/B/T/W/H/J/C 之 C） */
+  /** C 艙 */
   f: string
-  /** 獨立 PF 備註；不與七艙關聯、不入加總 */
+  /** 備用格 #（仍入 Σ） */
+  n1: string
+  n2: string
+  n3: string
+  n4: string
+  /** 獨立 PF 備註；不入加總 */
   pf: string
 }
 
-/** O/B/T/W/H/J/C 七艙 key（不含 pf） */
-export type TwdCabinNoteKey = 'a' | 'b' | 't' | 'c' | 'd' | 'e' | 'f'
+/** 可編輯艙位 key（含備用格；不含 pf） */
+export type TwdCabinNoteKey =
+  | 'a'
+  | 'b'
+  | 't'
+  | 'g'
+  | 'c'
+  | 'd'
+  | 'e'
+  | 'f'
+  | 'n1'
+  | 'n2'
+  | 'n3'
+  | 'n4'
 
 export type TwdCabinNoteFieldKey = TwdCabinNoteKey | 'pf'
 
-/** T 備註艙顯示名稱（a/b/c/d/e 相容既有存檔；t、f 為新增） */
+/** 顯示名稱 */
 export const TWD_CABIN_NOTE_LABELS: Record<TwdCabinNoteKey, string> = {
   a: 'O',
   b: 'B',
   t: 'T',
+  g: 'F',
   c: 'W',
   d: 'H',
   e: 'J',
   f: 'C',
+  n1: '#',
+  n2: '#',
+  n3: '#',
+  n4: '#',
 }
 
-export const TWD_CABIN_NOTE_KEYS = [
+/** 第一排：O/B/T/F */
+export const TWD_CABIN_NOTE_ROW1_KEYS = [
   'a',
   'b',
   't',
+  'g',
+] as const satisfies readonly TwdCabinNoteKey[]
+
+/** 第二排：W/H/J/# */
+export const TWD_CABIN_NOTE_ROW2_KEYS = [
   'c',
   'd',
   'e',
-  'f',
+  'n1',
 ] as const satisfies readonly TwdCabinNoteKey[]
+
+/** 第三排：C#/#/# */
+export const TWD_CABIN_NOTE_ROW3_KEYS = [
+  'f',
+  'n2',
+  'n3',
+  'n4',
+] as const satisfies readonly TwdCabinNoteKey[]
+
+/** 全部艙格（不含 pf） */
+export const TWD_CABIN_NOTE_KEYS = [
+  ...TWD_CABIN_NOTE_ROW1_KEYS,
+  ...TWD_CABIN_NOTE_ROW2_KEYS,
+  ...TWD_CABIN_NOTE_ROW3_KEYS,
+] as const satisfies readonly TwdCabinNoteKey[]
+
+/** 入 Σ：全部艙格（含備用 #） */
+export const TWD_CABIN_NOTE_SUM_KEYS = TWD_CABIN_NOTE_KEYS
 
 export const EMPTY_TWD_CABIN_NOTES: TwdCabinNotes = {
   a: '',
   b: '',
   t: '',
+  g: '',
   c: '',
   d: '',
   e: '',
   f: '',
+  n1: '',
+  n2: '',
+  n3: '',
+  n4: '',
   pf: '',
 }
 
