@@ -46,6 +46,7 @@ import {
   roundVnPoolCostRate,
   roundVnTradeRate,
   roundTwdTableCompact,
+  sumRoundedProfitParts,
 } from '../utils/format'
 
 /**
@@ -121,6 +122,9 @@ import {
  * - V 成交匯率 R：roundVnTradeRate（四捨五入 2 位小數）
  * - V 池／結算 @：roundVnPoolCostRate（四捨五入 2 位小數）
  * - 利潤顯示：formatProfit → roundTwdTableCompact 萬位，四捨五入至小數第二位
+ * - SET 卡片 P／VN：有 sellProfitById 時用 settlementDisplaySplitProfits（逐筆先 round 再加），
+ *   與明細 PF／組 footer 一致；勿用 raw dayVnProfit 再一次 round（會出現 1.78 vs 1.77）
+ * - 分項合計：formatProfitFromParts / sumRoundedProfitParts
  *
  * -----------------------------------------------------------------------------
  * 營業開銷
@@ -2232,6 +2236,46 @@ export function buildMonthlyClose(
 
 export function settlementHasSplitProfit(item: DailySettlement): boolean {
   return item.dayUsdtProfit !== undefined && item.dayVnProfit !== undefined
+}
+
+/**
+ * SET 卡片 P／VN 顯示用利潤：有封存逐筆 PF 時，改為「各筆先萬位四捨五入再加總」
+ * （與明細列／組 footer 一致），避免上方 1.78、下方 1.08+0.69=1.77 這類落差。
+ * 回傳仍為台幣原值，可直接交給 formatProfit。
+ */
+export function settlementDisplaySplitProfits(item: DailySettlement): {
+  usdt: number | undefined
+  vn: number | undefined
+} {
+  const map = item.sellProfitById
+  const trades = item.trades
+  if (!map || !trades || trades.length === 0) {
+    return { usdt: item.dayUsdtProfit, vn: item.dayVnProfit }
+  }
+
+  const usdtParts: number[] = []
+  const vnParts: number[] = []
+  for (const tx of trades) {
+    const profit = map[tx.id]
+    if (profit == null || !Number.isFinite(profit)) continue
+    if (isUsdtTransaction(tx)) {
+      if (tx.type === 'sell') usdtParts.push(profit)
+    } else if (isVnTradeTransaction(tx) && tx.type === 'sell') {
+      vnParts.push(profit)
+    }
+  }
+
+  const toTwd = (...parts: number[]) => sumRoundedProfitParts(...parts) * 10_000
+  return {
+    usdt:
+      item.dayUsdtProfit !== undefined || usdtParts.length > 0
+        ? toTwd(...usdtParts)
+        : item.dayUsdtProfit,
+    vn:
+      item.dayVnProfit !== undefined || vnParts.length > 0
+        ? toTwd(...vnParts)
+        : item.dayVnProfit,
+  }
 }
 export function getBusinessDayLabel(transactions: Transaction[]): string {
   if (transactions.length > 0) {

@@ -8,7 +8,7 @@ import type {
   UsdtTransaction,
   VnTradeTransaction,
 } from '../types'
-import { roundUsdtCostRate } from '../utils/format'
+import { formatProfit, roundTwdTableCompact, roundUsdtCostRate } from '../utils/format'
 import {
   adjustOpeningUsdtCabins,
   applyExpenseTransaction,
@@ -39,6 +39,7 @@ import {
   settlementTradePane,
   transferUsdtBetweenCabins,
   validateTransactions,
+  settlementDisplaySplitProfits,
 } from './index'
 
 const EMPTY_COST: UsdtInventoryCost = { twd: null, vn: null }
@@ -1339,3 +1340,33 @@ describe('searchSettlementTradesByNote', () => {
     expect(searchSettlementTradesByNote([], [], '  ')).toEqual([])
   })
 })
+
+describe('settlementDisplaySplitProfits（逐筆 PF 與卡片一致）', () => {
+  it('VN 顯示用加總＝各筆 format 後相加，而非 raw 總額再 round', () => {
+    // 模擬：raw 加總 round 後會是 1.78，但 1.08+0.69=1.77
+    const p1 = 10_845 // → 1.08
+    const p2 = 6_935 // → 0.69；raw sum 17_780 → 1.78
+    const item = {
+      id: 's5',
+      settledAt: new Date(),
+      twdBalance: 0,
+      usdtBalance: 0,
+      vnBalance: 0,
+      usdtInventoryAvgTwd: null,
+      usdtInventoryAvgVn: null,
+      transactionCount: 2,
+      dayUsdtProfit: 0,
+      dayVnProfit: p1 + p2,
+      dayTotalProfit: p1 + p2,
+      trades: [vnSellTwd('ov-1', at(12), 1, 1), vnSellTwd('ov-2', at(12, 1), 1, 1)],
+      sellProfitById: { 'ov-1': p1, 'ov-2': p2 },
+    }
+
+    const split = settlementDisplaySplitProfits(item)
+    expect(formatProfit(p1 + p2)).toBe('+1.78')
+    expect(roundTwdTableCompact(p1) + roundTwdTableCompact(p2)).toBeCloseTo(1.77, 5)
+    expect(formatProfit(split.vn!)).toBe('+1.77')
+    expect(split.usdt).toBe(0)
+  })
+})
+

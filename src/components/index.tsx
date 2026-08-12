@@ -124,6 +124,7 @@ import {
   normalizeMonthlyCloseRecord,
   searchSettlementTradesByNote,
   settlementHasSplitProfit,
+  settlementDisplaySplitProfits,
   summarizeSettlementTrades,
   totalAssetsFromSettlement,
   transferUsdtBetweenCabins,
@@ -3867,30 +3868,109 @@ const SETTLEMENT_TRADE_PANE_TONE: Record<'IE' | 'OE' | 'IV' | 'OV', string> = {
   OV: 'text-amber-700',
 }
 
-function sumSettlementGroupL(rows: Array<UsdtTransaction | VnTradeTransaction>): number {
-  return rows.reduce(
-    (sum, tx) => sum + (isUsdtTransaction(tx) ? tx.usdtAmount : tx.vnAmount),
-    0,
-  )
-}
-
-function SettlementGroupLTotal({
+function SettlementGroupFooter({
+  code,
   rows,
+  sellProfitById,
 }: {
+  code: 'IE' | 'OE' | 'IV' | 'OV'
   rows: Array<UsdtTransaction | VnTradeTransaction>
+  sellProfitById?: Record<string, number>
 }) {
   if (rows.length === 0) return null
-  const total = sumSettlementGroupL(rows)
-  if (total <= 0) return null
 
-  const display = isUsdtTransaction(rows[0])
-    ? formatNumber(total)
-    : formatVnTableCompact(total)
+  const footerRowClass =
+    code === 'IE'
+      ? 'border-b border-emerald-200/80 bg-emerald-100/90'
+      : code === 'OE'
+        ? 'border-b border-rose-200/80 bg-rose-100/90'
+        : code === 'IV'
+          ? 'border-b border-sky-200/80 bg-sky-100/90'
+          : 'border-b border-amber-200/80 bg-amber-100/90'
+
+  if (code === 'IE' || code === 'OE') {
+    const usdtRows = rows.filter(isUsdtTransaction)
+    const lTotal = usdtRows.reduce((sum, tx) => sum + tx.usdtAmount, 0)
+    const giTotal = usdtRows.reduce((sum, tx) => sum + tx.fiatAmount, 0)
+    const rAvg = calculateAverageRate(usdtRows, 'twd')
+    const pfParts =
+      code === 'OE' ? usdtRows.map((tx) => sellProfitById?.[tx.id]) : []
+    const hasPf = pfParts.some((p) => p != null)
+    const pfSum = hasPf ? sumRoundedProfitParts(...pfParts) : null
+    return (
+      <tr className={footerRowClass}>
+        <td className="py-1 pr-1 font-semibold tabular-nums text-slate-800">
+          {formatNumber(lTotal)}
+        </td>
+        <td className="py-1 pr-1 font-semibold tabular-nums text-slate-800">
+          {formatTwdTableCompact(giTotal)}
+        </td>
+        <td className="py-1 pr-1 font-semibold tabular-nums text-slate-800">
+          {rAvg != null ? formatUsdtTradeRateDisplay(rAvg) : '—'}
+        </td>
+        <td
+          className={`py-1 pr-1 font-semibold tabular-nums ${
+            pfSum == null ? 'text-slate-300' : profitColorClass(pfSum)
+          }`}
+        >
+          {pfSum == null ? '' : formatProfitFromParts(...pfParts)}
+        </td>
+        <td />
+      </tr>
+    )
+  }
+
+  const lTotal = rows.reduce(
+    (sum, tx) => sum + ('vnAmount' in tx ? tx.vnAmount : 0),
+    0,
+  )
+  const giUsdtTotal = rows.reduce((sum, tx) => {
+    if (!('payCurrency' in tx) || tx.payCurrency !== 'usdt') return sum
+    return sum + vnTradePayAmount(tx)
+  }, 0)
+  const giTwdTotal = rows.reduce((sum, tx) => {
+    if (!('payCurrency' in tx) || tx.payCurrency !== 'twd') return sum
+    return sum + vnTradePayAmount(tx)
+  }, 0)
+  const vol = summarizeSettlementTrades(rows)
+  const rAvg = code === 'IV' ? vol.buyVnAvg : vol.sellVnAvg
+  const pfParts = code === 'OV' ? rows.map((tx) => sellProfitById?.[tx.id]) : []
+  const hasPf = pfParts.some((p) => p != null)
+  const pfSum = hasPf ? sumRoundedProfitParts(...pfParts) : null
 
   return (
-    <tr className="border-b border-slate-100 bg-slate-50/60">
-      <td className="py-1 pr-1 font-medium tabular-nums text-slate-800">{display}</td>
-      <td className="py-1 pr-1" colSpan={4} />
+    <tr className={footerRowClass}>
+      <td className="py-1 pr-1 font-semibold tabular-nums text-slate-800">
+        {formatVnTableCompact(lTotal)}
+      </td>
+      <td className="py-1 pr-1 font-semibold tabular-nums text-slate-800">
+        <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
+          {giUsdtTotal > 0 ? (
+            <span>
+              {formatNumber(giUsdtTotal)}
+              <span className="ml-0.5 text-[9px] font-medium text-slate-500">P</span>
+            </span>
+          ) : null}
+          {giTwdTotal > 0 ? (
+            <span>
+              {formatTwdTableCompact(giTwdTotal)}
+              <span className="ml-0.5 text-[9px] font-medium text-slate-500">T</span>
+            </span>
+          ) : null}
+          {giUsdtTotal <= 0 && giTwdTotal <= 0 ? '—' : null}
+        </span>
+      </td>
+      <td className="py-1 pr-1 font-semibold tabular-nums text-slate-800">
+        {rAvg != null ? formatVnTradeRateDisplay(rAvg) : '—'}
+      </td>
+      <td
+        className={`py-1 pr-1 font-semibold tabular-nums ${
+          pfSum == null ? 'text-slate-300' : profitColorClass(pfSum)
+        }`}
+      >
+        {pfSum == null ? '' : formatProfitFromParts(...pfParts)}
+      </td>
+      <td />
     </tr>
   )
 }
@@ -4035,11 +4115,14 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
   }
 
   const cumulativeTotalProfit = settlements.reduce((sum, item) => sum + item.dayTotalProfit, 0)
-  const cumulativeUsdtProfit = settlements.reduce(
-    (sum, item) => sum + (item.dayUsdtProfit ?? 0),
-    0,
-  )
-  const cumulativeVnProfit = settlements.reduce((sum, item) => sum + (item.dayVnProfit ?? 0), 0)
+  const cumulativeUsdtProfit = settlements.reduce((sum, item) => {
+    const split = settlementDisplaySplitProfits(item)
+    return sum + (split.usdt ?? 0)
+  }, 0)
+  const cumulativeVnProfit = settlements.reduce((sum, item) => {
+    const split = settlementDisplaySplitProfits(item)
+    return sum + (split.vn ?? 0)
+  }, 0)
   const showCumulativeSplit = settlements.some(settlementHasSplitProfit)
 
   if (settlements.length === 0) {
@@ -4082,6 +4165,7 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
 
       {settlements.map((item) => {
         const displayAssets = totalAssetsFromSettlement(item)
+        const displaySplit = settlementDisplaySplitProfits(item)
         const isExpanded = expandedIds.has(item.id)
         const trades = item.trades
           ? [...item.trades].sort(compareTradeListOrder)
@@ -4137,9 +4221,14 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                   usdtBalance={item.usdtBalance}
                   vnBalance={item.vnBalance}
                   displayAssets={displayAssets}
-                  dayUsdtProfit={item.dayUsdtProfit}
-                  dayVnProfit={item.dayVnProfit}
-                  dayTotalProfit={item.dayTotalProfit}
+                  dayUsdtProfit={displaySplit.usdt}
+                  dayVnProfit={displaySplit.vn}
+                  dayTotalProfit={
+                    displaySplit.usdt !== undefined && displaySplit.vn !== undefined
+                      ? sumRoundedProfitParts(displaySplit.usdt, displaySplit.vn) *
+                        10_000
+                      : item.dayTotalProfit
+                  }
                   usdtCostAvg={item.dayBuyAvgTwd ?? item.usdtInventoryAvgTwd}
                   vnTwdRate={item.dayBuyAvgVn ?? item.dayVnTwdRate}
                   vnUsdtRate={item.dayVnUsdtRate}
@@ -4318,7 +4407,11 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                                 </tr>
                               )
                             })}
-                            <SettlementGroupLTotal rows={group.rows} />
+                            <SettlementGroupFooter
+                              code={group.code}
+                              rows={group.rows}
+                              sellProfitById={item.sellProfitById}
+                            />
                           </Fragment>
                         ))}
                       </tbody>
