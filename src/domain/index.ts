@@ -39,6 +39,7 @@ import {
   formatTwdTableCompact,
   formatVnTableCompact,
   formatVnTradeRateDisplay,
+  compareTradeListOrder,
   resolveSettlementArchiveDate,
   resolveTradeDate,
   roundUsdtCostRate,
@@ -1629,6 +1630,75 @@ export function summarizeSettlementTrades(
     buyVnAvg: buyVn.avg,
     sellVnAvg: sellVn.avg,
   }
+}
+
+export type SettlementTradePane = 'IE' | 'OE' | 'IV' | 'OV'
+
+export type SettlementTradeSearchHit = {
+  settlementId: string
+  settlementDateLabel: string
+  settledAt: Date
+  /** 月結封存來源；現期 SET 為 null */
+  monthlyClosePeriodLabel: string | null
+  pane: SettlementTradePane
+  trade: UsdtTransaction | VnTradeTransaction
+  profit: number | null
+}
+
+export function settlementTradePane(
+  tx: UsdtTransaction | VnTradeTransaction,
+): SettlementTradePane {
+  if (isUsdtTransaction(tx)) return tx.type === 'buy' ? 'IE' : 'OE'
+  return tx.type === 'buy' ? 'IV' : 'OV'
+}
+
+/** 依備註關鍵字搜尋 SET 封存交易（含現期 SET 與月結內 tradeSettlements） */
+export function searchSettlementTradesByNote(
+  settlements: DailySettlement[],
+  monthlyCloses: MonthlyClose[],
+  query: string,
+): SettlementTradeSearchHit[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+
+  const hits: SettlementTradeSearchHit[] = []
+
+  const scanSettlement = (
+    settlement: DailySettlement,
+    monthlyClosePeriodLabel: string | null,
+  ) => {
+    for (const tx of settlement.trades ?? []) {
+      const note = tx.note?.trim() ?? ''
+      if (!note.toLowerCase().includes(q)) continue
+      hits.push({
+        settlementId: settlement.id,
+        settlementDateLabel: settlement.dateLabel,
+        settledAt: settlement.settledAt,
+        monthlyClosePeriodLabel,
+        pane: settlementTradePane(tx),
+        trade: tx,
+        profit:
+          tx.type === 'sell' ? (settlement.sellProfitById?.[tx.id] ?? null) : null,
+      })
+    }
+  }
+
+  for (const settlement of settlements) {
+    scanSettlement(settlement, null)
+  }
+  for (const close of monthlyCloses) {
+    for (const settlement of close.tradeSettlements ?? []) {
+      scanSettlement(settlement, close.periodLabel)
+    }
+  }
+
+  hits.sort((a, b) => {
+    const bySettle = b.settledAt.getTime() - a.settledAt.getTime()
+    if (bySettle !== 0) return bySettle
+    return compareTradeListOrder(a.trade, b.trade)
+  })
+
+  return hits
 }
 
 /**

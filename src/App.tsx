@@ -142,6 +142,7 @@ import {
   OpeningBalanceModal,
   OpeningUsdtCabinPickModal,
   SettlementsPanel,
+  SettlementNoteSearchPanel,
   TradeForm,
   TransactionTable,
   UndoBanner,
@@ -154,6 +155,7 @@ const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'notes'>, string> = {
   expenses: 'EXP',
   cumulative_expenses: 'EXP.SUM',
   settlements: 'SET.',
+  set_search: 'SRCH',
   month: '月結',
   monthly: 'SETUP',
 }
@@ -2791,6 +2793,11 @@ function App() {
             <>
               <SettlementsPanel settlements={settlements} />
             </>
+          ) : activeTab === 'set_search' ? (
+            <SettlementNoteSearchPanel
+              settlements={settlements}
+              monthlyCloses={monthlyCloses}
+            />
           ) : activeTab === 'month' ? (
             <MonthlyArchivePanel
               closes={monthlyCloses}

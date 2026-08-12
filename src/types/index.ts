@@ -22,6 +22,7 @@ export type PageTab =
   | 'expenses'
   | 'cumulative_expenses'
   | 'settlements'
+  | 'set_search'
   | 'month'
   | 'monthly'
   | 'notes'
@@ -613,6 +614,11 @@ export interface ExpenseTableProps {
 
 export interface SettlementsPanelProps {
   settlements: DailySettlement[]
+}
+
+export interface SettlementNoteSearchPanelProps {
+  settlements: DailySettlement[]
+  monthlyCloses: MonthlyClose[]
 }
 
 export interface SettlementRecordBodyProps {

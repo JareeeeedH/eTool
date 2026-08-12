@@ -17,6 +17,7 @@ import type {
   NotebookPanelProps,
   OpeningBalanceModalProps,
   SettlementsPanelProps,
+  SettlementNoteSearchPanelProps,
   ExpenseSettlementsPanelProps,
   SettlementRecordBodyProps,
   TradeSettleConfirmSummary,
@@ -31,6 +32,7 @@ import type {
   PageTab,
   TotalAssetsTwd,
   UsdtTransaction,
+  VnTradeTransaction,
   VnPayCurrency,
   UsdtCabin,
   TwdCabinNoteKey,
@@ -120,6 +122,7 @@ import {
   calculateBuyDayAverageRate,
   isUsdtTransaction,
   normalizeMonthlyCloseRecord,
+  searchSettlementTradesByNote,
   settlementHasSplitProfit,
   summarizeSettlementTrades,
   totalAssetsFromSettlement,
@@ -3857,6 +3860,168 @@ export function CollapsibleSection({
   )
 }
 
+const SETTLEMENT_TRADE_PANE_TONE: Record<'IE' | 'OE' | 'IV' | 'OV', string> = {
+  IE: 'text-emerald-700',
+  OE: 'text-rose-700',
+  IV: 'text-sky-700',
+  OV: 'text-amber-700',
+}
+
+function sumSettlementGroupL(rows: Array<UsdtTransaction | VnTradeTransaction>): number {
+  return rows.reduce(
+    (sum, tx) => sum + (isUsdtTransaction(tx) ? tx.usdtAmount : tx.vnAmount),
+    0,
+  )
+}
+
+function SettlementGroupLTotal({
+  rows,
+}: {
+  rows: Array<UsdtTransaction | VnTradeTransaction>
+}) {
+  if (rows.length === 0) return null
+  const total = sumSettlementGroupL(rows)
+  if (total <= 0) return null
+
+  const display = isUsdtTransaction(rows[0])
+    ? formatNumber(total)
+    : formatVnTableCompact(total)
+
+  return (
+    <tr className="border-b border-slate-100 bg-slate-50/60">
+      <td className="py-1 pr-1 font-medium tabular-nums text-slate-800">{display}</td>
+      <td className="py-1 pr-1" colSpan={4} />
+    </tr>
+  )
+}
+
+export function SettlementNoteSearchPanel({
+  settlements,
+  monthlyCloses,
+}: SettlementNoteSearchPanelProps) {
+  const [query, setQuery] = useState('')
+
+  const hits = useMemo(
+    () => searchSettlementTradesByNote(settlements, monthlyCloses, query),
+    [settlements, monthlyCloses, query],
+  )
+
+  const trimmedQuery = query.trim()
+
+  return (
+    <div className="mx-auto w-full max-w-3xl space-y-3">
+      <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm sm:px-4">
+        <input
+          id="settlement-note-search"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="備註"
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </div>
+
+      {trimmedQuery === '' ? null : hits.length === 0 ? (
+        <p className="rounded-lg border border-slate-200 bg-white py-10 text-center text-xs text-slate-400">
+          無符合「{trimmedQuery}」的交易
+        </p>
+      ) : (
+        <>
+          <div className="rounded-lg border border-indigo-200/80 bg-indigo-50/70 px-3 py-2 shadow-sm">
+            <p className="text-xs font-medium text-indigo-900">
+              共 {hits.length} 筆
+              <span className="ml-1.5 font-normal text-indigo-700/80">「{trimmedQuery}」</span>
+            </p>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <table className="w-full min-w-[32rem] text-left text-[11px]">
+              <thead>
+                <tr className="border-b border-slate-100 text-slate-500">
+                  <th className="px-2 py-2 font-medium">SET</th>
+                  <th className="px-2 py-2 font-medium">類</th>
+                  <th className="px-2 py-2 font-medium">L</th>
+                  <th className="px-2 py-2 font-medium">GI</th>
+                  <th className="px-2 py-2 font-medium">R</th>
+                  <th className="px-2 py-2 font-medium">PF</th>
+                  <th className="px-2 py-2 font-medium">備註</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hits.map((hit) => {
+                  const tx = hit.trade
+                  const qty = isUsdtTransaction(tx)
+                    ? formatNumber(tx.usdtAmount)
+                    : formatVnTableCompact(tx.vnAmount)
+                  const pay = isUsdtTransaction(tx)
+                    ? formatTwdTableCompact(tx.fiatAmount)
+                    : tx.payCurrency === 'usdt'
+                      ? formatNumber(vnTradePayAmount(tx))
+                      : formatTwdTableCompact(vnTradePayAmount(tx))
+                  const rateText = isUsdtTransaction(tx)
+                    ? formatUsdtTradeRateDisplay(tx.rate)
+                    : formatVnTradeRateDisplay(vnTradeDisplayRate(tx))
+                  const note = tx.note?.trim() || '—'
+
+                  return (
+                    <tr
+                      key={`${hit.settlementId}-${tx.id}`}
+                      className="border-b border-slate-50 last:border-b-0"
+                    >
+                      <td className="px-2 py-1.5 align-top tabular-nums text-slate-700">
+                        <div className="font-medium text-slate-800">
+                          {formatSettlementDayLabel(hit.settlementDateLabel, hit.settledAt)}
+                        </div>
+                        {hit.monthlyClosePeriodLabel ? (
+                          <div className="mt-0.5 text-[9px] text-violet-600">
+                            {hit.monthlyClosePeriodLabel}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td
+                        className={`px-2 py-1.5 align-top text-[10px] font-semibold ${SETTLEMENT_TRADE_PANE_TONE[hit.pane]}`}
+                      >
+                        {hit.pane}
+                      </td>
+                      <td className="px-2 py-1.5 align-top tabular-nums text-slate-800">{qty}</td>
+                      <td className="px-2 py-1.5 align-top tabular-nums text-slate-700">
+                        {pay}
+                        {!isUsdtTransaction(tx) ? (
+                          <span className="ml-0.5 text-[9px] text-slate-400">
+                            {assetCode(tx.payCurrency)}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-2 py-1.5 align-top tabular-nums text-slate-600">
+                        {rateText}
+                      </td>
+                      <td
+                        className={`px-2 py-1.5 align-top tabular-nums ${
+                          hit.profit == null ? 'text-slate-300' : profitColorClass(hit.profit)
+                        }`}
+                      >
+                        {hit.profit == null ? '—' : formatProfit(hit.profit)}
+                      </td>
+                      <td
+                        className="max-w-[8rem] px-2 py-1.5 align-top font-medium text-slate-800"
+                        title={note}
+                      >
+                        {note}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
@@ -4153,6 +4318,7 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                                 </tr>
                               )
                             })}
+                            <SettlementGroupLTotal rows={group.rows} />
                           </Fragment>
                         ))}
                       </tbody>
@@ -5064,6 +5230,15 @@ export function AppNav({
       icon: (_active) => (
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+        </svg>
+      ),
+    },
+    {
+      tab: 'set_search',
+      label: 'SRCH',
+      icon: (_active) => (
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
         </svg>
       ),
     },

@@ -39,6 +39,7 @@ type PageTab =
   | 'expenses'
   | 'cumulative_expenses'
   | 'settlements'
+  | 'set_search'
   | 'month'
   | 'monthly'
   | 'notes'
@@ -741,6 +742,8 @@ function parsePersistedAppState(parsed: unknown): PersistedAppState | null {
   const activeTab: PageTab =
     parsed.activeTab === 'settlements'
       ? 'settlements'
+      : parsed.activeTab === 'set_search'
+        ? 'set_search'
       : parsed.activeTab === 'expenses'
         ? 'expenses'
         : parsed.activeTab === 'cumulative_expenses'

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type {
   Balances,
+  DailySettlement,
+  MonthlyClose,
   Transaction,
   UsdtInventoryCost,
   UsdtTransaction,
@@ -33,6 +35,8 @@ import {
   recalculateBalances,
   resolveUsdtSpendValidationError,
   resolveVnTwdLegValidationError,
+  searchSettlementTradesByNote,
+  settlementTradePane,
   transferUsdtBetweenCabins,
   validateTransactions,
 } from './index'
@@ -1223,5 +1227,115 @@ describe('結算日凍結 @ 利潤（本地 4 號情境）', () => {
     expect(rates.usdt.twd).toBeCloseTo(expectedU, 3)
     expect(rates.vnTwdRate).toBe(808.76)
     expect(rates.vnUsdtRate).toBe(26_209)
+  })
+})
+
+describe('searchSettlementTradesByNote', () => {
+  const settlementBase = {
+    twdBalance: 0,
+    usdtBalance: 0,
+    vnBalance: 0,
+    usdtInventoryAvgTwd: 32,
+    usdtInventoryAvgVn: null,
+    dayBuyAvgTwd: null,
+    dayBuyAvgVn: null,
+    totalAssetsTwd: 0,
+    totalAssetsTwdCash: 0,
+    totalAssetsUsdtInTwd: 0,
+    totalAssetsVnInTwd: 0,
+    dayVnTwdRate: null,
+    dayVnUsdtRate: null,
+    totalAssetsComplete: true,
+    totalAssetsMissingNotes: '',
+    transactionCount: 1,
+    dayTotalProfit: 0,
+  } satisfies Omit<DailySettlement, 'id' | 'settledAt' | 'dateLabel' | 'trades' | 'sellProfitById'>
+
+  it('matches note case-insensitively in current settlements', () => {
+    const trade: UsdtTransaction = {
+      id: 't1',
+      timestamp: at(10),
+      category: 'usdt',
+      type: 'buy',
+      fiatCurrency: 'twd',
+      usdtAmount: 1000,
+      fiatAmount: 32_000,
+      rate: 32,
+      note: 'Guo',
+    }
+    const settlements: DailySettlement[] = [
+      {
+        ...settlementBase,
+        id: 's1',
+        settledAt: at(12),
+        dateLabel: '10 12:00',
+        trades: [trade],
+      },
+    ]
+    const hits = searchSettlementTradesByNote(settlements, [], 'guo')
+    expect(hits).toHaveLength(1)
+    expect(hits[0]?.pane).toBe('IE')
+    expect(hits[0]?.trade.id).toBe('t1')
+  })
+
+  it('includes archived monthly tradeSettlements and sell profit', () => {
+    const sell: UsdtTransaction = {
+      id: 'oe1',
+      timestamp: at(11),
+      category: 'usdt',
+      type: 'sell',
+      fiatCurrency: 'twd',
+      usdtAmount: 500,
+      fiatAmount: 16_000,
+      rate: 32,
+      note: 'an',
+    }
+    const archived: DailySettlement = {
+      ...settlementBase,
+      id: 's2',
+      settledAt: at(13),
+      dateLabel: '9 22:27',
+      trades: [sell],
+      sellProfitById: { oe1: 1200 },
+    }
+    const monthlyCloses: MonthlyClose[] = [
+      {
+        id: 'mc1',
+        periodLabel: '7月',
+        closedAt: at(14),
+        actualStartDate: at(8),
+        actualEndDate: at(13),
+        grossProfit: 1200,
+        usdtProfit: 1200,
+        vnProfit: 0,
+        expenseTotal: 0,
+        netProfit: 1200,
+        expenseByCategory: {
+          fuel: 0,
+          parking: 0,
+          meal: 0,
+          traffic: 0,
+          other: 0,
+        },
+        openingTotalAssets: 0,
+        closingBalances: { twd: 0, usdt: 0, vn: 0 },
+        closingUsdtCost: { twd: 32, vn: null },
+        closingVnTwdRate: null,
+        closingVnUsdtRate: null,
+        closingTotalAssets: 0,
+        closingBookTotalAssets: 0,
+        tradeSettlements: [archived],
+        expenseSettlements: [],
+      },
+    ]
+    const hits = searchSettlementTradesByNote([], monthlyCloses, 'an')
+    expect(hits).toHaveLength(1)
+    expect(hits[0]?.monthlyClosePeriodLabel).toBe('7月')
+    expect(hits[0]?.profit).toBe(1200)
+    expect(settlementTradePane(sell)).toBe('OE')
+  })
+
+  it('returns empty for blank query', () => {
+    expect(searchSettlementTradesByNote([], [], '  ')).toEqual([])
   })
 })
