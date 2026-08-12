@@ -4230,7 +4230,7 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                       : item.dayTotalProfit
                   }
                   usdtCostAvg={item.dayBuyAvgTwd ?? item.usdtInventoryAvgTwd}
-                  vnTwdRate={item.dayBuyAvgVn ?? item.dayVnTwdRate}
+                  vnTwdRate={item.dayVnTwdRate}
                   vnUsdtRate={item.dayVnUsdtRate}
                 />
               </div>
