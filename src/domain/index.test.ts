@@ -1060,7 +1060,7 @@ describe('usdt cabin quantity (shared cost)', () => {
     expect(err).toBeNull()
   })
 
-  it('IE validateTransactions allows T overdraft; IV pay T still blocked', () => {
+  it('IE and IV pay T both allow T overdraft', () => {
     const opening: Balances = { twd: 50_000, usdt: 0, vn: 0 }
     const ieBuy: UsdtTransaction = {
       id: 'ie1',
@@ -1086,7 +1086,18 @@ describe('usdt cabin quantity (shared cost)', () => {
       usdtAmount: 0,
       rate: 10_000,
     }
-    expect(validateTransactions([ivBuyT], opening)).toBe('台幣庫存不足')
+    expect(validateTransactions([ivBuyT], opening)).toBeNull()
+    expect(recalculateBalances([ivBuyT], opening).twd).toBe(50_000 - 100_000)
+  })
+
+  it('allows IV buy VN paying T when current TWD is insufficient (T overdraft)', () => {
+    const err = resolveVnTwdLegValidationError('台幣庫存不足', {
+      type: 'buy',
+      balances: { twd: 10_000, usdt: 0, vn: 0 },
+      vnAmount: 1_000_000_000,
+      twdAmount: 100_000,
+    })
+    expect(err).toBeNull()
   })
 
   it('allows VN sell for TWD when history reports A cabin short', () => {
@@ -1099,14 +1110,29 @@ describe('usdt cabin quantity (shared cost)', () => {
     expect(err).toBeNull()
   })
 
-  it('still blocks VN sell for TWD when current VN is short', () => {
-    const err = resolveVnTwdLegValidationError('A 艙 USDT 不足', {
+  it('allows VN sell when current VN is insufficient (V overdraft)', () => {
+    const err = resolveVnTwdLegValidationError('VN 庫存不足', {
       type: 'sell',
       balances: { twd: 324_100, usdt: 18_209, vn: 10 },
       vnAmount: 28.14,
       twdAmount: 350,
     })
-    expect(err).toBe('VN 庫存不足')
+    expect(err).toBeNull()
+
+    const opening: Balances = { twd: 0, usdt: 0, vn: 10 }
+    const ov: VnTradeTransaction = {
+      id: 'ov1',
+      timestamp: at(12),
+      category: 'vn_trade',
+      type: 'sell',
+      payCurrency: 'twd',
+      vnAmount: 28.14,
+      twdAmount: 350,
+      usdtAmount: 0,
+      rate: 80_400,
+    }
+    expect(validateTransactions([ov], opening)).toBeNull()
+    expect(recalculateBalances([ov], opening).vn).toBeCloseTo(10 - 28.14)
   })
 
   it('assigns opening P increases to cabin A', () => {

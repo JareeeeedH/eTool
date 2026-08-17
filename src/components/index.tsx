@@ -2704,11 +2704,13 @@ export function VnTradeForm({
   const payNum = resolvedPreview?.pay ?? NaN
   const vnValid = !Number.isNaN(vnNum) && vnNum > 0
   const payValid = !Number.isNaN(payNum) && payNum > 0
+  const twdOverdraft =
+    type === 'buy' && payCurrency === 'twd' && payValid && payNum > balances.twd
   const payInsufficient =
     type === 'buy' &&
     payValid &&
-    (payCurrency === 'twd' ? payNum > balances.twd : payNum > balances.usdt)
-  const vnInsufficient = type === 'sell' && vnValid && vnNum > balances.vn
+    (payCurrency === 'usdt' ? payNum > balances.usdt : false)
+  const vnOverdraft = type === 'sell' && vnValid && vnNum > balances.vn
 
   let previewText: string | null = null
   let previewWarn = false
@@ -2716,16 +2718,19 @@ export function VnTradeForm({
     const payDisplay =
       payCurrency === 'usdt' ? formatNumber(payNum) : formatTwdTableCompact(payNum)
     if (type === 'buy') {
-      previewText = `−${payLabel} ${payDisplay} · +VN ${formatVnTableCompact(vnNum)}`
-      previewWarn =
-        payCurrency === 'twd' ? payNum > balances.twd : payNum > balances.usdt
+      previewText = twdOverdraft
+        ? `−${payLabel} ${payDisplay} · +VN ${formatVnTableCompact(vnNum)}（T 透支）`
+        : `−${payLabel} ${payDisplay} · +VN ${formatVnTableCompact(vnNum)}`
+      previewWarn = payCurrency === 'usdt' && payNum > balances.usdt
     } else {
-      previewText = `−VN ${formatVnTableCompact(vnNum)} · +${payLabel} ${payDisplay}`
-      previewWarn = vnNum > balances.vn
+      previewText = vnOverdraft
+        ? `−VN ${formatVnTableCompact(vnNum)} · +${payLabel} ${payDisplay}（V 透支）`
+        : `−VN ${formatVnTableCompact(vnNum)} · +${payLabel} ${payDisplay}`
+      previewWarn = false
     }
   }
 
-  const showVnHint = previewText || payInsufficient || vnInsufficient
+  const showVnHint = previewText || twdOverdraft || payInsufficient || vnOverdraft
 
   return (
     <>
@@ -2812,17 +2817,21 @@ export function VnTradeForm({
         {showVnHint && (
           <p
             className={`mt-0.5 text-[11px] tabular-nums ${
-              payInsufficient || vnInsufficient || previewWarn
+              payInsufficient || previewWarn
                 ? 'text-rose-600'
-                : 'text-slate-500'
+                : twdOverdraft || vnOverdraft
+                  ? 'text-amber-700'
+                  : 'text-slate-500'
             }`}
           >
             {previewText ??
-              (payInsufficient
-                ? `${payLabel} 餘額不足`
-                : vnInsufficient
-                  ? 'VN 餘額不足'
-                  : null)}
+              (twdOverdraft
+                ? '台幣將透支（允許）'
+                : vnOverdraft
+                  ? 'VN 將透支（允許）'
+                  : payInsufficient
+                    ? `${payLabel} 餘額不足`
+                    : null)}
           </p>
         )}
 

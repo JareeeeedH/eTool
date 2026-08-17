@@ -2478,9 +2478,7 @@ export function validateTransactions(
         return '請輸入有效的正數金額'
       }
       if (tx.type === 'buy') {
-        if (tx.payCurrency === 'twd' && tx.twdAmount > balances.twd) {
-          return '台幣庫存不足'
-        }
+        // IV 付 T 允許台幣透支（T 可為負）；付 P 仍檢查庫存／分艙
         if (tx.payCurrency === 'usdt') {
           if (tx.usdtAmount > balances.usdt) {
             return 'USDT 庫存不足'
@@ -2492,9 +2490,8 @@ export function validateTransactions(
           if (bAmt > 0 && bAmt > cabinB) return 'B 艙 USDT 不足'
           if (cAmt > 0 && cAmt > cabinC) return 'C 艙 USDT 不足'
         }
-      } else if (tx.vnAmount > balances.vn) {
-        return 'VN 庫存不足'
       }
+      // 賣 VN 允許透支（V 可為負）
       balances = applyVnTradeTransaction(balances, tx)
       const moved = usdtCabinSignedDeltas(tx)
       if (moved) {
@@ -2609,7 +2606,8 @@ export function resolveUsdtSpendValidationError(
 
 /**
  * VN 走台幣腿（買付 T／賣收 T）不碰 USDT 艙。
- * 歷史重播若因 USDT／分艙／無關水位失敗，改以目前 T 或 VN 檢查。
+ * 歷史重播若因 USDT／分艙／無關水位失敗，改以目前水位檢查。
+ * IV 買 VN 付 T 允許台幣透支；賣 VN 允許 V 透支。
  */
 export function resolveVnTwdLegValidationError(
   fullError: string | null,
@@ -2631,10 +2629,7 @@ export function resolveVnTwdLegValidationError(
 
   if (!isInventoryNoise) return fullError
 
-  if (options.type === 'buy') {
-    return options.twdAmount > options.balances.twd + 1e-9 ? '台幣庫存不足' : null
-  }
-  return options.vnAmount > options.balances.vn + 1e-9 ? 'VN 庫存不足' : null
+  return null
 }
 
 export function openingBalanceToForm(
