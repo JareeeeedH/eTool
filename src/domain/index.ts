@@ -113,7 +113,7 @@ import {
  * -----------------------------------------------------------------------------
  * - 買 U 表 footer：當日買單加權 ΣT÷ΣE（calculateBuyDayAverageRate），≠ 資產卡凍結 @
  * - 買 VN 日均：computeVnTwdCostAverageRate 等，≠ 資產卡凍結 @
- * - 總資產日間估值：floor(E × 前日U@)、floor(V ÷ 前日V@)
+ * - 總資產日間估值：floor(E × 前日U@)、floor(V ÷ 前日V@)；V 透支時為負估值
  *
  * -----------------------------------------------------------------------------
  * 精度
@@ -755,6 +755,20 @@ export function alignOpeningUsdtCabinsToSnapshot(
   )
 }
 
+/** VN 庫存以凍結 V@ 換算台幣估值；V=0 為 0，V<0 為負（透支負債）。 */
+function computeVnInTwdValuation(
+  vnBalance: number,
+  vnTwdRate: number | null,
+  missingNotes: string[],
+): number | null {
+  if (vnBalance === 0) return 0
+  if (vnTwdRate !== null && vnTwdRate > 0) {
+    return floorTwd(vnBalance / vnTwdRate)
+  }
+  missingNotes.push('VN 無料金均價')
+  return null
+}
+
 export function computeTotalAssetsTwd(
   balances: Balances,
   inventoryCost: UsdtInventoryCost,
@@ -784,19 +798,12 @@ export function computeTotalAssetsTwd(
     missingNotes.push('USDT 無 TWD 料金')
   }
 
-  let vnInTwd: number | null = null
-  if (balances.vn <= 0) {
-    vnInTwd = 0
-  } else if (vnPoolRate !== null) {
-    vnInTwd = floorTwd(balances.vn / vnPoolRate)
-  } else {
-    missingNotes.push('VN 無料金均價')
-  }
+  const vnInTwd = computeVnInTwdValuation(balances.vn, vnPoolRate, missingNotes)
 
   const total = twdCash + (usdtInTwd ?? 0) + (vnInTwd ?? 0)
   const isComplete =
     (balances.usdt <= 0 || usdtInTwd !== null) &&
-    (balances.vn <= 0 || vnInTwd !== null)
+    (balances.vn === 0 || vnInTwd !== null)
 
   return {
     twdCash,
@@ -832,19 +839,12 @@ export function computeTotalAssetsAtCostRates(
     missingNotes.push('USDT 無 TWD 料金')
   }
 
-  let vnInTwd: number | null = null
-  if (balances.vn <= 0) {
-    vnInTwd = 0
-  } else if (vnTwdRate !== null && vnTwdRate > 0) {
-    vnInTwd = floorTwd(balances.vn / vnTwdRate)
-  } else {
-    missingNotes.push('VN 無料金均價')
-  }
+  const vnInTwd = computeVnInTwdValuation(balances.vn, vnTwdRate, missingNotes)
 
   const total = twdCash + (usdtInTwd ?? 0) + (vnInTwd ?? 0)
   const isComplete =
     (balances.usdt <= 0 || usdtInTwd !== null) &&
-    (balances.vn <= 0 || vnInTwd !== null)
+    (balances.vn === 0 || vnInTwd !== null)
 
   return {
     twdCash,
@@ -2611,7 +2611,7 @@ export function resolveUsdtSpendValidationError(
  */
 export function resolveVnTwdLegValidationError(
   fullError: string | null,
-  options: {
+  _options: {
     type: TransactionType
     balances: Balances
     vnAmount: number

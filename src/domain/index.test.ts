@@ -24,6 +24,7 @@ import {
   computeSettleDayInventoryRates,
   computeSettleDayUsdtProfit,
   computeSettleDayVnProfit,
+  computeTotalAssetsAtCostRates,
   computeUsdtCabinBalances,
   computeUsdtSellProfitPreview,
   computeVnSellProfitPreview,
@@ -1160,6 +1161,58 @@ describe('usdt cabin quantity (shared cost)', () => {
   it('rejects opening P decrease when chosen cabin is short', () => {
     const current = { a: 30, b: 40, c: 30 }
     expect(applyOpeningUsdtDeltaToCabin(30, 40, current, -50, 'C', 50).ok).toBe(false)
+  })
+})
+
+describe('total assets valuation', () => {
+  it('values positive VN at frozen V@', () => {
+    const assets = computeTotalAssetsAtCostRates(
+      { twd: 100_000, usdt: 0, vn: 80_400 },
+      null,
+      80_400,
+      null,
+    )
+    expect(assets.vnInTwd).toBe(1)
+    expect(assets.total).toBe(100_001)
+    expect(assets.isComplete).toBe(true)
+  })
+
+  it('values negative VN as liability using frozen V@', () => {
+    const assets = computeTotalAssetsAtCostRates(
+      { twd: 868_900, usdt: 149_087, vn: -78_130_000 },
+      32.137,
+      80_400,
+      null,
+    )
+    expect(assets.vnInTwd).toBe(-971)
+    const usdtInTwd = Math.trunc(149_087 * 32.137)
+    expect(assets.usdtInTwd).toBe(usdtInTwd)
+    expect(assets.total).toBe(868_900 + usdtInTwd - 971)
+    expect(assets.isComplete).toBe(true)
+  })
+
+  it('marks incomplete when VN is short and V@ is missing', () => {
+    const assets = computeTotalAssetsAtCostRates(
+      { twd: 100_000, usdt: 0, vn: -1_000 },
+      null,
+      null,
+      null,
+    )
+    expect(assets.vnInTwd).toBeNull()
+    expect(assets.missingNotes).toContain('VN 無料金均價')
+    expect(assets.isComplete).toBe(false)
+    expect(assets.total).toBe(100_000)
+  })
+
+  it('treats zero VN as zero valuation without rate', () => {
+    const assets = computeTotalAssetsAtCostRates(
+      { twd: 50_000, usdt: 0, vn: 0 },
+      null,
+      null,
+      null,
+    )
+    expect(assets.vnInTwd).toBe(0)
+    expect(assets.isComplete).toBe(true)
   })
 })
 

@@ -749,7 +749,7 @@ export function DailyBalanceStrip({
   }, 0)
   const showUsdtCost = balances.usdt > 0 && inventoryCost.twd !== null
   const showVnRates =
-    balances.vn > 0 && (vnTwdRate !== null || vnUsdtRate !== null)
+    balances.vn !== 0 && (vnTwdRate !== null || vnUsdtRate !== null)
   const showUsdtCabinSplit = balances.usdt > 0
   const cabinTone: Record<UsdtCabin, string> = {
     A: 'bg-sky-50 text-sky-800 ring-sky-200',
@@ -877,10 +877,12 @@ export function DailyBalanceStrip({
             format={formatVnTableCompact}
             title={formatNumber(balances.vn)}
           />
-          {totalAssets.vnInTwd !== null && balances.vn > 0 && (
+          {totalAssets.vnInTwd !== null && balances.vn !== 0 && (
             <AnimatedAmount
               as="p"
-              className={`${BALANCE_SUB_CLASS} font-medium text-slate-500`}
+              className={`${BALANCE_SUB_CLASS} font-medium ${
+                balances.vn < 0 ? 'text-amber-700' : 'text-slate-500'
+              }`}
               value={totalAssets.vnInTwd}
               format={(n) => `≈T ${formatTwdTableCompact(n)}`}
               title={`兌換台幣 ${formatTwd(totalAssets.vnInTwd)}`}
@@ -3791,7 +3793,7 @@ export function SettlementRecordBody({
   ) : null
 
   const showVnCost =
-    vnBalance > 0 && (vnTwdRate != null || vnUsdtRate != null)
+    vnBalance !== 0 && (vnTwdRate != null || vnUsdtRate != null)
 
   const balanceBlock = (
     <>
