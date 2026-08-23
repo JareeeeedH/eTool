@@ -1636,6 +1636,16 @@ export function summarizeSettlementTrades(
   }
 }
 
+/** SET IV/OV 分組 footer：依付幣別各自加權均價（VN/付幣），避免 P/T 混算。 */
+export function summarizeVnRatesByPayCurrency(
+  txs: VnTradeTransaction[],
+): { usdt: number | null; twd: number | null } {
+  return {
+    usdt: weightedVnRate(txs.filter((tx) => tx.payCurrency === 'usdt')).avg,
+    twd: weightedVnRate(txs.filter((tx) => tx.payCurrency === 'twd')).avg,
+  }
+}
+
 export type SettlementTradePane = 'IE' | 'OE' | 'IV' | 'OV'
 
 export type SettlementTradeSearchHit = {
@@ -2630,6 +2640,180 @@ export function resolveVnTwdLegValidationError(
   if (!isInventoryNoise) return fullError
 
   return null
+}
+
+/** 自結算封存 closing 反推該日交易前的 opening 餘額。 */
+export function reverseBalancesFromTrades(
+  closing: Balances,
+  trades: Array<UsdtTransaction | VnTradeTransaction>,
+): Balances {
+  const b = { ...closing }
+  const sorted = [...trades].sort(
+    (a, b) => b.timestamp.getTime() - a.timestamp.getTime(),
+  )
+  for (const tx of sorted) {
+    if (isUsdtTransaction(tx)) {
+      if (tx.type === 'buy') {
+        b.twd += tx.fiatAmount
+        b.usdt -= tx.usdtAmount
+      } else {
+        b.usdt += tx.usdtAmount
+        b.twd -= tx.fiatAmount
+      }
+      continue
+    }
+    if (tx.type === 'buy') {
+      b.vn -= tx.vnAmount
+      if (tx.payCurrency === 'usdt') b.usdt += tx.usdtAmount
+      else b.twd += tx.twdAmount
+    } else {
+      b.vn += tx.vnAmount
+      if (tx.payCurrency === 'usdt') b.usdt -= tx.usdtAmount
+      else b.twd -= tx.twdAmount
+    }
+  }
+  return b
+}
+
+/**
+ * 依 SET 封存鏈還原「最新一筆日結前」的 opening（期初餘額／@／分艙）。
+ * settlements[0] 為最新；需至少保留一筆較舊 SET 才可靠還原 @。
+ */
+export function deriveOpeningBeforeLatestSettlement(settlements: DailySettlement[]): {
+  openingBalances: Balances
+  openingUsdtCost: UsdtInventoryCost
+  openingUsdtCabinA: number
+  openingUsdtCabinB: number
+  openingVnTwdRate: number | null
+  openingVnUsdtRate: number | null
+} {
+  const chrono = settlements.map(normalizeLoadedSettlement).reverse()
+  const oldest = chrono[0]
+  const oldestTrades = oldest.trades ?? []
+
+  let ob = reverseBalancesFromTrades(
+    {
+      twd: oldest.twdBalance,
+      usdt: oldest.usdtBalance,
+      vn: oldest.vnBalance,
+    },
+    oldestTrades,
+  )
+  const migrated = migrateUsdtCabinAttribution(ob, undefined, oldestTrades, undefined)
+  let cabinA = migrated.openingUsdtCabinA
+  let cabinB = migrated.openingUsdtCabinB
+
+  let openingUsdtCost: UsdtInventoryCost = {
+    twd: oldest.usdtInventoryAvgTwd,
+    vn: oldest.usdtInventoryAvgVn,
+  }
+  let openingVnTwdRate = oldest.dayVnTwdRate ?? null
+  let openingVnUsdtRate = oldest.dayVnUsdtRate ?? null
+
+  for (let i = 0; i < chrono.length - 1; i++) {
+    const s = chrono[i]
+    const trades = s.trades ?? []
+    const cabins = computeUsdtCabinBalances(ob, cabinA, trades, null, cabinB)
+    ob = {
+      twd: s.twdBalance,
+      usdt: s.usdtBalance,
+      vn: s.vnBalance,
+    }
+    cabinA = cabins.a
+    cabinB = cabins.b
+    openingUsdtCost = {
+      twd: s.usdtInventoryAvgTwd,
+      vn: s.usdtInventoryAvgVn,
+    }
+    openingVnTwdRate = s.dayVnTwdRate ?? null
+    openingVnUsdtRate = s.dayVnUsdtRate ?? null
+  }
+
+  return {
+    openingBalances: ob,
+    openingUsdtCost,
+    openingUsdtCabinA: cabinA,
+    openingUsdtCabinB: cabinB,
+    openingVnTwdRate,
+    openingVnUsdtRate,
+  }
+}
+
+export type RevertLatestTradeSettlementInput = {
+  transactions: Transaction[]
+  settlements: DailySettlement[]
+  openingBalances: Balances
+  openingUsdtCost: UsdtInventoryCost
+  openingUsdtCabinA: number
+  openingUsdtCabinB: number
+  openingVnTwdRate: number | null
+  openingVnUsdtRate: number | null
+  activeTab?: string
+}
+
+export type RevertLatestTradeSettlementResult =
+  | {
+      ok: true
+      restoredTradeCount: number
+      dateLabel: string
+      state: RevertLatestTradeSettlementInput & { settlements: DailySettlement[] }
+    }
+  | { ok: false; reason: string }
+
+/** 退回最新一筆交易 AL 日結：明細回 TRANS，opening 還原至該日前。 */
+export function revertLatestTradeSettlement(
+  state: RevertLatestTradeSettlementInput,
+): RevertLatestTradeSettlementResult {
+  if (state.settlements.length === 0) {
+    return { ok: false, reason: '無 SET 可退回' }
+  }
+
+  const normalizedSettlements = state.settlements.map(normalizeLoadedSettlement)
+  const latest = normalizedSettlements[0]
+  const restoredTrades = latest.trades ?? []
+  if (restoredTrades.length === 0) {
+    return { ok: false, reason: '最新 SET 無封存明細（舊資料無法自動退回）' }
+  }
+
+  const remainingSettlements = normalizedSettlements.slice(1)
+  const expenseTxs = filterExpenseTransactions(state.transactions)
+
+  const opening =
+    remainingSettlements.length > 0
+      ? deriveOpeningBeforeLatestSettlement(normalizedSettlements)
+      : {
+          openingBalances: reverseBalancesFromTrades(
+            {
+              twd: latest.twdBalance,
+              usdt: latest.usdtBalance,
+              vn: latest.vnBalance,
+            },
+            restoredTrades,
+          ),
+          openingUsdtCost: state.openingUsdtCost,
+          openingUsdtCabinA: state.openingUsdtCabinA,
+          openingUsdtCabinB: state.openingUsdtCabinB,
+          openingVnTwdRate: state.openingVnTwdRate,
+          openingVnUsdtRate: state.openingVnUsdtRate,
+        }
+
+  const transactions: Transaction[] = [
+    ...normalizeLoadedTransactions(restoredTrades),
+    ...expenseTxs,
+  ]
+
+  return {
+    ok: true,
+    restoredTradeCount: restoredTrades.length,
+    dateLabel: latest.dateLabel,
+    state: {
+      ...state,
+      ...opening,
+      transactions,
+      settlements: remainingSettlements,
+      activeTab: 'daily',
+    },
+  }
 }
 
 export function openingBalanceToForm(

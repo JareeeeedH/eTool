@@ -125,11 +125,12 @@ import {
   calculateAverageRate,
   calculateBuyDayAverageRate,
   isUsdtTransaction,
+  isVnTradeTransaction,
   normalizeMonthlyCloseRecord,
   searchSettlementTradesByNote,
   settlementHasSplitProfit,
   settlementDisplaySplitProfits,
-  summarizeSettlementTrades,
+  summarizeVnRatesByPayCurrency,
   totalAssetsFromSettlement,
   transferUsdtBetweenCabins,
   vnTradeDisplayRate,
@@ -3985,8 +3986,11 @@ function SettlementGroupFooter({
     if (!('payCurrency' in tx) || tx.payCurrency !== 'twd') return sum
     return sum + vnTradePayAmount(tx)
   }, 0)
-  const vol = summarizeSettlementTrades(rows)
-  const rAvg = code === 'IV' ? vol.buyVnAvg : vol.sellVnAvg
+  const vnRows = rows.filter(isVnTradeTransaction)
+  const rByPay = summarizeVnRatesByPayCurrency(vnRows)
+  const hasBothPay =
+    vnRows.some((tx) => tx.payCurrency === 'usdt') &&
+    vnRows.some((tx) => tx.payCurrency === 'twd')
   const pfParts = code === 'OV' ? rows.map((tx) => sellProfitById?.[tx.id]) : []
   const hasPf = pfParts.some((p) => p != null)
   const pfSum = hasPf ? sumRoundedProfitParts(...pfParts) : null
@@ -4016,7 +4020,26 @@ function SettlementGroupFooter({
           </span>
         </td>
         <td className="py-1.5 pr-2 font-semibold tabular-nums text-slate-800">
-          {rAvg != null ? formatVnTradeRateDisplay(rAvg) : '—'}
+          {hasBothPay ? (
+            <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
+              {rByPay.usdt != null ? (
+                <span>
+                  {formatVnTradeRateDisplay(rByPay.usdt)}
+                  <span className="ml-0.5 text-[9px] font-medium text-slate-500">/P</span>
+                </span>
+              ) : null}
+              {rByPay.twd != null ? (
+                <span>
+                  {formatVnTradeRateDisplay(rByPay.twd)}
+                  <span className="ml-0.5 text-[9px] font-medium text-slate-500">/T</span>
+                </span>
+              ) : null}
+            </span>
+          ) : rByPay.usdt != null || rByPay.twd != null ? (
+            formatVnTradeRateDisplay(rByPay.usdt ?? rByPay.twd!)
+          ) : (
+            '—'
+          )}
         </td>
         <td
           className={`py-1.5 pr-2 font-semibold tabular-nums ${

@@ -38,6 +38,7 @@ import {
   resolveVnTwdLegValidationError,
   searchSettlementTradesByNote,
   settlementTradePane,
+  summarizeVnRatesByPayCurrency,
   transferUsdtBetweenCabins,
   validateTransactions,
   settlementDisplaySplitProfits,
@@ -1161,6 +1162,38 @@ describe('usdt cabin quantity (shared cost)', () => {
   it('rejects opening P decrease when chosen cabin is short', () => {
     const current = { a: 30, b: 40, c: 30 }
     expect(applyOpeningUsdtDeltaToCabin(30, 40, current, -50, 'C', 50).ok).toBe(false)
+  })
+})
+
+describe('SET VN rates by pay currency', () => {
+  it('returns separate P and T averages for mixed IV rows', () => {
+    const txs: VnTradeTransaction[] = [
+      {
+        id: 'iv-p',
+        timestamp: at(10),
+        category: 'vn_trade',
+        type: 'buy',
+        payCurrency: 'usdt',
+        vnAmount: 25962.79 * 11_555,
+        twdAmount: 0,
+        usdtAmount: 11_555,
+        rate: 25_962.79,
+      },
+      {
+        id: 'iv-t',
+        timestamp: at(11),
+        category: 'vn_trade',
+        type: 'buy',
+        payCurrency: 'twd',
+        vnAmount: 813.01 * 984_000,
+        twdAmount: 984_000,
+        usdtAmount: 0,
+        rate: 813.01,
+      },
+    ]
+    const rates = summarizeVnRatesByPayCurrency(txs)
+    expect(rates.usdt).toBe(25_962.79)
+    expect(rates.twd).toBe(813.01)
   })
 })
 
