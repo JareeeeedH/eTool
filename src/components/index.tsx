@@ -4181,8 +4181,12 @@ export function SettlementNoteSearchPanel({
   )
 }
 
-export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
+export function SettlementsPanel({
+  settlements,
+  onRevertLatest,
+}: SettlementsPanelProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const latestSettlementId = settlements[0]?.id ?? null
 
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
@@ -4280,6 +4284,11 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
           item.dateLabel || formatSettlementDateTime(item.settledAt),
           item.settledAt,
         )
+        const isLatest = item.id === latestSettlementId
+        const canRevertLatest =
+          isLatest &&
+          Boolean(onRevertLatest) &&
+          Boolean(item.trades && item.trades.length > 0)
 
         return (
           <article
@@ -4427,6 +4436,20 @@ export function SettlementsPanel({ settlements }: SettlementsPanelProps) {
                         ))}
                       </tbody>
                     </table>
+                    {canRevertLatest ? (
+                      <div className="mt-2.5 flex justify-end border-t border-slate-100 pt-2.5">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onRevertLatest?.()
+                          }}
+                          className="rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-amber-800 transition hover:bg-amber-100"
+                        >
+                          退回 TRANS
+                        </button>
+                      </div>
+                    ) : null}
                   </>
                 )}
               </div>

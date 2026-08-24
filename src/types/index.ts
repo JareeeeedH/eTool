@@ -670,6 +670,8 @@ export interface ExpenseTableProps {
 
 export interface SettlementsPanelProps {
   settlements: DailySettlement[]
+  /** 僅最新一筆 SET 展開後顯示：退回結帳前（明細回 TRANS） */
+  onRevertLatest?: () => void
 }
 
 export interface SettlementNoteSearchPanelProps {

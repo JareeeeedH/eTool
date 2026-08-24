@@ -90,6 +90,7 @@ import {
   validateTransactions,
   resolveUsdtSpendValidationError,
   resolveVnTwdLegValidationError,
+  revertLatestTradeSettlement,
   balanceImpactFromCumulativeExpense,
   computeDayExpenseTwdCashTotal,
   computeDayExpenseUsdtTotal,
@@ -1876,6 +1877,88 @@ function App() {
     setUndoMessage('')
   }
 
+  const executeRevertLatestSettlement = () => {
+    const snapshot = createSnapshot()
+    const result = revertLatestTradeSettlement({
+      transactions,
+      settlements,
+      openingBalances,
+      openingUsdtCost,
+      openingUsdtCabinA,
+      openingUsdtCabinB,
+      openingVnTwdRate,
+      openingVnUsdtRate,
+      activeTab,
+    })
+    if (!result.ok) {
+      setConfirmDialog({
+        title: '',
+        lines: [result.reason],
+        confirmLabel: 'OK',
+        variant: 'primary',
+        alertOnly: true,
+        onConfirm: () => setConfirmDialog(null),
+      })
+      return
+    }
+
+    const next = result.state
+    setTransactions(next.transactions)
+    setOpeningBalances(next.openingBalances)
+    setOpeningUsdtCost(next.openingUsdtCost)
+    setOpeningUsdtCabinA(next.openingUsdtCabinA)
+    setOpeningUsdtCabinB(next.openingUsdtCabinB)
+    setOpeningVnTwdRate(next.openingVnTwdRate)
+    setOpeningVnUsdtRate(next.openingVnUsdtRate)
+    setSettlements(next.settlements)
+    resetBuyForm()
+    resetSellForm()
+    resetVnBuyForm()
+    resetVnSellForm()
+    resetExpenseForm()
+    setEditingId(null)
+    setEditingCategory(null)
+    setActiveTab('daily')
+    setUndoSnapshot(snapshot)
+    setUndoMessage(`已退回 ${result.dateLabel}（${result.restoredTradeCount} 筆回 TRANS）`)
+  }
+
+  const handleRevertLatestSettlement = () => {
+    const latest = settlements[0]
+    if (!latest) return
+    const tradeCount = latest.trades?.length ?? 0
+    if (tradeCount === 0) {
+      setConfirmDialog({
+        title: '',
+        lines: ['最新 SET 無封存明細，無法退回'],
+        confirmLabel: 'OK',
+        variant: 'primary',
+        alertOnly: true,
+        onConfirm: () => setConfirmDialog(null),
+      })
+      return
+    }
+    const pendingTradeCount = tradeTransactions.length
+    const lines = [
+      `退回 ${latest.dateLabel}`,
+      `${tradeCount} 筆明細回 TRANS`,
+    ]
+    if (pendingTradeCount > 0) {
+      lines.push(`將清空當前 TRANS ${pendingTradeCount} 筆`)
+    }
+    setConfirmDialog({
+      title: '',
+      lines,
+      cancelLabel: 'C',
+      confirmLabel: '退回',
+      variant: 'danger',
+      onConfirm: () => {
+        setConfirmDialog(null)
+        executeRevertLatestSettlement()
+      },
+    })
+  }
+
   const dismissUndo = () => {
     setUndoSnapshot(null)
     setUndoMessage('')
@@ -2796,7 +2879,10 @@ function App() {
             </div>
           ) : activeTab === 'settlements' ? (
             <>
-              <SettlementsPanel settlements={settlements} />
+              <SettlementsPanel
+                settlements={settlements}
+                onRevertLatest={handleRevertLatestSettlement}
+              />
             </>
           ) : activeTab === 'set_search' ? (
             <SettlementNoteSearchPanel
