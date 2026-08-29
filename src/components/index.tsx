@@ -85,6 +85,7 @@ import {
   assetCode,
   formatNumber,
   formatArchiveDateRange,
+  formatMonthlyPeriodMonth,
   formatProfit,
   formatProfitFromParts,
   sumRoundedProfitParts,
@@ -3451,7 +3452,7 @@ export function ExpensePayCurrencyToggle({
             : 'text-slate-600 hover:text-sky-700'
         }`}
       >
-        U
+        P
       </button>
     </div>
   )
@@ -3495,7 +3496,7 @@ export function ExpenseForm({
           disabled={disabled}
           onChange={(e) => onAmountChange(e.target.value)}
           className={`w-[5rem] shrink-0 ${EXPENSE_INPUT_CLASS}`}
-          placeholder={payCurrency === 'usdt' ? 'U' : 'T'}
+          placeholder={payCurrency === 'usdt' ? assetCode('usdt') : 'T'}
           aria-label={payCurrency === 'usdt' ? '金額 USDT' : '金額台幣（萬）'}
         />
         <input
@@ -3546,7 +3547,11 @@ export function ExpensePageSummary({ transactions, onReconcile }: ExpensePageSum
     <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 border-t border-slate-100 bg-slate-50/60 px-3 py-2">
       <span className="flex flex-wrap items-center justify-end gap-x-2 text-sm font-semibold tabular-nums tracking-tight text-rose-600">
         {twdCash > 0 && <span>−{formatTwdTableCompact(twdCash)} T</span>}
-        {usdtTotal > 0 && <span>−{formatNumber(usdtTotal)} U</span>}
+        {usdtTotal > 0 && (
+          <span>
+            −{formatNumber(usdtTotal)} {assetCode('usdt')}
+          </span>
+        )}
         {twdCash <= 0 && usdtTotal <= 0 && (
           <span>
             −{formatTwdTableCompact(transactions.reduce((s, tx) => s + tx.amountTwd, 0))}
@@ -3704,7 +3709,7 @@ export function ExpenseTable({
               {isUsdt ? (
                 <>
                   <span>−{formatNumber(tx.amountUsdt ?? 0)}</span>
-                  <span className="text-[9px] font-semibold text-sky-600">U</span>
+                  <span className="text-[9px] font-semibold text-sky-600">{assetCode('usdt')}</span>
                 </>
               ) : (
                 <>
@@ -4558,7 +4563,7 @@ export function ExpenseSettlementsPanel({ settlements }: ExpenseSettlementsPanel
                         <td className="py-1 text-right tabular-nums text-rose-700">
                           {row.payCurrency === 'usdt' ? (
                             <>
-                              −{formatNumber(row.amountUsdt ?? 0)} U
+                              −{formatNumber(row.amountUsdt ?? 0)} {assetCode('usdt')}
                               {row.amountTwd > 0 ? (
                                 <span className="ml-1 text-[10px] text-slate-400">
                                   ≈T {formatTwd(row.amountTwd)}
@@ -4807,7 +4812,7 @@ export function CumulativeExpensesPanel({
                     >
                       {item.payCurrency === 'usdt' ? (
                         <>
-                          −{formatNumber(item.amountUsdt ?? 0)} U
+                          −{formatNumber(item.amountUsdt ?? 0)} {assetCode('usdt')}
                         </>
                       ) : (
                         <>−{formatTwdTableCompact(item.amountTwd)}</>
@@ -5172,9 +5177,7 @@ export function MonthlyArchivePanel({
         </button>
 
         <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-            利潤
-          </p>
+          <p className="text-[10px] font-semibold tracking-wide text-slate-400">pf</p>
           <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-2 text-xs tabular-nums">
             <span className={profitColorClass(resolved.usdtProfit)}>
               P {formatProfit(resolved.usdtProfit)}
@@ -5261,7 +5264,9 @@ export function MonthlyArchivePanel({
             className="flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left shadow-sm transition hover:bg-slate-50"
           >
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-800">{resolved.periodLabel}</p>
+              <p className="text-sm font-semibold text-slate-800">
+                {formatMonthlyPeriodMonth(resolved.actualEndDate, resolved.periodLabel)}
+              </p>
               <p className="mt-0.5 text-[10px] tabular-nums text-slate-500">
                 {formatArchiveDateRange(resolved.actualStartDate, resolved.actualEndDate)}
                 {' · '}
@@ -5390,7 +5395,7 @@ export function AppNav({
     },
     {
       tab: 'month',
-      label: '月結',
+      label: 'M(AL)',
       icon: (_active) => (
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5M7.5 12h9" />

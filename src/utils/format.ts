@@ -530,3 +530,16 @@ export function formatArchiveDateRange(start: Date | null, end: Date | null): st
   const endLabel = formatSettlementDate(end)
   return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`
 }
+
+/** M(AL) 列表期別：只顯示月份數字（如 7） */
+export function formatMonthlyPeriodMonth(
+  endDate: Date | null | undefined,
+  periodLabel?: string,
+): string {
+  if (endDate) return String(endDate.getMonth() + 1)
+  if (periodLabel) {
+    const m = periodLabel.match(/^(\d{1,2})/)
+    if (m) return m[1]
+  }
+  return periodLabel ?? ''
+}

@@ -689,6 +689,62 @@ export function normalizeUsdtCabinSnapshot(
 }
 
 /**
+ * 日結 AL 後凍結分艙：將當前 A/B/C 絕對量寫入 opening 分艙與 snapshot。
+ * 結算後交易流水清空，須能靠 opening 還原同一分艙（含 ADJ 後結果）。
+ */
+export function freezeUsdtCabinsAtSettlement(
+  totalUsdt: number,
+  cabins: { a: number; b: number; c: number },
+): {
+  openingUsdtCabinA: number
+  openingUsdtCabinB: number
+  usdtCabinSnapshot: { a: number; b: number; c: number }
+} {
+  const usdtCabinSnapshot = normalizeUsdtCabinSnapshot(
+    totalUsdt,
+    cabins.a,
+    cabins.b,
+    cabins.c,
+  )
+  return {
+    openingUsdtCabinA: usdtCabinSnapshot.a,
+    openingUsdtCabinB: usdtCabinSnapshot.b,
+    usdtCabinSnapshot,
+  }
+}
+
+/** 模擬 AL：結算前後分艙應一致（僅保留開銷流水）。 */
+export function simulateCabinFreezeAfterTradeSettle(
+  openingBalances: Balances,
+  openingUsdtCabinA: number,
+  openingUsdtCabinB: number,
+  transactions: Transaction[],
+  lastTradeSettledAt: Date | null = null,
+): {
+  before: { a: number; b: number; c: number }
+  after: { a: number; b: number; c: number }
+  frozen: ReturnType<typeof freezeUsdtCabinsAtSettlement>
+} {
+  const before = computeUsdtCabinBalances(
+    openingBalances,
+    openingUsdtCabinA,
+    transactions,
+    lastTradeSettledAt,
+    openingUsdtCabinB,
+  )
+  const balances = recalculateBalances(transactions, openingBalances, lastTradeSettledAt)
+  const frozen = freezeUsdtCabinsAtSettlement(balances.usdt, before)
+  const after = computeUsdtCabinBalances(
+    balances,
+    frozen.openingUsdtCabinA,
+    filterExpenseTransactions(transactions),
+    new Date(),
+    frozen.openingUsdtCabinB,
+  )
+  return { before, after, frozen }
+}
+
+/**
  * A/B/C 內部互轉：從出倉轉數量到收倉，總量不變。
  * 成功回傳新餘額；失敗回傳錯誤訊息。
  */

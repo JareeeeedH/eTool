@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createNoteAsync, deleteNoteAsync, loadNotesAsync, updateNoteAsync } from './api/notes'
 import {
   loadPersistedAppStateAsync,
@@ -82,6 +82,7 @@ import {
   normalizeVnTradeTransaction,
   openingBalanceToForm,
   alignOpeningUsdtCabinsToSnapshot,
+  freezeUsdtCabinsAtSettlement,
   recalculateBalances,
   suggestMonthlyPeriodLabel,
   resolveCabinAAmount,
@@ -157,7 +158,7 @@ const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'notes'>, string> = {
   cumulative_expenses: 'EXP.SUM',
   settlements: 'SET.',
   set_search: 'SRCH',
-  month: '月結',
+  month: 'M(AL)',
   monthly: 'SETUP',
 }
 
@@ -211,6 +212,8 @@ function App() {
   const [ready, setReady] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const persistReadyRef = useRef(false)
+  const persistGenRef = useRef(0)
+  const persistChainRef = useRef(Promise.resolve(true))
 
   const [activeTab, setActiveTab] = useState<PageTab>('daily')
   const [dailyWorkTab, setDailyWorkTab] = useState<DailyWorkTab>('usdt')
@@ -352,15 +355,23 @@ function App() {
               data.openingBalances,
               settledAt,
             ).usdt
-            const aligned = alignOpeningUsdtCabinsToSnapshot(
-              nextOpeningA,
-              nextOpeningB,
-              currentCabins,
-              data.usdtCabinSnapshot,
-              totalUsdt,
-            )
-            nextOpeningA = aligned.a
-            nextOpeningB = aligned.b
+            const cabinSum = currentCabins.a + currentCabins.b + currentCabins.c
+            const openingCabinBroken =
+              Math.abs(cabinSum - totalUsdt) > 1e-3 ||
+              currentCabins.a < -1e-6 ||
+              currentCabins.b < -1e-6 ||
+              currentCabins.c < -1e-6
+            if (openingCabinBroken) {
+              const aligned = alignOpeningUsdtCabinsToSnapshot(
+                nextOpeningA,
+                nextOpeningB,
+                currentCabins,
+                data.usdtCabinSnapshot,
+                totalUsdt,
+              )
+              nextOpeningA = aligned.a
+              nextOpeningB = aligned.b
+            }
           }
           setOpeningUsdtCabinA(nextOpeningA)
           setOpeningUsdtCabinB(nextOpeningB)
@@ -470,6 +481,73 @@ function App() {
     [openingBalances, openingUsdtCabinA, openingUsdtCabinB, transactions, lastTradeSettledAt],
   )
 
+  const latestStateRef = useRef({
+    transactions,
+    openingBalances,
+    openingUsdtCabinA,
+    openingUsdtCabinB,
+    openingUsdtCost,
+    openingVnTwdRate,
+    openingVnUsdtRate,
+    settlements,
+    lastTradeSettledAt,
+  })
+  useLayoutEffect(() => {
+    latestStateRef.current = {
+      transactions,
+      openingBalances,
+      openingUsdtCabinA,
+      openingUsdtCabinB,
+      openingUsdtCost,
+      openingVnTwdRate,
+      openingVnUsdtRate,
+      settlements,
+      lastTradeSettledAt,
+    }
+  })
+
+  const buildPersistPayload = (
+    overrides: Partial<PersistedAppState> = {},
+  ): PersistedAppState => {
+    const cabinSnapshot =
+      overrides.usdtCabinSnapshot ??
+      normalizeUsdtCabinSnapshot(
+        balances.usdt,
+        usdtCabinBalances.a,
+        usdtCabinBalances.b,
+        usdtCabinBalances.c,
+      )
+    return {
+      activeTab,
+      dailyWorkTab,
+      openingBalances,
+      openingUsdtCost,
+      openingUsdtCabinA,
+      openingUsdtCabinB,
+      usdtCabinSnapshot: cabinSnapshot,
+      twdCabinNotes,
+      openingVnTwdRate,
+      openingVnUsdtRate,
+      transactions,
+      settlements,
+      expenseSettlements,
+      cumulativeExpenses,
+      monthlyCloses,
+      ...overrides,
+    }
+  }
+
+  const savePersistImmediate = (
+    overrides: Partial<PersistedAppState> = {},
+  ): Promise<boolean> => {
+    const gen = ++persistGenRef.current
+    persistChainRef.current = persistChainRef.current.then(async () => {
+      if (gen !== persistGenRef.current) return true
+      return savePersistedAppStateAsync(buildPersistPayload(overrides))
+    })
+    return persistChainRef.current
+  }
+
   useEffect(() => {
     if (!persistReadyRef.current) return
 
@@ -479,7 +557,6 @@ function App() {
       usdtCabinBalances.b,
       usdtCabinBalances.c,
     )
-
     const payload: PersistedAppState = {
       activeTab,
       dailyWorkTab,
@@ -499,7 +576,12 @@ function App() {
     }
 
     const timer = window.setTimeout(() => {
-      void savePersistedAppStateAsync(payload)
+      const gen = ++persistGenRef.current
+      void savePersistedAppStateAsync(payload).then((ok) => {
+        if (!ok && gen === persistGenRef.current) {
+          console.error('[persistence] debounced save failed')
+        }
+      })
     }, 400)
     return () => window.clearTimeout(timer)
   }, [
@@ -979,7 +1061,7 @@ function App() {
     setUndoSnapshot(snapshot)
     const parts: string[] = []
     if (twdCash > 0) parts.push(`+${formatTwdTableCompact(twdCash)} T`)
-    if (usdt > 0) parts.push(`+${formatNumber(usdt)} U`)
+    if (usdt > 0) parts.push(`+${formatNumber(usdt)} P`)
     setUndoMessage(
       parts.length > 0 ? `已刪除 EXP.SUM 並加回帳上（${parts.join(' · ')}）` : '已刪除 EXP.SUM',
     )
@@ -994,7 +1076,7 @@ function App() {
     if (twdCash > 0 || usdt > 0) {
       const restore: string[] = []
       if (twdCash > 0) restore.push(`+${formatTwdTableCompact(twdCash)} T`)
-      if (usdt > 0) restore.push(`+${formatNumber(usdt)} U`)
+      if (usdt > 0) restore.push(`+${formatNumber(usdt)} P`)
       lines.push(`將加回 ${restore.join(' · ')}`)
     }
 
@@ -1033,8 +1115,12 @@ function App() {
       usdt: prev.usdt - expenseUsdtTotal,
     }))
     if (expenseUsdtTotal > 0) {
-      setOpeningUsdtCabinA(cabinsAfterExpense.a)
-      setOpeningUsdtCabinB(cabinsAfterExpense.b)
+      const frozen = freezeUsdtCabinsAtSettlement(
+        balances.usdt - expenseUsdtTotal,
+        cabinsAfterExpense,
+      )
+      setOpeningUsdtCabinA(frozen.openingUsdtCabinA)
+      setOpeningUsdtCabinB(frozen.openingUsdtCabinB)
     }
 
     setTransactions((prev) => prev.filter((tx) => !isExpenseTransaction(tx)))
@@ -1059,7 +1145,7 @@ function App() {
     setUndoSnapshot(snapshot)
     const parts: string[] = []
     if (expenseTwdCashTotal > 0) parts.push(`−${formatTwdTableCompact(expenseTwdCashTotal)} T`)
-    if (expenseUsdtTotal > 0) parts.push(`−${formatNumber(expenseUsdtTotal)} U`)
+    if (expenseUsdtTotal > 0) parts.push(`−${formatNumber(expenseUsdtTotal)} P`)
     setUndoMessage(
       parts.length > 0
         ? `已對帳扣款並寫入 EXP.SUM（${parts.join(' · ')}）`
@@ -1075,7 +1161,7 @@ function App() {
     const usdtTotal = computeDayExpenseUsdtTotal(pending)
     const lines = [`#${pending.length}`]
     if (twdCash > 0) lines.push(`−${formatTwdTableCompact(twdCash)} T`)
-    if (usdtTotal > 0) lines.push(`−${formatNumber(usdtTotal)} U`)
+    if (usdtTotal > 0) lines.push(`−${formatNumber(usdtTotal)} P`)
     setConfirmDialog({
       title: 'RECON 扣帳並封存',
       lines,
@@ -1739,43 +1825,61 @@ function App() {
 
   const executeTradeSettle = (businessDate?: string) => {
     const snapshot = createSnapshot()
-    const tradeTxs = filterTradeTransactions(transactions)
+    const live = latestStateRef.current
+    const tradeTxs = filterTradeTransactions(live.transactions)
     if (tradeTxs.length === 0) return
 
+    const cabinsAtSettle = computeUsdtCabinBalances(
+      live.openingBalances,
+      live.openingUsdtCabinA,
+      live.transactions,
+      live.lastTradeSettledAt,
+      live.openingUsdtCabinB,
+    )
+    const balancesAtSettle = recalculateBalances(
+      live.transactions,
+      live.openingBalances,
+      live.lastTradeSettledAt,
+    )
+    const frozenCabins = freezeUsdtCabinsAtSettlement(
+      balancesAtSettle.usdt,
+      cabinsAtSettle,
+    )
+
     const settleRates = computeSettleDayInventoryRates(
-      openingBalances,
-      openingUsdtCost,
-      openingVnTwdRate,
-      openingVnUsdtRate,
-      transactions,
+      live.openingBalances,
+      live.openingUsdtCost,
+      live.openingVnTwdRate,
+      live.openingVnUsdtRate,
+      live.transactions,
     )
     const inventoryAtSettle = settleRates.usdt
 
     const assetsAtSettle = computeTotalAssetsAtCostRates(
-      balances,
+      balancesAtSettle,
       inventoryAtSettle.twd,
       settleRates.vnTwdRate,
       settleRates.vnUsdtRate,
     )
     const settledDayUsdtProfit = computeSettleDayUsdtProfit(
       inventoryAtSettle.twd,
-      transactions,
+      live.transactions,
     )
     const settledDayVnProfit = computeSettleDayVnProfit(
       settleRates.vnTwdRate,
       inventoryAtSettle.twd,
-      transactions,
+      live.transactions,
     )
     const settledDayProfit = settledDayUsdtProfit + settledDayVnProfit
 
     const usdtSellProfits = computeSettleDayUsdtSellProfitById(
       inventoryAtSettle.twd,
-      transactions,
+      live.transactions,
     )
     const vnSellProfits = computeSettleDayVnSellProfitById(
       settleRates.vnTwdRate,
       inventoryAtSettle.twd,
-      transactions,
+      live.transactions,
     )
     const sellProfitById: Record<string, number> = {}
     for (const [id, info] of usdtSellProfits) {
@@ -1794,9 +1898,9 @@ function App() {
       id: crypto.randomUUID(),
       settledAt: now,
       dateLabel,
-      twdBalance: balances.twd,
-      usdtBalance: balances.usdt,
-      vnBalance: balances.vn,
+      twdBalance: balancesAtSettle.twd,
+      usdtBalance: balancesAtSettle.usdt,
+      vnBalance: balancesAtSettle.vn,
       usdtInventoryAvgTwd: inventoryAtSettle.twd,
       usdtInventoryAvgVn: inventoryAtSettle.vn,
       dayBuyAvgTwd: settleRates.dayBuyAvgTwd,
@@ -1814,16 +1918,19 @@ function App() {
         Object.keys(sellProfitById).length > 0 ? sellProfitById : undefined,
     }
 
-    setSettlements((prev) => [settlement, ...prev])
+    const expenseOnly = live.transactions.filter(isExpenseTransaction)
+    const nextSettlements = [settlement, ...live.settlements]
+
+    setSettlements(nextSettlements)
     setOpeningUsdtCost(inventoryAtSettle)
     setOpeningVnTwdRate(settleRates.vnTwdRate)
     setOpeningVnUsdtRate(settleRates.vnUsdtRate)
-    setOpeningBalances({ ...balances })
-    setOpeningUsdtCabinA(usdtCabinBalances.a)
-    setOpeningUsdtCabinB(usdtCabinBalances.b)
+    setOpeningBalances({ ...balancesAtSettle })
+    setOpeningUsdtCabinA(frozenCabins.openingUsdtCabinA)
+    setOpeningUsdtCabinB(frozenCabins.openingUsdtCabinB)
 
     // 保留進行中開銷（由 EXP 頁 RECON 處理）
-    setTransactions((prev) => prev.filter(isExpenseTransaction))
+    setTransactions(expenseOnly)
     resetBuyForm()
     resetSellForm()
     resetVnBuyForm()
@@ -1835,6 +1942,19 @@ function App() {
 
     setUndoSnapshot(snapshot)
     setUndoMessage(`已完成 ${dateLabel} 交易結算`)
+
+    void savePersistImmediate({
+      activeTab: 'settlements',
+      openingBalances: balancesAtSettle,
+      openingUsdtCost: inventoryAtSettle,
+      openingUsdtCabinA: frozenCabins.openingUsdtCabinA,
+      openingUsdtCabinB: frozenCabins.openingUsdtCabinB,
+      usdtCabinSnapshot: frozenCabins.usdtCabinSnapshot,
+      openingVnTwdRate: settleRates.vnTwdRate,
+      openingVnUsdtRate: settleRates.vnUsdtRate,
+      transactions: expenseOnly,
+      settlements: nextSettlements,
+    })
   }
 
   const handleTradeSettle = () => {
@@ -2327,38 +2447,33 @@ function App() {
   }
 
   const handleRebalanceCabins = (nextCabins: { a: number; b: number; c: number }) => {
-    const current = usdtCabinBalances
+    const live = latestStateRef.current
+    const current = computeUsdtCabinBalances(
+      live.openingBalances,
+      live.openingUsdtCabinA,
+      live.transactions,
+      live.lastTradeSettledAt,
+      live.openingUsdtCabinB,
+    )
     // 直接套用互轉後的 A/B 差值，避免用 balances.usdt 重算時把 B 的增量 clamp 進 C
-    const nextOpeningA = openingUsdtCabinA + (nextCabins.a - current.a)
-    const nextOpeningB = openingUsdtCabinB + (nextCabins.b - current.b)
-    const snapshot = {
-      a: Math.max(0, nextCabins.a),
-      b: Math.max(0, nextCabins.b),
-      c: Math.max(0, nextCabins.c),
-    }
+    const nextOpeningA = live.openingUsdtCabinA + (nextCabins.a - current.a)
+    const nextOpeningB = live.openingUsdtCabinB + (nextCabins.b - current.b)
+    const snapshot = normalizeUsdtCabinSnapshot(
+      recalculateBalances(live.transactions, live.openingBalances, live.lastTradeSettledAt).usdt,
+      nextCabins.a,
+      nextCabins.b,
+      nextCabins.c,
+    )
     setOpeningUsdtCabinA(nextOpeningA)
     setOpeningUsdtCabinB(nextOpeningB)
     setCabinRebalanceModalOpen(false)
     handleSelectTab('daily')
-    // 戶轉分倉後立刻寫入 A/B/C 絕對數量，避免 debounce 內重整遺失
-    void (async () => {
-      const ok = await savePersistedAppStateAsync({
-        activeTab: 'daily',
-        dailyWorkTab,
-        openingBalances,
-        openingUsdtCost,
-        openingUsdtCabinA: nextOpeningA,
-        openingUsdtCabinB: nextOpeningB,
-        usdtCabinSnapshot: snapshot,
-        twdCabinNotes,
-        openingVnTwdRate,
-        openingVnUsdtRate,
-        transactions,
-        settlements,
-        expenseSettlements,
-        cumulativeExpenses,
-        monthlyCloses,
-      })
+    void savePersistImmediate({
+      activeTab: 'daily',
+      openingUsdtCabinA: nextOpeningA,
+      openingUsdtCabinB: nextOpeningB,
+      usdtCabinSnapshot: snapshot,
+    }).then((ok) => {
       if (!ok) {
         setConfirmDialog({
           title: '分倉儲存失敗',
@@ -2369,7 +2484,7 @@ function App() {
           onConfirm: () => setConfirmDialog(null),
         })
       }
-    })()
+    })
   }
 
   const handlePullProdState = () => {

@@ -42,6 +42,7 @@ import {
   transferUsdtBetweenCabins,
   validateTransactions,
   settlementDisplaySplitProfits,
+  simulateCabinFreezeAfterTradeSettle,
 } from './index'
 
 const EMPTY_COST: UsdtInventoryCost = { twd: null, vn: null }
@@ -964,6 +965,66 @@ describe('usdt cabin quantity (shared cost)', () => {
     const nextOpeningB = openingB + (transferred.next.b - before.b)
     const after = computeUsdtCabinBalances(opening, nextOpeningA, [], null, nextOpeningB)
     expect(after).toEqual({ a: 0, b: 82_053, c: 0 })
+  })
+
+  it('AL freeze preserves cabins after ADJ and same-day trades', () => {
+    const opening: Balances = { twd: 0, usdt: 100_000, vn: 0 }
+    const txs: Transaction[] = [
+      {
+        ...usdtBuy('b1', at(10), 10_000, 324_000),
+        cabinAAmount: 0,
+        cabinBAmount: 10_000,
+        cabin: 'B',
+      },
+    ]
+    const beforeAdj = computeUsdtCabinBalances(opening, 30_000, txs, null, 0)
+    expect(beforeAdj).toEqual({ a: 30_000, b: 10_000, c: 70_000 })
+
+    const transferred = transferUsdtBetweenCabins(beforeAdj, 'B', 'A', 10_000)
+    expect(transferred.ok).toBe(true)
+    if (!transferred.ok) return
+
+    const openingA = 30_000 + (transferred.next.a - beforeAdj.a)
+    const openingB = 0 + (transferred.next.b - beforeAdj.b)
+    const afterAdj = computeUsdtCabinBalances(opening, openingA, txs, null, openingB)
+    expect(afterAdj).toEqual({ a: 40_000, b: 0, c: 70_000 })
+
+    const { before, after } = simulateCabinFreezeAfterTradeSettle(
+      opening,
+      openingA,
+      openingB,
+      txs,
+      null,
+    )
+    expect(before).toEqual(afterAdj)
+    expect(after).toEqual(before)
+  })
+
+  it('AL freeze preserves ADJ with existing C', () => {
+    const opening: Balances = { twd: 0, usdt: 82_053, vn: 0 }
+    const openingA = 21_956
+    const openingB = 50_097
+    const beforeAdj = computeUsdtCabinBalances(opening, openingA, [], null, openingB)
+    expect(beforeAdj.c).toBe(10_000)
+
+    const transferred = transferUsdtBetweenCabins(beforeAdj, 'A', 'B', 5_000)
+    expect(transferred.ok).toBe(true)
+    if (!transferred.ok) return
+
+    const nextOpeningA = openingA + (transferred.next.a - beforeAdj.a)
+    const nextOpeningB = openingB + (transferred.next.b - beforeAdj.b)
+    const afterAdj = computeUsdtCabinBalances(opening, nextOpeningA, [], null, nextOpeningB)
+    expect(afterAdj).toEqual({ a: 16_956, b: 55_097, c: 10_000 })
+
+    const { before, after } = simulateCabinFreezeAfterTradeSettle(
+      opening,
+      nextOpeningA,
+      nextOpeningB,
+      [],
+      null,
+    )
+    expect(before).toEqual(afterAdj)
+    expect(after).toEqual(before)
   })
 
   it('A→B with existing C preserves C and credits B', () => {
