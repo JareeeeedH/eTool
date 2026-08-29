@@ -28,6 +28,7 @@ import type {
   TwdCabinNotes,
   TwdCabinNoteFieldKey,
   UsdtCabin,
+  UsdtCabinBalances,
   UsdtInventoryCost,
   UsdtTransaction,
   VnPayCurrency,
@@ -162,34 +163,31 @@ const MOBILE_TAB_LABEL: Record<Exclude<PageTab, 'daily' | 'notes'>, string> = {
   monthly: 'SETUP',
 }
 
-type PendingCabinAlloc =
-  | {
-      kind: 'usdt'
-      type: TransactionType
-      usdt: number
-      fiat: number
-      rate: number
-      isEditing: boolean
-      tradeDate: string
-      note: string
-      initialCabinA: number
-      initialCabinB: number
-      direction: 'in' | 'out'
-    }
-  | {
-      kind: 'vn'
-      type: TransactionType
-      payCurrency: VnPayCurrency
-      vn: number
-      pay: number
-      rate: number
-      isEditing: boolean
-      tradeDate: string
-      note: string
-      initialCabinA: number
-      initialCabinB: number
-      direction: 'in' | 'out'
-    }
+type PendingUsdtTradeCabinPick = {
+  type: TransactionType
+  usdt: number
+  fiat: number
+  rate: number
+  isEditing: boolean
+  tradeDate: string
+  note: string
+  initialCabin: UsdtCabin | null
+}
+
+type PendingCabinAlloc = {
+  kind: 'vn'
+  type: TransactionType
+  payCurrency: VnPayCurrency
+  vn: number
+  pay: number
+  rate: number
+  isEditing: boolean
+  tradeDate: string
+  note: string
+  initialCabinA: number
+  initialCabinB: number
+  direction: 'in' | 'out'
+}
 
 function dailyTradePaneClass(
   mobilePane: DailyMobileTradePane,
@@ -268,6 +266,9 @@ function App() {
 
   const [cabinAllocPending, setCabinAllocPending] = useState<PendingCabinAlloc | null>(null)
   const [cabinAllocError, setCabinAllocError] = useState('')
+  const [pendingUsdtTradeCabinPick, setPendingUsdtTradeCabinPick] =
+    useState<PendingUsdtTradeCabinPick | null>(null)
+  const [usdtTradeCabinPickError, setUsdtTradeCabinPickError] = useState('')
   const [editCabinAAmount, setEditCabinAAmount] = useState<number | null>(null)
   const [editCabinBAmount, setEditCabinBAmount] = useState<number | null>(null)
 
@@ -355,12 +356,11 @@ function App() {
               data.openingBalances,
               settledAt,
             ).usdt
-            const cabinSum = currentCabins.a + currentCabins.b + currentCabins.c
+            const cabinSum = currentCabins.a + currentCabins.b
             const openingCabinBroken =
               Math.abs(cabinSum - totalUsdt) > 1e-3 ||
               currentCabins.a < -1e-6 ||
-              currentCabins.b < -1e-6 ||
-              currentCabins.c < -1e-6
+              currentCabins.b < -1e-6
             if (openingCabinBroken) {
               const aligned = alignOpeningUsdtCabinsToSnapshot(
                 nextOpeningA,
@@ -515,7 +515,6 @@ function App() {
         balances.usdt,
         usdtCabinBalances.a,
         usdtCabinBalances.b,
-        usdtCabinBalances.c,
       )
     return {
       activeTab,
@@ -555,7 +554,6 @@ function App() {
       balances.usdt,
       usdtCabinBalances.a,
       usdtCabinBalances.b,
-      usdtCabinBalances.c,
     )
     const payload: PersistedAppState = {
       activeTab,
@@ -602,7 +600,6 @@ function App() {
     balances.usdt,
     usdtCabinBalances.a,
     usdtCabinBalances.b,
-    usdtCabinBalances.c,
   ])
 
   const usdtTransactions = useMemo(
@@ -1052,7 +1049,7 @@ function App() {
         usdt: prev.usdt + usdt,
       }))
       if (usdt > 0) {
-        // RECON 扣艙為 B→A→C；加回時歸 B
+        // RECON 扣艙為 B→A；加回時歸 B
         setOpeningUsdtCabinB((prev) => prev + usdt)
       }
     }
@@ -1208,10 +1205,16 @@ function App() {
     }
     const { usdt, fiat, rate } = resolved
 
-    const openAlloc = () => {
-      setCabinAllocError('')
-      setCabinAllocPending({
-        kind: 'usdt',
+    const resolveEditCabin = (): UsdtCabin | null => {
+      if (!isEditing) return null
+      if (editCabinAAmount !== null && editCabinAAmount > 0) return 'A'
+      if (editCabinBAmount !== null && editCabinBAmount > 0) return 'B'
+      return null
+    }
+
+    const openCabinPick = () => {
+      setUsdtTradeCabinPickError('')
+      setPendingUsdtTradeCabinPick({
         type,
         usdt,
         fiat,
@@ -1219,9 +1222,7 @@ function App() {
         isEditing,
         tradeDate,
         note,
-        initialCabinA: isEditing && editCabinAAmount !== null ? editCabinAAmount : usdt,
-        initialCabinB: isEditing && editCabinBAmount !== null ? editCabinBAmount : 0,
-        direction: isBuy ? 'in' : 'out',
+        initialCabin: resolveEditCabin(),
       })
     }
 
@@ -1234,13 +1235,13 @@ function App() {
         variant: 'primary',
         onConfirm: () => {
           setConfirmDialog(null)
-          openAlloc()
+          openCabinPick()
         },
       })
       return
     }
 
-    openAlloc()
+    openCabinPick()
   }
 
   const commitUsdtTrade = (
@@ -1558,88 +1559,111 @@ function App() {
     return isEditing ? null : newId
   }
 
+  const validateUsdtTradeBeforeCommit = (
+    type: TransactionType,
+    usdt: number,
+    fiat: number,
+    rate: number,
+    isEditing: boolean,
+    tradeDate: string,
+    cabinAAmount: number,
+    cabinBAmount: number,
+  ): string | null => {
+    const cabinAlloc = normalizeCabinAlloc(usdt, cabinAAmount, cabinBAmount)
+    const buildUpdatedList = (): Transaction[] => {
+      if (isEditing) {
+        return transactions.map((tx) =>
+          tx.id === editingId && isUsdtTransaction(tx)
+            ? {
+                ...tx,
+                type,
+                fiatCurrency: 'twd' as const,
+                usdtAmount: usdt,
+                fiatAmount: fiat,
+                rate,
+                ...cabinAlloc,
+                tradeDate,
+              }
+            : tx,
+        )
+      }
+      return [
+        {
+          id: 'preview',
+          timestamp: new Date(),
+          tradeDate,
+          category: 'usdt' as const,
+          type,
+          fiatCurrency: 'twd' as const,
+          usdtAmount: usdt,
+          fiatAmount: fiat,
+          rate,
+          ...cabinAlloc,
+        },
+        ...transactions,
+      ]
+    }
+    return resolveUsdtSpendValidationError(
+      validateTransactions(
+        buildUpdatedList(),
+        openingBalances,
+        lastTradeSettledAt,
+        openingUsdtCabinA,
+        openingUsdtCabinB,
+      ),
+      {
+        spendsTwd: type === 'buy',
+        balances,
+        cabins: usdtCabinBalances,
+        usdtAmount: usdt,
+        cabinAAmount,
+        cabinBAmount,
+        fiatAmount: type === 'buy' ? fiat : undefined,
+      },
+    )
+  }
+
+  const handleUsdtTradeCabinPick = (cabin: UsdtCabin) => {
+    if (!pendingUsdtTradeCabinPick) return
+    setUsdtTradeCabinPickError('')
+
+    const { type, usdt, fiat, rate, isEditing, tradeDate, note } = pendingUsdtTradeCabinPick
+    const cabinAAmount = cabin === 'A' ? usdt : 0
+    const cabinBAmount = cabin === 'B' ? usdt : 0
+
+    const errMsg = validateUsdtTradeBeforeCommit(
+      type,
+      usdt,
+      fiat,
+      rate,
+      isEditing,
+      tradeDate,
+      cabinAAmount,
+      cabinBAmount,
+    )
+    if (errMsg) {
+      setUsdtTradeCabinPickError(errMsg)
+      return
+    }
+
+    const newId = commitUsdtTrade(
+      type,
+      usdt,
+      fiat,
+      rate,
+      isEditing,
+      tradeDate,
+      cabinAAmount,
+      cabinBAmount,
+      note,
+    )
+    setPendingUsdtTradeCabinPick(null)
+    if (newId) flashNewTransaction(newId)
+  }
+
   const handleCabinAllocConfirm = (cabinAAmount: number, cabinBAmount: number) => {
     if (!cabinAllocPending) return
     setCabinAllocError('')
-
-    if (cabinAllocPending.kind === 'usdt') {
-      const { type, usdt, fiat, rate, isEditing, tradeDate, note } = cabinAllocPending
-      const cabinAlloc = normalizeCabinAlloc(usdt, cabinAAmount, cabinBAmount)
-      const updatedList: Transaction[] = isEditing
-        ? transactions.map((tx) =>
-            tx.id === editingId && isUsdtTransaction(tx)
-              ? {
-                  ...tx,
-                  type,
-                  fiatCurrency: 'twd' as const,
-                  usdtAmount: usdt,
-                  fiatAmount: fiat,
-                  rate,
-                  ...cabinAlloc,
-                  tradeDate,
-                  timestamp: timestampForEditedTrade(
-                    tradeDate,
-                    tx.timestamp,
-                    lastTradeSettledAt,
-                  ),
-                }
-              : tx,
-          )
-        : [
-            {
-              id: crypto.randomUUID(),
-              timestamp: timestampForNewTrade(
-                tradeDate,
-                transactions.map((tx) => tx.timestamp),
-              ),
-              tradeDate,
-              category: 'usdt' as const,
-              type,
-              fiatCurrency: 'twd' as const,
-              usdtAmount: usdt,
-              fiatAmount: fiat,
-              rate,
-              ...cabinAlloc,
-            },
-            ...transactions,
-          ]
-      const validationError = resolveUsdtSpendValidationError(
-        validateTransactions(
-          updatedList,
-          openingBalances,
-          lastTradeSettledAt,
-          openingUsdtCabinA,
-          openingUsdtCabinB,
-        ),
-        {
-          spendsTwd: type === 'buy',
-          balances,
-          cabins: usdtCabinBalances,
-          usdtAmount: usdt,
-          cabinAAmount,
-          cabinBAmount,
-          fiatAmount: type === 'buy' ? fiat : undefined,
-        },
-      )
-      if (validationError) {
-        setCabinAllocError(validationError)
-        return
-      }
-      const newId = commitUsdtTrade(
-        type,
-        usdt,
-        fiat,
-        rate,
-        isEditing,
-        tradeDate,
-        cabinAAmount,
-        cabinBAmount,
-        note,
-      )
-      setCabinAllocPending(null)
-      if (newId) flashNewTransaction(newId)
-      return
-    }
 
     const { type, vn, pay, rate, isEditing, tradeDate, note } = cabinAllocPending
     const newId = commitVnTrade(
@@ -2446,7 +2470,7 @@ function App() {
     })
   }
 
-  const handleRebalanceCabins = (nextCabins: { a: number; b: number; c: number }) => {
+  const handleRebalanceCabins = (nextCabins: UsdtCabinBalances) => {
     const live = latestStateRef.current
     const current = computeUsdtCabinBalances(
       live.openingBalances,
@@ -2455,14 +2479,12 @@ function App() {
       live.lastTradeSettledAt,
       live.openingUsdtCabinB,
     )
-    // 直接套用互轉後的 A/B 差值，避免用 balances.usdt 重算時把 B 的增量 clamp 進 C
     const nextOpeningA = live.openingUsdtCabinA + (nextCabins.a - current.a)
     const nextOpeningB = live.openingUsdtCabinB + (nextCabins.b - current.b)
     const snapshot = normalizeUsdtCabinSnapshot(
       recalculateBalances(live.transactions, live.openingBalances, live.lastTradeSettledAt).usdt,
       nextCabins.a,
       nextCabins.b,
-      nextCabins.c,
     )
     setOpeningUsdtCabinA(nextOpeningA)
     setOpeningUsdtCabinB(nextOpeningB)
@@ -2558,19 +2580,11 @@ function App() {
       <CabinAllocModal
         key={
           cabinAllocPending
-            ? `${cabinAllocPending.kind}-${cabinAllocPending.direction}-${cabinAllocPending.initialCabinA}-${cabinAllocPending.initialCabinB}-${
-                cabinAllocPending.kind === 'usdt' ? cabinAllocPending.usdt : cabinAllocPending.pay
-              }`
+            ? `${cabinAllocPending.direction}-${cabinAllocPending.initialCabinA}-${cabinAllocPending.initialCabinB}-${cabinAllocPending.pay}`
             : 'cabin-alloc-closed'
         }
         open={cabinAllocPending !== null}
-        totalUsdt={
-          cabinAllocPending?.kind === 'usdt'
-            ? cabinAllocPending.usdt
-            : cabinAllocPending?.kind === 'vn'
-              ? cabinAllocPending.pay
-              : 0
-        }
+        totalUsdt={cabinAllocPending?.pay ?? 0}
         direction={cabinAllocPending?.direction ?? 'in'}
         initialCabinA={cabinAllocPending?.initialCabinA ?? 0}
         initialCabinB={cabinAllocPending?.initialCabinB ?? 0}
@@ -2582,6 +2596,28 @@ function App() {
         }}
         onDismissError={() => setCabinAllocError('')}
         onConfirm={handleCabinAllocConfirm}
+      />
+      <OpeningUsdtCabinPickModal
+        open={pendingUsdtTradeCabinPick !== null}
+        title="本筆分倉"
+        showTitle={false}
+        adjust={
+          pendingUsdtTradeCabinPick
+            ? pendingUsdtTradeCabinPick.type === 'buy'
+              ? pendingUsdtTradeCabinPick.usdt
+              : -pendingUsdtTradeCabinPick.usdt
+            : 0
+        }
+        cabins={usdtCabinBalances}
+        initialCabin={pendingUsdtTradeCabinPick?.initialCabin ?? null}
+        defaultCabin="B"
+        error={usdtTradeCabinPickError}
+        onDismissError={() => setUsdtTradeCabinPickError('')}
+        onCancel={() => {
+          setPendingUsdtTradeCabinPick(null)
+          setUsdtTradeCabinPickError('')
+        }}
+        onConfirm={handleUsdtTradeCabinPick}
       />
       <OpeningBalanceModal
         open={openingBalanceModalOpen}

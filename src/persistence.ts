@@ -47,7 +47,7 @@ type DailyWorkTab = 'usdt' | 'vn'
 type FiatCurrency = 'twd' | 'vn'
 type TransactionType = 'buy' | 'sell'
 type VnPayCurrency = 'twd' | 'usdt'
-type UsdtCabin = 'A' | 'B' | 'C'
+type UsdtCabin = 'A' | 'B'
 type ExpenseType = 'fuel' | 'parking' | 'meal' | 'traffic' | 'other'
 
 interface Balances {
@@ -213,13 +213,13 @@ export interface PersistedAppState {
   openingUsdtCost: UsdtInventoryCost
   /** 期初 P 歸 A 艙數量 */
   openingUsdtCabinA?: number
-  /** 期初 P 歸 B 艙數量；C = openingBalances.usdt − A − B（可含互轉偏移） */
+  /** 期初 P 歸 B 艙數量；餘量併入 B（舊 C 已廢止） */
   openingUsdtCabinB?: number
   /**
    * 目前 A/B/C 絕對數量快照（戶轉分倉／日常存檔都會更新）。
    * 重整後用來校正期初分倉，避免互轉結果遺失。
    */
-  usdtCabinSnapshot?: { a: number; b: number; c: number }
+  usdtCabinSnapshot?: { a: number; b: number }
   /** T 卡 O/B/T/F/W/H/J/C + 備用 # + 獨立 PF（僅 memo；PF 不入加總；# 入 Σ） */
   twdCabinNotes?: {
     a: string
@@ -270,13 +270,16 @@ function parseNullableNumber(value: unknown): number | null {
 
 function parseUsdtCabinSnapshot(
   value: unknown,
-): { a: number; b: number; c: number } | undefined {
+): { a: number; b: number } | undefined {
   if (!isRecord(value)) return undefined
   const a = parseNumber(value.a, NaN)
   const b = parseNumber(value.b, NaN)
-  const c = parseNumber(value.c, NaN)
-  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) return undefined
-  return { a, b, c }
+  const legacyC = parseNumber(value.c, NaN)
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return undefined
+  return {
+    a,
+    b: b + (Number.isFinite(legacyC) ? legacyC : 0),
+  }
 }
 
 function parseTwdCabinNotes(
@@ -320,7 +323,9 @@ function parseVnPayCurrency(value: unknown): VnPayCurrency {
 }
 
 function parseUsdtCabin(value: unknown): UsdtCabin | undefined {
-  return value === 'A' || value === 'B' || value === 'C' ? value : undefined
+  if (value === 'A') return 'A'
+  if (value === 'B' || value === 'C') return 'B'
+  return undefined
 }
 
 function parseExpenseType(value: unknown): ExpenseType {

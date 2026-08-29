@@ -727,13 +727,13 @@ describe('營業開銷與月結', () => {
     ).toEqual({ twdCash: 20_000, usdt: 100 })
   })
 
-  it('U 開銷艙扣減：B→A→C', () => {
+  it('U 開銷艙扣減：B→A', () => {
     expect(
-      deductUsdtFromCabinsBAC({ a: 50, b: 80, c: 20 }, 100),
-    ).toEqual({ a: 30, b: 0, c: 20 })
+      deductUsdtFromCabinsBAC({ a: 50, b: 100 }, 100),
+    ).toEqual({ a: 50, b: 0 })
     expect(
-      deductUsdtFromCabinsBAC({ a: 10, b: 5, c: 50 }, 40),
-    ).toEqual({ a: 0, b: 0, c: 25 })
+      deductUsdtFromCabinsBAC({ a: 10, b: 55 }, 40),
+    ).toEqual({ a: 10, b: 15 })
   })
 
   it('applyExpenseTransaction：U 扣 P、T 扣台幣', () => {
@@ -841,9 +841,8 @@ describe('usdt cabin quantity (shared cost)', () => {
       null,
       migrated.openingUsdtCabinB,
     )
-    expect(cabins.a + cabins.b + cabins.c).toBe(20_000 + 16_000 - 625)
+    expect(cabins.a + cabins.b).toBe(20_000 + 16_000 - 625)
     expect(cabins.a).toBeGreaterThanOrEqual(30_000)
-    expect(cabins.c).toBe(0)
   })
 
   it('keeps shared inventory cost unchanged by cabin tags', () => {
@@ -869,30 +868,29 @@ describe('usdt cabin quantity (shared cost)', () => {
     const cabins = computeUsdtCabinBalances(opening, 0, txs)
     expect(cabins.a).toBe(6_000)
     expect(cabins.b).toBe(4_000)
-    expect(cabins.c).toBe(0)
     const inventory = computeInventoryCost(opening, { twd: null, vn: null }, txs)
     expect(inventory.twd).toBe(roundUsdtCostRate(320_000 / 10_000))
   })
 
-  it('splits one buy across A/B/C with shared cost', () => {
+  it('splits one buy across A and B with shared cost', () => {
     const opening: Balances = { twd: 1_000_000, usdt: 0, vn: 0 }
     const txs: Transaction[] = [
       {
         ...usdtBuy('b1', at(1), 10_000, 320_000),
         cabinAAmount: 4_000,
-        cabinBAmount: 3_000,
+        cabinBAmount: 6_000,
         cabin: 'A',
       },
     ]
     const cabins = computeUsdtCabinBalances(opening, 0, txs)
-    expect(cabins).toEqual({ a: 4_000, b: 3_000, c: 3_000 })
+    expect(cabins).toEqual({ a: 4_000, b: 6_000 })
     const inventory = computeInventoryCost(opening, { twd: null, vn: null }, txs)
     expect(inventory.twd).toBe(roundUsdtCostRate(320_000 / 10_000))
   })
 
-  it('allows paying VN buy fully from C when B is empty', () => {
+  it('allows paying VN buy from legacy C tag (merged into B)', () => {
     const opening: Balances = { twd: 0, usdt: 36_325, vn: 0 }
-    const tx: Transaction = {
+    const tx = {
       id: 'vn1',
       timestamp: at(1),
       category: 'vn_trade',
@@ -905,27 +903,27 @@ describe('usdt cabin quantity (shared cost)', () => {
       cabinAAmount: 0,
       cabinBAmount: 0,
       cabin: 'C',
-    }
+    } as unknown as Transaction
     const err = validateTransactions([tx], opening, null, 33_325, 0)
     expect(err).toBeNull()
   })
 
-  it('rebalances A/B/C by adjusting opening cabin A/B', () => {
+  it('rebalances A/B by adjusting opening cabin A/B', () => {
     const opening: Balances = { twd: 0, usdt: 0, vn: 0 }
     const txs: Transaction[] = [
       { ...usdtBuy('b1', at(1), 30_000, 960_000), cabinAAmount: 30_000, cabinBAmount: 0, cabin: 'A' },
       { ...usdtBuy('b2', at(2), 100_000, 3_200_000), cabinAAmount: 0, cabinBAmount: 100_000, cabin: 'B' },
     ]
     const before = computeUsdtCabinBalances(opening, 0, txs)
-    expect(before).toEqual({ a: 30_000, b: 100_000, c: 0 })
+    expect(before).toEqual({ a: 30_000, b: 100_000 })
 
-    const next = openingUsdtCabinsAfterRebalance(0, 0, before, 50_000, 40_000, 130_000)
+    const next = openingUsdtCabinsAfterRebalance(0, 0, before, 50_000, 80_000, 130_000)
     const after = computeUsdtCabinBalances(opening, next.a, txs, null, next.b)
-    expect(after).toEqual({ a: 50_000, b: 40_000, c: 40_000 })
-    expect(after.a + after.b + after.c).toBe(130_000)
+    expect(after).toEqual({ a: 50_000, b: 80_000 })
+    expect(after.a + after.b).toBe(130_000)
   })
 
-  it('restores A/B/C from absolute snapshot after reload-like drift', () => {
+  it('restores A/B from absolute snapshot after reload-like drift', () => {
     const opening: Balances = { twd: 0, usdt: 0, vn: 0 }
     const txs: Transaction[] = [
       { ...usdtBuy('b1', at(1), 30_000, 960_000), cabinAAmount: 30_000, cabinBAmount: 0, cabin: 'A' },
@@ -935,18 +933,18 @@ describe('usdt cabin quantity (shared cost)', () => {
     const drifted = computeUsdtCabinBalances(opening, 0, txs, null, 0)
     const aligned = alignOpeningUsdtCabinsToSnapshot(0, 0, drifted, snapshot, 130_000)
     const restored = computeUsdtCabinBalances(opening, aligned.a, txs, null, aligned.b)
-    expect(restored).toEqual(snapshot)
+    expect(restored).toEqual({ a: 50_000, b: 80_000 })
   })
 
   it('transfers amount from one cabin to another', () => {
-    const before = { a: 10_000, b: 20_000, c: 500 }
-    const result = transferUsdtBetweenCabins(before, 'A', 'C', 5_000)
+    const before = { a: 10_000, b: 20_500 }
+    const result = transferUsdtBetweenCabins(before, 'A', 'B', 5_000)
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.next).toEqual({ a: 5_000, b: 20_000, c: 5_500 })
+      expect(result.next).toEqual({ a: 5_000, b: 25_500 })
     }
     expect(transferUsdtBetweenCabins(before, 'A', 'A', 1).ok).toBe(false)
-    expect(transferUsdtBetweenCabins(before, 'A', 'C', 20_000).ok).toBe(false)
+    expect(transferUsdtBetweenCabins(before, 'A', 'B', 20_000).ok).toBe(false)
   })
 
   it('A→B transfer via opening delta keeps B increase (does not spill into C)', () => {
@@ -954,7 +952,7 @@ describe('usdt cabin quantity (shared cost)', () => {
     const openingA = 21_956
     const openingB = 60_097
     const before = computeUsdtCabinBalances(opening, openingA, [], null, openingB)
-    expect(before).toEqual({ a: 21_956, b: 60_097, c: 0 })
+    expect(before).toEqual({ a: 21_956, b: 60_097 })
 
     const transferred = transferUsdtBetweenCabins(before, 'A', 'B', 21_956)
     expect(transferred.ok).toBe(true)
@@ -964,7 +962,7 @@ describe('usdt cabin quantity (shared cost)', () => {
     const nextOpeningA = openingA + (transferred.next.a - before.a)
     const nextOpeningB = openingB + (transferred.next.b - before.b)
     const after = computeUsdtCabinBalances(opening, nextOpeningA, [], null, nextOpeningB)
-    expect(after).toEqual({ a: 0, b: 82_053, c: 0 })
+    expect(after).toEqual({ a: 0, b: 82_053 })
   })
 
   it('AL freeze preserves cabins after ADJ and same-day trades', () => {
@@ -978,7 +976,7 @@ describe('usdt cabin quantity (shared cost)', () => {
       },
     ]
     const beforeAdj = computeUsdtCabinBalances(opening, 30_000, txs, null, 0)
-    expect(beforeAdj).toEqual({ a: 30_000, b: 10_000, c: 70_000 })
+    expect(beforeAdj).toEqual({ a: 30_000, b: 80_000 })
 
     const transferred = transferUsdtBetweenCabins(beforeAdj, 'B', 'A', 10_000)
     expect(transferred.ok).toBe(true)
@@ -987,7 +985,7 @@ describe('usdt cabin quantity (shared cost)', () => {
     const openingA = 30_000 + (transferred.next.a - beforeAdj.a)
     const openingB = 0 + (transferred.next.b - beforeAdj.b)
     const afterAdj = computeUsdtCabinBalances(opening, openingA, txs, null, openingB)
-    expect(afterAdj).toEqual({ a: 40_000, b: 0, c: 70_000 })
+    expect(afterAdj).toEqual({ a: 40_000, b: 70_000 })
 
     const { before, after } = simulateCabinFreezeAfterTradeSettle(
       opening,
@@ -1000,12 +998,12 @@ describe('usdt cabin quantity (shared cost)', () => {
     expect(after).toEqual(before)
   })
 
-  it('AL freeze preserves ADJ with existing C', () => {
+  it('AL freeze preserves ADJ after A→B transfer', () => {
     const opening: Balances = { twd: 0, usdt: 82_053, vn: 0 }
     const openingA = 21_956
     const openingB = 50_097
     const beforeAdj = computeUsdtCabinBalances(opening, openingA, [], null, openingB)
-    expect(beforeAdj.c).toBe(10_000)
+    expect(beforeAdj).toEqual({ a: 21_956, b: 60_097 })
 
     const transferred = transferUsdtBetweenCabins(beforeAdj, 'A', 'B', 5_000)
     expect(transferred.ok).toBe(true)
@@ -1014,7 +1012,7 @@ describe('usdt cabin quantity (shared cost)', () => {
     const nextOpeningA = openingA + (transferred.next.a - beforeAdj.a)
     const nextOpeningB = openingB + (transferred.next.b - beforeAdj.b)
     const afterAdj = computeUsdtCabinBalances(opening, nextOpeningA, [], null, nextOpeningB)
-    expect(afterAdj).toEqual({ a: 16_956, b: 55_097, c: 10_000 })
+    expect(afterAdj).toEqual({ a: 16_956, b: 65_097 })
 
     const { before, after } = simulateCabinFreezeAfterTradeSettle(
       opening,
@@ -1027,12 +1025,12 @@ describe('usdt cabin quantity (shared cost)', () => {
     expect(after).toEqual(before)
   })
 
-  it('A→B with existing C preserves C and credits B', () => {
+  it('A→B transfer credits B without changing total', () => {
     const opening: Balances = { twd: 0, usdt: 82_053, vn: 0 }
     const openingA = 21_956
-    const openingB = 50_097 // implies C = 10000
+    const openingB = 50_097
     const before = computeUsdtCabinBalances(opening, openingA, [], null, openingB)
-    expect(before.c).toBe(10_000)
+    expect(before).toEqual({ a: 21_956, b: 60_097 })
 
     const transferred = transferUsdtBetweenCabins(before, 'A', 'B', 5_000)
     expect(transferred.ok).toBe(true)
@@ -1043,8 +1041,7 @@ describe('usdt cabin quantity (shared cost)', () => {
     const after = computeUsdtCabinBalances(opening, nextOpeningA, [], null, nextOpeningB)
     expect(after).toEqual({
       a: 16_956,
-      b: 55_097,
-      c: 10_000,
+      b: 65_097,
     })
   })
 
@@ -1052,7 +1049,7 @@ describe('usdt cabin quantity (shared cost)', () => {
     const err = resolveUsdtSpendValidationError('台幣庫存不足', {
       spendsTwd: false,
       balances: { twd: 0, usdt: 167_530, vn: 0 },
-      cabins: { a: 27_000, b: 137_530, c: 3_000 },
+      cabins: { a: 27_000, b: 140_530 },
       usdtAmount: 1_988,
       cabinAAmount: 0,
       cabinBAmount: 0,
@@ -1064,7 +1061,7 @@ describe('usdt cabin quantity (shared cost)', () => {
     const err = resolveUsdtSpendValidationError('A 艙 USDT 不足', {
       spendsTwd: false,
       balances: { twd: 324_100, usdt: 63_722, vn: 0 },
-      cabins: { a: 6, b: 63_716, c: 0 },
+      cabins: { a: 6, b: 63_716 },
       usdtAmount: 45_513,
       cabinAAmount: 0,
       cabinBAmount: 45_513,
@@ -1076,7 +1073,7 @@ describe('usdt cabin quantity (shared cost)', () => {
     const err = resolveUsdtSpendValidationError('A 艙 USDT 不足', {
       spendsTwd: false,
       balances: { twd: 324_100, usdt: 63_722, vn: 0 },
-      cabins: { a: 6, b: 63_716, c: 0 },
+      cabins: { a: 6, b: 63_716 },
       usdtAmount: 45_513,
       cabinAAmount: 45_513,
       cabinBAmount: 0,
@@ -1088,7 +1085,7 @@ describe('usdt cabin quantity (shared cost)', () => {
     const err = resolveUsdtSpendValidationError('USDT 庫存不足', {
       spendsTwd: true,
       balances: { twd: 372_000, usdt: -3_248, vn: 0 },
-      cabins: { a: 0, b: 0, c: -3_248 },
+      cabins: { a: 0, b: -3_248 },
       usdtAmount: 10_000,
       cabinAAmount: 0,
       cabinBAmount: 10_000,
@@ -1101,7 +1098,7 @@ describe('usdt cabin quantity (shared cost)', () => {
     const err = resolveUsdtSpendValidationError('台幣庫存不足', {
       spendsTwd: true,
       balances: { twd: 100_000, usdt: 0, vn: 0 },
-      cabins: { a: 0, b: 0, c: 0 },
+      cabins: { a: 0, b: 0 },
       usdtAmount: 10_000,
       cabinAAmount: 0,
       cabinBAmount: 10_000,
@@ -1114,7 +1111,7 @@ describe('usdt cabin quantity (shared cost)', () => {
     const err = resolveUsdtSpendValidationError('USDT 庫存不足', {
       spendsTwd: true,
       balances: { twd: 100_000, usdt: -3_248, vn: 0 },
-      cabins: { a: 0, b: 0, c: -3_248 },
+      cabins: { a: 0, b: -3_248 },
       usdtAmount: 10_000,
       cabinAAmount: 0,
       cabinBAmount: 10_000,
@@ -1199,30 +1196,27 @@ describe('usdt cabin quantity (shared cost)', () => {
   })
 
   it('assigns opening P increases to cabin A', () => {
-    expect(adjustOpeningUsdtCabins(100, 30, 40, 120)).toEqual({ a: 50, b: 40 })
+    expect(adjustOpeningUsdtCabins(100, 30, 40, 120)).toEqual({ a: 50, b: 70 })
   })
 
-  it('deducts opening P decreases from cabin A before B and C', () => {
-    expect(adjustOpeningUsdtCabins(100, 30, 40, 80)).toEqual({ a: 10, b: 40 })
-    expect(adjustOpeningUsdtCabins(100, 30, 40, 50)).toEqual({ a: 0, b: 20 })
+  it('deducts opening P decreases from cabin A before B', () => {
+    expect(adjustOpeningUsdtCabins(100, 30, 40, 80)).toEqual({ a: 10, b: 70 })
+    expect(adjustOpeningUsdtCabins(100, 30, 40, 50)).toEqual({ a: 0, b: 50 })
   })
 
   it('applies opening P delta to the chosen cabin', () => {
-    const current = { a: 30, b: 40, c: 30 }
+    const current = { a: 30, b: 70 }
     expect(
       applyOpeningUsdtDeltaToCabin(30, 40, current, 20, 'B', 120),
     ).toEqual({ ok: true, a: 30, b: 60 })
-    expect(
-      applyOpeningUsdtDeltaToCabin(30, 40, current, 20, 'C', 120),
-    ).toEqual({ ok: true, a: 30, b: 40 })
     expect(
       applyOpeningUsdtDeltaToCabin(30, 40, current, -25, 'A', 75),
     ).toEqual({ ok: true, a: 5, b: 40 })
   })
 
   it('rejects opening P decrease when chosen cabin is short', () => {
-    const current = { a: 30, b: 40, c: 30 }
-    expect(applyOpeningUsdtDeltaToCabin(30, 40, current, -50, 'C', 50).ok).toBe(false)
+    const current = { a: 30, b: 70 }
+    expect(applyOpeningUsdtDeltaToCabin(30, 40, current, -80, 'B', 20).ok).toBe(false)
   })
 })
 

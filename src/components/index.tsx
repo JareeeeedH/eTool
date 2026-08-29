@@ -84,7 +84,7 @@ import {
 import {
   assetCode,
   formatNumber,
-  formatArchiveDateRange,
+  formatArchiveDateRangeDayOnly,
   formatMonthlyPeriodMonth,
   formatProfit,
   formatProfitFromParts,
@@ -743,7 +743,7 @@ export function DailyBalanceStrip({
   vnUsdtRate,
 }: DailyBalanceStripProps) {
   const [twdCabinModalOpen, setTwdCabinModalOpen] = useState(false)
-  const usdtCabins = usdtCabinBalances ?? { a: 0, b: 0, c: 0 }
+  const usdtCabins = usdtCabinBalances ?? { a: 0, b: 0 }
   const notes = twdCabinNotes ?? { ...EMPTY_TWD_CABIN_NOTES }
   /** O/B/T/F/W/H/J/C/#：萬位縮寫 → 台幣後加總（含備用 #） */
   const twdNoteSumActual = TWD_CABIN_NOTE_SUM_KEYS.reduce((sum, key) => {
@@ -756,7 +756,6 @@ export function DailyBalanceStrip({
   const cabinTone: Record<UsdtCabin, string> = {
     A: 'bg-sky-50 text-sky-800 ring-sky-200',
     B: 'bg-violet-50 text-violet-800 ring-violet-200',
-    C: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
   }
   const twdNoteLetterTone: Record<TwdCabinNoteKey, string> = {
     a: 'text-sky-600',
@@ -789,15 +788,15 @@ export function DailyBalanceStrip({
   const twdNoteSumMismatch =
     Math.abs(twdNoteSumActual - balances.twd) > 0.5
   const hasAnyTwdNote = TWD_CABIN_NOTE_KEYS.some((key) => notes[key].trim() !== '')
-  const renderCabinPills = (cabins: { a: number; b: number; c: number }, format?: (n: number) => string) =>
-    (['A', 'B', 'C'] as const).map((cabin) => (
+  const renderCabinPills = (cabins: { a: number; b: number }, format?: (n: number) => string) =>
+    (['A', 'B'] as const).map((cabin) => (
       <span
         key={cabin}
         className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-semibold tabular-nums ring-1 ring-inset sm:text-[10px] ${cabinTone[cabin]}`}
       >
         <span className="opacity-70">{cabin}</span>
         <AnimatedAmount
-          value={cabin === 'A' ? cabins.a : cabin === 'B' ? cabins.b : cabins.c}
+          value={cabin === 'A' ? cabins.a : cabins.b}
           format={format}
         />
       </span>
@@ -1046,38 +1045,50 @@ export function OpeningUsdtCabinPickModal({
   open,
   adjust,
   currencyLabel = 'P',
+  title = '選擇艙位',
+  showTitle = true,
   cabins,
+  initialCabin = null,
+  defaultCabin,
+  error = '',
   onCancel,
   onConfirm,
+  onDismissError,
 }: OpeningUsdtCabinPickModalProps) {
   const [selected, setSelected] = useState<UsdtCabin | null>(null)
   const [localError, setLocalError] = useState('')
   const [wasOpen, setWasOpen] = useState(open)
+
+  const isOut = adjust < 0
+  const absAdjust = Math.abs(adjust)
+  const cabinBal = (cabin: UsdtCabin) => (cabin === 'A' ? cabins.a : cabins.b)
+  const canUse = (cabin: UsdtCabin) => !isOut || cabinBal(cabin) + adjust >= -1e-9
+
   if (open !== wasOpen) {
     setWasOpen(open)
     if (!open) {
       setSelected(null)
       setLocalError('')
+    } else if (initialCabin && canUse(initialCabin)) {
+      setSelected(initialCabin)
+    } else if (defaultCabin && canUse(defaultCabin)) {
+      setSelected(defaultCabin)
+    } else {
+      setSelected(null)
     }
   }
 
   if (!open) return null
 
-  const isOut = adjust < 0
-  const absAdjust = Math.abs(adjust)
-  const cabinBal = (cabin: UsdtCabin) =>
-    cabin === 'A' ? cabins.a : cabin === 'B' ? cabins.b : cabins.c
-  const canUse = (cabin: UsdtCabin) => !isOut || cabinBal(cabin) + adjust >= -1e-9
+  const displayError = localError || error
 
   const cabinTone: Record<UsdtCabin, string> = {
     A: 'border-sky-200 bg-sky-50 text-sky-800',
     B: 'border-violet-200 bg-violet-50 text-violet-800',
-    C: 'border-emerald-200 bg-emerald-50 text-emerald-800',
   }
   const cabinSelectedTone: Record<UsdtCabin, string> = {
     A: 'border-sky-500 ring-2 ring-sky-500/30',
     B: 'border-violet-500 ring-2 ring-violet-500/30',
-    C: 'border-emerald-500 ring-2 ring-emerald-500/30',
   }
 
   const handleConfirm = () => {
@@ -1097,17 +1108,26 @@ export function OpeningUsdtCabinPickModal({
       className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="選擇艙位"
+      aria-label={title}
     >
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
-        <h2 className="text-sm font-semibold text-slate-900">選擇艙位</h2>
-        <p className="mt-1 text-[13px] tabular-nums text-slate-600">
-          {currencyLabel} {adjust > 0 ? '+' : adjust < 0 ? '−' : ''}
-          {currencyLabel === 'T' ? formatTwdTableCompact(absAdjust) : formatNumber(absAdjust)}
+        {showTitle && (
+          <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+        )}
+        <p
+          className={`text-center text-[22px] font-bold tabular-nums tracking-tight text-slate-900 ${
+            showTitle ? 'mt-1' : ''
+          }`}
+        >
+          {currencyLabel}{' '}
+          <span className={adjust > 0 ? 'text-emerald-600' : adjust < 0 ? 'text-rose-600' : ''}>
+            {adjust > 0 ? '+' : adjust < 0 ? '−' : ''}
+            {currencyLabel === 'T' ? formatTwdTableCompact(absAdjust) : formatNumber(absAdjust)}
+          </span>
         </p>
 
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          {(['A', 'B', 'C'] as const).map((cabin) => {
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {(['A', 'B'] as const).map((cabin) => {
             const bal = cabinBal(cabin)
             const enabled = canUse(cabin)
             const isSelected = selected === cabin
@@ -1120,6 +1140,7 @@ export function OpeningUsdtCabinPickModal({
                 onClick={() => {
                   setSelected(cabin)
                   setLocalError('')
+                  onDismissError?.()
                 }}
                 className={`rounded-lg border px-2 py-2.5 text-left transition ${
                   enabled ? cabinTone[cabin] : 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400'
@@ -1144,7 +1165,7 @@ export function OpeningUsdtCabinPickModal({
           })}
         </div>
 
-        {localError && <p className="mt-2 text-[11px] text-rose-600">{localError}</p>}
+        {displayError && <p className="mt-2 text-[11px] text-rose-600">{displayError}</p>}
 
         <div className="mt-4 flex justify-end gap-2">
           <button
@@ -1178,7 +1199,7 @@ function CabinRebalanceModalContent({
   onCancel: CabinRebalanceModalProps['onCancel']
   onConfirm: CabinRebalanceModalProps['onConfirm']
 }) {
-  const totalP = Math.max(0, cabins.a + cabins.b + cabins.c)
+  const totalP = Math.max(0, cabins.a + cabins.b)
   const [fromCabin, setFromCabin] = useState<UsdtCabin>('A')
   const [toCabin, setToCabin] = useState<UsdtCabin>('B')
   const [amountStr, setAmountStr] = useState('')
@@ -1187,16 +1208,14 @@ function CabinRebalanceModalContent({
     from: UsdtCabin
     to: UsdtCabin
     amount: number
-    next: { a: number; b: number; c: number }
+    next: { a: number; b: number }
   } | null>(null)
 
-  const cabinBalance = (cabin: UsdtCabin) =>
-    cabin === 'A' ? cabins.a : cabin === 'B' ? cabins.b : cabins.c
+  const cabinBalance = (cabin: UsdtCabin) => (cabin === 'A' ? cabins.a : cabins.b)
 
   const cabinTone: Record<UsdtCabin, string> = {
     A: 'text-sky-700',
     B: 'text-violet-700',
-    C: 'text-emerald-700',
   }
 
   const cabinSelectClass =
@@ -1251,7 +1270,6 @@ function CabinRebalanceModalContent({
                 [
                   ['A', cabins.a, pendingTransfer.next.a],
                   ['B', cabins.b, pendingTransfer.next.b],
-                  ['C', cabins.c, pendingTransfer.next.c],
                 ] as const
               )
                 .filter(([, before, after]) => before !== after)
@@ -1288,7 +1306,7 @@ function CabinRebalanceModalContent({
             </p>
 
             <div className="mt-2 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] tabular-nums">
-              {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
+              {(['A', 'B'] as UsdtCabin[]).map((cabin) => (
                 <span key={cabin} className={cabinTone[cabin]}>
                   {cabin} {formatNumber(cabinBalance(cabin))}
                 </span>
@@ -1309,7 +1327,7 @@ function CabinRebalanceModalContent({
                       }}
                       className={cabinSelectClass}
                     >
-                      {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
+                      {(['A', 'B'] as UsdtCabin[]).map((cabin) => (
                         <option key={cabin} value={cabin}>
                           {cabin}（{formatNumber(cabinBalance(cabin))}）
                         </option>
@@ -1331,7 +1349,7 @@ function CabinRebalanceModalContent({
                       }}
                       className={cabinSelectClass}
                     >
-                      {(['A', 'B', 'C'] as UsdtCabin[]).map((cabin) => (
+                      {(['A', 'B'] as UsdtCabin[]).map((cabin) => (
                         <option key={cabin} value={cabin}>
                           {cabin}（{formatNumber(cabinBalance(cabin))}）
                         </option>
@@ -5268,7 +5286,7 @@ export function MonthlyArchivePanel({
                 {formatMonthlyPeriodMonth(resolved.actualEndDate, resolved.periodLabel)}
               </p>
               <p className="mt-0.5 text-[10px] tabular-nums text-slate-500">
-                {formatArchiveDateRange(resolved.actualStartDate, resolved.actualEndDate)}
+                {formatArchiveDateRangeDayOnly(resolved.actualStartDate, resolved.actualEndDate)}
                 {' · '}
                 SET {resolved.tradeSettlements.length}
                 {' · '}

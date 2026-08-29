@@ -531,6 +531,14 @@ export function formatArchiveDateRange(start: Date | null, end: Date | null): st
   return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`
 }
 
+/** 月結封存區間：只顯示「日」（如 1 – 28），不顯示月份 */
+export function formatArchiveDateRangeDayOnly(start: Date | null, end: Date | null): string {
+  if (!start || !end) return '—'
+  const startLabel = String(start.getDate())
+  const endLabel = String(end.getDate())
+  return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`
+}
+
 /** M(AL) 列表期別：只顯示月份數字（如 7） */
 export function formatMonthlyPeriodMonth(
   endDate: Date | null | undefined,

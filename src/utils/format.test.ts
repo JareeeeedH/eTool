@@ -23,6 +23,7 @@ import {
   formatTradeListDate,
   compareTradeListOrder,
   formatArchiveDateRange,
+  formatArchiveDateRangeDayOnly,
 } from './format'
 
 describe('compact input parsing', () => {
@@ -188,6 +189,13 @@ describe('resolveSettlementArchiveDate', () => {
     expect(archive.getMonth()).toBe(6)
     expect(archive.getDate()).toBe(31)
     expect(formatArchiveDateRange(archive, archive)).toBe('07/31')
+  })
+
+  it('formatArchiveDateRangeDayOnly shows day numbers without month', () => {
+    const start = new Date(2026, 7, 1)
+    const end = new Date(2026, 7, 28)
+    expect(formatArchiveDateRangeDayOnly(start, end)).toBe('1 – 28')
+    expect(formatArchiveDateRangeDayOnly(end, end)).toBe('28')
   })
 
   it('keeps same calendar day when label day matches settledAt', () => {

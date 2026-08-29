@@ -12,9 +12,10 @@ export type DailyMobileTradePane =
   | 'sell_vn'
 export type FiatCurrency = 'twd' | 'vn'
 export type VnPayCurrency = 'twd' | 'usdt'
-/** P（USDT）艙別：共用成本池，僅拆數量 */
-export type UsdtCabin = 'A' | 'B' | 'C'
-/** T（台幣）艙別：與 P 相同 A/B/C 分倉，僅拆數量 */
+/** P（USDT）艙別：A/B 兩艙，總 P = A + B */
+export type UsdtCabin = 'A' | 'B'
+export type UsdtCabinBalances = { a: number; b: number }
+/** T（台幣）交易分倉標籤：與 P 相同僅 A/B */
 export type TwdCabin = UsdtCabin
 export type ExpenseType = 'fuel' | 'parking' | 'meal' | 'traffic' | 'other'
 export type PageTab =
@@ -45,13 +46,13 @@ export interface UsdtTransaction {
   rate: number
   /** 歸 A 艙的 USDT 數量；成本仍共用 */
   cabinAAmount?: number
-  /** 歸 B 艙的 USDT 數量；C = usdtAmount − A − B */
+  /** 歸 B 艙的 USDT 數量；剩餘 = usdtAmount − A */
   cabinBAmount?: number
   /** 舊資料單艙標籤；有 cabinA/BAmount 時以數量為準 */
   cabin?: UsdtCabin
   /** 歸 A 艙的台幣數量（fiatCurrency=twd 時）；C = fiatAmount − A − B */
   twdCabinAAmount?: number
-  /** 歸 B 艙的台幣數量 */
+  /** 歸 B 艙的台幣數量；剩餘 = fiatAmount − A */
   twdCabinBAmount?: number
   /** 台幣單艙標籤；有 twdCabinA/BAmount 時以數量為準 */
   twdCabin?: TwdCabin
@@ -77,13 +78,13 @@ export interface VnTradeTransaction {
   rate: number
   /** 支付／收入為 USDT 時：歸 A 艙數量 */
   cabinAAmount?: number
-  /** 支付／收入為 USDT 時：歸 B 艙數量；C = usdtAmount − A − B */
+  /** 支付／收入為 USDT 時：歸 B 艙數量；剩餘 = usdtAmount − A */
   cabinBAmount?: number
   /** 舊資料單艙標籤；有 cabinA/BAmount 時以數量為準 */
   cabin?: UsdtCabin
   /** 支付／收入為 TWD 時：歸 A 艙台幣數量 */
   twdCabinAAmount?: number
-  /** 支付／收入為 TWD 時：歸 B 艙台幣數量；C = twdAmount − A − B */
+  /** 支付／收入為 TWD 時：歸 B 艙台幣數量；剩餘 = twdAmount − A */
   twdCabinBAmount?: number
   /** 台幣單艙標籤；有 twdCabinA/BAmount 時以數量為準 */
   twdCabin?: TwdCabin
@@ -115,7 +116,7 @@ export interface ExpenseTransaction {
   note: string
   /** 開銷扣自 A 艙台幣數量 */
   twdCabinAAmount?: number
-  /** 開銷扣自 B 艙台幣數量；C = amountTwd − A − B */
+  /** 開銷扣自 B 艙台幣數量；剩餘 = amountTwd − A */
   twdCabinBAmount?: number
   twdCabin?: TwdCabin
 }
@@ -492,7 +493,7 @@ export interface DailyBalanceStripProps {
   balances: Balances
   inventoryCost: UsdtInventoryCost
   /** P 底下顯示 A/B 分倉 */
-  usdtCabinBalances?: { a: number; b: number; c: number }
+  usdtCabinBalances?: UsdtCabinBalances
   /** T 底下 O/B/T/W/H/J/C 備註（僅 memo，不入帳）；另含獨立 PF */
   twdCabinNotes?: TwdCabinNotes
   onTwdCabinNoteChange?: (cabin: TwdCabinNoteFieldKey, value: string) => void
@@ -505,22 +506,33 @@ export interface CabinRebalanceModalProps {
   open: boolean
   /** 分倉幣別標籤 */
   currencyLabel?: 'P' | 'T'
-  cabins: { a: number; b: number; c: number }
+  cabins: UsdtCabinBalances
   onCancel: () => void
-  /** 確認後的 A/B/C 絕對數量（總和應不變） */
-  onConfirm: (next: { a: number; b: number; c: number }) => void
+  /** 確認後的 A/B 絕對數量（總和 = 總 P） */
+  onConfirm: (next: UsdtCabinBalances) => void
 }
 
-/** 期初 P／T 增減：挑選作用艙位 */
+/** 期初 P／T 增減、或 IE/OE 本筆分倉：挑選作用艙位 */
 export interface OpeningUsdtCabinPickModalProps {
   open: boolean
   /** 有號增減量，例如 +1000 / -500 */
   adjust: number
   /** 顯示用幣別 */
   currencyLabel?: 'P' | 'T'
-  cabins: { a: number; b: number; c: number }
+  /** 標題；預設「選擇艙位」 */
+  title?: string
+  /** 是否顯示標題列（IE/OE 分倉可關閉） */
+  showTitle?: boolean
+  cabins: UsdtCabinBalances
+  /** 編輯時預選艙位 */
+  initialCabin?: UsdtCabin | null
+  /** 無 initialCabin 時的預設艙（例如 IE/OE 預設 B） */
+  defaultCabin?: UsdtCabin
+  /** 外層驗證錯誤（例如艙位不足） */
+  error?: string
   onCancel: () => void
   onConfirm: (cabin: UsdtCabin) => void
+  onDismissError?: () => void
 }
 
 
@@ -785,7 +797,7 @@ export interface CabinAllocModalProps {
   direction: 'in' | 'out'
   initialCabinA: number
   initialCabinB: number
-  cabinBalances: { a: number; b: number; c: number }
+  cabinBalances: { a: number; b: number }
   error: string
   onCancel: () => void
   onConfirm: (cabinAAmount: number, cabinBAmount: number) => void
